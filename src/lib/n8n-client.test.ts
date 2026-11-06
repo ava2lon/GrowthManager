@@ -2,7 +2,7 @@ import {afterEach,describe,expect,it,vi} from "vitest";
 
 vi.mock("server-only", () => ({}));
 
-import {normalizeN8nBaseUrl,validateN8nConnection} from "./n8n-client";
+import {listN8nWorkflows,normalizeN8nBaseUrl,validateN8nConnection} from "./n8n-client";
 
 afterEach(() => {
   vi.unstubAllGlobals();
@@ -65,3 +65,66 @@ describe("validateN8nConnection", () => {
     await expect(validateN8nConnection("https://growth-team.app.n8n.cloud", "n8n_test_api_key_123456"))
       .rejects.toThrow("N8N_PROVIDER_RATE_LIMITED");
   });
+
+
+describe("listN8nWorkflows", () => {
+  it("returns only safe workflow summary fields and follows cursor pagination", async () => {
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(new Response(JSON.stringify({
+        data: [
+          {id: "wf_1", name: "Daily report", active: true, updatedAt: "2026-11-01T10:00:00.000Z", nodes: [{parameters: {secret: "must-not-leak"}}]},
+        ],
+        nextCursor: "cursor-page-two",
+      }), {status: 200, headers: {"content-type": "application/json"}}))
+      .mockResolvedValueOnce(new Response(JSON.stringify({
+        data: [{id: "wf_2", name: "Lead sync", active: false}],
+      }), {status: 200, headers: {"content-type": "application/json"}}));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const result = await listN8nWorkflows(
+      "https://growth-team.app.n8n.cloud",
+      "n8n_test_api_key_123456",
+    );
+
+    expect(result).toEqual({
+      workflows: [
+        {id: "wf_1", name: "Daily report", active: true, updatedAt: "2026-11-01T10:00:00.000Z"},
+        {id: "wf_2", name: "Lead sync", active: false, updatedAt: null},
+      ],
+      hasMore: false,
+    });
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    const secondUrl = new URL(fetchMock.mock.calls[1][0] as string);
+    expect(secondUrl.searchParams.get("cursor")).toBe("cursor-page-two");
+    expect(secondUrl.searchParams.get("excludePinnedData")).toBe("true");
+  });
+
+  it("caps discovery at three pages and indicates remaining results", async () => {
+    const page = (cursor: string) => new Response(JSON.stringify({
+      data: [{id: cursor, name: "Workflow " + cursor, active: true}],
+      nextCursor: "cursor-" + (Number(cursor) + 1),
+    }), {status: 200, headers: {"content-type": "application/json"}});
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(page("1"))
+      .mockResolvedValueOnce(page("2"))
+      .mockResolvedValueOnce(page("3"));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const result = await listN8nWorkflows(
+      "https://growth-team.app.n8n.cloud",
+      "n8n_test_api_key_123456",
+    );
+
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+    expect(result.workflows).toHaveLength(3);
+    expect(result.hasMore).toBe(true);
+  });
+
+  it("rejects an invalid workflow response without exposing its body", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response("private response details", {status: 200})));
+    await expect(listN8nWorkflows(
+      "https://growth-team.app.n8n.cloud",
+      "n8n_test_api_key_123456",
+    )).rejects.toThrow("N8N_PROVIDER_UNAVAILABLE");
+  });
+});
