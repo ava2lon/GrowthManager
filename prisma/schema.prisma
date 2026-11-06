@@ -112,11 +112,13 @@ model Brand {
   socialAccounts SocialAccount[]
   posts          ContentPost[]
   campaigns      Campaign[]
+  @@unique([workspaceId, id])
   @@index([workspaceId, status])
 }
 
 model SocialAccount {
   id             String         @id @default(cuid())
+  workspaceId    String
   brandId        String
   provider       SocialProvider
   providerUserId String?
@@ -127,12 +129,13 @@ model SocialAccount {
   metadata       Json?
   createdAt      DateTime       @default(now())
   updatedAt      DateTime       @updatedAt
-  brand          Brand          @relation(fields: [brandId], references: [id], onDelete: Cascade)
-  @@index([brandId, provider])
+  brand          Brand          @relation(fields: [workspaceId, brandId], references: [workspaceId, id], onDelete: Cascade)
+  @@index([workspaceId, brandId, provider])
 }
 
 model ContentPost {
   id          String     @id @default(cuid())
+  workspaceId String
   brandId     String
   title       String?
   body        String
@@ -141,8 +144,8 @@ model ContentPost {
   publishedAt DateTime?
   createdAt   DateTime   @default(now())
   updatedAt   DateTime   @updatedAt
-  brand       Brand      @relation(fields: [brandId], references: [id], onDelete: Cascade)
-  @@index([brandId, status, scheduledAt])
+  brand       Brand      @relation(fields: [workspaceId, brandId], references: [workspaceId, id], onDelete: Cascade)
+  @@index([workspaceId, brandId, status, scheduledAt])
 }
 
 model Campaign {
@@ -157,7 +160,7 @@ model Campaign {
   createdAt   DateTime       @default(now())
   updatedAt   DateTime       @updatedAt
   workspace   Workspace      @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
-  brand       Brand?         @relation(fields: [brandId], references: [id], onDelete: SetNull)
+  brand       Brand?         @relation(fields: [workspaceId, brandId], references: [workspaceId, id], onDelete: Restrict)
   @@index([workspaceId, status])
 }
 
