@@ -152,3 +152,82 @@ export async function acknowledgeAutomationAlert(formData: FormData) {
   });
   revalidatePath("/dashboard/automations");
 }
+
+/**
+ * Explicitly requeues only transiently failed email deliveries. The original
+ * delivery ID is retained so the provider idempotency key remains stable.
+ */
+export async function retryAutomationAlertDelivery(formData: FormData) {
+  const context = await requireWorkspaceRole("ADMIN");
+  const deliveryId = String(formData.get("deliveryId") ?? "");
+  if (!deliveryId || deliveryId.length > 128) throw new Error("Invalid delivery.");
+
+  const limit = await consumeRateLimit(
+    "automation-alert-retry:" + context.workspace.id + ":" + context.userId,
+    10,
+    3600,
+  );
+  if (!limit.allowed || (process.env.NODE_ENV === "production" && !limit.configured)) {
+    throw new Error("Retry limit reached or request protection is unavailable.");
+  }
+
+  const retryableCodes = [
+    "NETWORK_ERROR",
+    "RESEND_REQUEST_TIMEOUT",
+    "RESEND_RATE_LIMITED",
+    "RESEND_PROVIDER_ERROR",
+    "RESEND_RESPONSE_INVALID",
+    "DELIVERY_PROCESSING_ERROR",
+  ];
+  const now = new Date();
+  const retryWindowStart = new Date(now.getTime() - 20 * 60 * 60_000);
+
+  await db.$transaction(async (tx) => {
+    const delivery = await tx.automationAlertDelivery.findFirst({
+      where: {
+        id: deliveryId,
+        workspaceId: context.workspace.id,
+        status: "FAILED",
+        lastErrorCode: {in: retryableCodes},
+        createdAt: {gte: retryWindowStart},
+      },
+      select: {id: true, attempts: true, lastErrorCode: true},
+    });
+    if (!delivery) {
+      throw new Error("This delivery is not eligible for manual retry. Only recent transient failures can be requeued.");
+    }
+
+    const changed = await tx.automationAlertDelivery.updateMany({
+      where: {
+        id: delivery.id,
+        workspaceId: context.workspace.id,
+        status: "FAILED",
+        lastErrorCode: {in: retryableCodes},
+        createdAt: {gte: retryWindowStart},
+      },
+      data: {
+        status: "RETRY",
+        attempts: 0,
+        nextAttemptAt: now,
+        lockedAt: null,
+        lastErrorCode: null,
+      },
+    });
+    if (changed.count !== 1) throw new Error("Delivery state changed; refresh and try again.");
+
+    await tx.activityLog.create({
+      data: {
+        workspaceId: context.workspace.id,
+        userId: context.userId,
+        action: "automation.alert_delivery_retried",
+        entityType: "automation_alert_delivery",
+        entityId: delivery.id,
+        metadata: {previousAttempts: delivery.attempts, previousErrorCode: delivery.lastErrorCode},
+      },
+    });
+  });
+
+  await dispatchAutomationAlertEmails(1);
+  revalidatePath("/dashboard/automations");
+}
+
