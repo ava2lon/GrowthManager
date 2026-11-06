@@ -25,12 +25,15 @@ export const {handlers, auth, signIn, signOut} = NextAuth({
         if (!parsed.success) return null;
 
         const email = parsed.data.email.toLowerCase().trim();
-        const emailLimit = await consumeRateLimit(
+        const emailLimit = await consumeRateLimit(`login:email:${email}`, 10, 15 * 60);
+        if (!emailLimit.allowed) return null;
+
+        const emailIpLimit = await consumeRateLimit(
           `login:email-ip:${email}:${ip}`,
           10,
           15 * 60,
         );
-        if (!emailLimit.allowed) return null;
+        if (!emailIpLimit.allowed) return null;
 
         const user = await db.user.findUnique({where: {email}});
         if (!user || !(await compare(parsed.data.password, user.passwordHash))) {
