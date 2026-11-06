@@ -70,6 +70,7 @@ model Workspace {
   invitations  WorkspaceInvitation[]
   automationAlertPolicy AutomationAlertPolicy?
   automationAlertEvents AutomationAlertEvent[]
+  automationAlertDeliveries AutomationAlertDelivery[]
 }
 
 model WorkspaceInvitation {
@@ -180,6 +181,7 @@ model Integration {
   updatedAt   DateTime  @updatedAt
   workspace   Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
   automationAlertEvents AutomationAlertEvent[]
+  automationAlertDeliveries AutomationAlertDelivery[]
   @@unique([workspaceId, provider])
   @@unique([workspaceId, id])
   @@index([workspaceId, status, updatedAt])
@@ -234,6 +236,8 @@ model AutomationAlertPolicy {
   failureRateThreshold  Float     @default(10)
   lookbackMinutes       Int       @default(1440)
   cooldownMinutes       Int       @default(60)
+  emailNotificationsEnabled Boolean @default(false)
+  notificationEmail     String?
   createdAt             DateTime  @default(now())
   updatedAt             DateTime  @updatedAt
   workspace             Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
@@ -258,7 +262,33 @@ model AutomationAlertEvent {
   createdAt         DateTime  @default(now())
   workspace         Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
   integration       Integration @relation(fields: [workspaceId, integrationId], references: [workspaceId, id], onDelete: Cascade)
+  deliveries        AutomationAlertDelivery[]
   @@unique([workspaceId, dedupeKey])
+  @@unique([workspaceId, id])
   @@index([workspaceId, status, createdAt])
   @@index([workspaceId, integrationId, createdAt])
+}
+
+
+model AutomationAlertDelivery {
+  id                String   @id @default(cuid())
+  workspaceId       String
+  alertEventId      String
+  integrationId     String
+  channel           String   @default("EMAIL")
+  recipient         String
+  status            String   @default("PENDING")
+  attempts          Int      @default(0)
+  nextAttemptAt     DateTime @default(now())
+  lockedAt          DateTime?
+  providerMessageId String?
+  lastErrorCode     String?
+  sentAt            DateTime?
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+  alertEvent        AutomationAlertEvent @relation(fields: [workspaceId, alertEventId], references: [workspaceId, id], onDelete: Cascade)
+  integration       Integration @relation(fields: [workspaceId, integrationId], references: [workspaceId, id], onDelete: Cascade)
+  @@unique([workspaceId, alertEventId, channel, recipient])
+  @@index([status, nextAttemptAt])
+  @@index([workspaceId, createdAt])
 }
