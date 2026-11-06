@@ -179,7 +179,9 @@ model Integration {
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @updatedAt
   workspace   Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  automationAlertEvents AutomationAlertEvent[]
   @@unique([workspaceId, provider])
+  @@unique([workspaceId, id])
   @@index([workspaceId, status, updatedAt])
 }
 
@@ -255,6 +257,7 @@ model AutomationAlertEvent {
   lastNotifiedAt    DateTime?
   createdAt         DateTime  @default(now())
   workspace         Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  integration       Integration @relation(fields: [workspaceId, integrationId], references: [workspaceId, id], onDelete: Cascade)
   @@unique([workspaceId, dedupeKey])
   @@index([workspaceId, status, createdAt])
   @@index([workspaceId, integrationId, createdAt])
