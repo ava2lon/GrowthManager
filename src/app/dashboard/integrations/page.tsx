@@ -12,6 +12,7 @@ import {
   checkResendIntegrationHealth,
   configureN8nIntegration,
   configureResendIntegration,
+  saveResendWebhookSecret,
   disconnectIntegration,
 } from "./actions";
 import {N8nWorkflowStateControl} from "@/components/n8n-workflow-state-control";
@@ -177,6 +178,15 @@ export default async function IntegrationsPage({searchParams}: {searchParams: Pr
                             <button className="rounded-lg bg-indigo-600 px-3 py-2 text-xs font-semibold text-white hover:bg-indigo-500">Validate & connect</button>
                           </form>
                           {integration.credentialsEncrypted && <form action={checkResendIntegrationHealth}><input type="hidden" name="integrationId" value={integration.id}/><button className="rounded-lg border border-slate-200 px-3 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-50">Run health check</button></form>}
+                          {integration.credentialsEncrypted && <div className="w-full max-w-xl rounded-xl border border-slate-200 p-3">
+                            <p className="text-xs font-semibold text-slate-700">Delivery event webhook</p>
+                            <p className="mt-1 text-[11px] leading-5 text-slate-500">Configure this endpoint in Resend: <code>/api/webhooks/resend</code>. Copy the signing secret from the Resend webhook settings and save it here. The secret is encrypted with this workspace integration.</p>
+                            <form action={saveResendWebhookSecret} className="mt-2 flex flex-col gap-2 sm:flex-row">
+                              <input type="hidden" name="integrationId" value={integration.id}/>
+                              <input aria-label="Resend webhook signing secret" name="webhookSecret" type="password" autoComplete="new-password" required minLength={20} maxLength={200} placeholder="whsec_..." className="min-w-0 flex-1 rounded-lg border border-slate-200 px-3 py-2 text-xs outline-none focus:border-indigo-500"/>
+                              <button className="rounded-lg border border-slate-200 px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50">Save signing secret</button>
+                            </form>
+                          </div>}
                         </>
                       )}
                       <form action={disconnectIntegration}>
