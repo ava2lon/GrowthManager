@@ -125,19 +125,21 @@ export async function acknowledgeAutomationAlert(formData: FormData) {
   const context = await requireWorkspaceRole("ADMIN");
   const alertId = String(formData.get("alertId") ?? "");
   if (!alertId || alertId.length > 128) throw new Error("Invalid alert.");
-  const changed = await db.automationAlertEvent.updateMany({
-    where: {id: alertId, workspaceId: context.workspace.id, status: "OPEN"},
-    data: {status: "ACKNOWLEDGED", acknowledgedAt: new Date(), acknowledgedById: context.userId},
-  });
-  if (changed.count !== 1) throw new Error("Alert is unavailable or has already been acknowledged.");
-  await db.activityLog.create({
-    data: {
-      workspaceId: context.workspace.id,
-      userId: context.userId,
-      action: "automation.alert_acknowledged",
-      entityType: "automation_alert",
-      entityId: alertId,
-    },
+  await db.$transaction(async (tx) => {
+    const changed = await tx.automationAlertEvent.updateMany({
+      where: {id: alertId, workspaceId: context.workspace.id, status: "OPEN"},
+      data: {status: "ACKNOWLEDGED", acknowledgedAt: new Date(), acknowledgedById: context.userId},
+    });
+    if (changed.count !== 1) throw new Error("Alert is unavailable or has already been acknowledged.");
+    await tx.activityLog.create({
+      data: {
+        workspaceId: context.workspace.id,
+        userId: context.userId,
+        action: "automation.alert_acknowledged",
+        entityType: "automation_alert",
+        entityId: alertId,
+      },
+    });
   });
   revalidatePath("/dashboard/automations");
 }
