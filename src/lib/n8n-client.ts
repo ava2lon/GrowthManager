@@ -352,6 +352,104 @@ export async function listN8nExecutions(
   return {executions, hasMore};
 }
 
+
+export type N8nExecutionRetryResult = {
+  id: string;
+  retryOf: string;
+  workflowId: string;
+  status: string;
+};
+
+export async function retryN8nExecution(
+  baseUrl: string,
+  apiKey: string,
+  executionId: string,
+): Promise<N8nExecutionRetryResult> {
+  if (typeof apiKey !== "string" || apiKey.length < 16 || apiKey.length > 512) {
+    throw new Error("Invalid n8n API key.");
+  }
+  // n8n execution IDs are numeric path identifiers; reject all other input.
+  if (typeof executionId !== "string" || !/^\\d{1,20}$/.test(executionId)) {
+    throw new Error("Invalid n8n execution ID.");
+  }
+
+  const normalizedBaseUrl = normalizeN8nBaseUrl(baseUrl);
+  let currentResponse: Response;
+  try {
+    currentResponse = await fetch(
+      normalizedBaseUrl + "/api/v1/executions/" + executionId + "?includeData=false",
+      {
+        method: "GET",
+        headers: {Accept: "application/json", "X-N8N-API-KEY": apiKey},
+        cache: "no-store",
+        redirect: "error",
+        signal: AbortSignal.timeout(N8N_API_TIMEOUT_MS),
+      },
+    );
+  } catch {
+    throw new Error("N8N_PROVIDER_UNAVAILABLE");
+  }
+  if (currentResponse.status === 401 || currentResponse.status === 403) throw new Error("N8N_AUTH_FAILED");
+  if (currentResponse.status === 404) throw new Error("N8N_EXECUTION_NOT_FOUND");
+  if (currentResponse.status === 429) throw new Error("N8N_PROVIDER_RATE_LIMITED");
+  if (!currentResponse.ok) throw new Error("N8N_PROVIDER_UNAVAILABLE");
+
+  let currentPayload: unknown;
+  try { currentPayload = await currentResponse.json(); } catch { throw new Error("N8N_PROVIDER_UNAVAILABLE"); }
+  if (!currentPayload || typeof currentPayload !== "object") throw new Error("N8N_PROVIDER_UNAVAILABLE");
+  const current = currentPayload as Record<string, unknown>;
+  if (String(current.id ?? "") !== executionId || typeof current.workflowId !== "string") {
+    throw new Error("N8N_PROVIDER_UNAVAILABLE");
+  }
+  if (current.status !== "error" && current.status !== "crashed") {
+    throw new Error("N8N_EXECUTION_NOT_RETRYABLE");
+  }
+
+  let retryResponse: Response;
+  try {
+    retryResponse = await fetch(
+      normalizedBaseUrl + "/api/v1/executions/" + executionId + "/retry",
+      {
+        method: "POST",
+        headers: {
+          Accept: "application/json",
+          "Content-Type": "application/json",
+          "X-N8N-API-KEY": apiKey,
+        },
+        body: JSON.stringify({loadWorkflow: false}),
+        cache: "no-store",
+        redirect: "error",
+        signal: AbortSignal.timeout(N8N_API_TIMEOUT_MS),
+      },
+    );
+  } catch {
+    throw new Error("N8N_RETRY_OUTCOME_UNKNOWN");
+  }
+  if (retryResponse.status === 401 || retryResponse.status === 403) throw new Error("N8N_AUTH_FAILED");
+  if (retryResponse.status === 404) throw new Error("N8N_EXECUTION_NOT_FOUND");
+  if (retryResponse.status === 409) throw new Error("N8N_EXECUTION_NOT_RETRYABLE");
+  if (retryResponse.status === 429) throw new Error("N8N_PROVIDER_RATE_LIMITED");
+  if (!retryResponse.ok) throw new Error("N8N_PROVIDER_UNAVAILABLE");
+
+  let retryPayload: unknown;
+  try { retryPayload = await retryResponse.json(); } catch { throw new Error("N8N_RETRY_OUTCOME_UNKNOWN"); }
+  if (!retryPayload || typeof retryPayload !== "object") throw new Error("N8N_RETRY_OUTCOME_UNKNOWN");
+  const retried = retryPayload as Record<string, unknown>;
+  const retryId = typeof retried.id === "number" || typeof retried.id === "string" ? String(retried.id) : "";
+  const retryOf = typeof retried.retryOf === "number" || typeof retried.retryOf === "string" ? String(retried.retryOf) : "";
+  if (!/^\\d{1,20}$/.test(retryId) || retryOf !== executionId ||
+      String(retried.workflowId ?? "") !== current.workflowId) {
+    throw new Error("N8N_RETRY_OUTCOME_UNKNOWN");
+  }
+
+  return {
+    id: retryId,
+    retryOf,
+    workflowId: current.workflowId,
+    status: typeof retried.status === "string" ? retried.status.slice(0, 40) : "unknown",
+  };
+}
+
 export async function setN8nWorkflowActive(
   baseUrl: string,
   apiKey: string,
