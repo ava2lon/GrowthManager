@@ -39,3 +39,21 @@ Do not use `prisma db push` for production schema changes. Review migration stat
 ### Invitation-based account registration
 
 Recipients who do not yet have a GrowthManager account can create one directly from `/invite/[token]`. Registration requires the exact invited email address, validates the invitation token and expiry, applies the normal password policy, and atomically claims the invitation, creates the user, creates the workspace membership with the invited role, and records the acceptance activity. It does not create a second workspace. Invitation registration is rate-limited by client IP and fails closed in production when the rate-limit store is unavailable. Existing users should sign in with the invited email and accept the invitation from the invitation page.
+
+## Automated tests
+
+Run the unit and policy tests with:
+
+```bash
+npm test
+```
+
+The PostgreSQL tenant-isolation suite is in `src/lib/tenant-isolation.integration.test.ts`. It is skipped when `DATABASE_URL_TEST` is not set. To enable it, create a **disposable local PostgreSQL database**, apply the committed Prisma migrations to that database, and set:
+
+```bash
+export DATABASE_URL_TEST="postgresql://postgres:postgres@localhost:5432/growthmanager_test"
+npm run test:integration
+```
+
+The integration test guard rejects production mode and non-local database hosts. It creates uniquely named fixtures and deletes only those fixtures. Never point `DATABASE_URL_TEST` at the production GrowthManager database. These tests validate PostgreSQL constraints; they do not replace authorization tests for every server action.
+
