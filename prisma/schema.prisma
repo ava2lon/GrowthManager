@@ -70,7 +70,6 @@ model Workspace {
   invitations  WorkspaceInvitation[]
   automationAlertPolicy AutomationAlertPolicy?
   automationAlertEvents AutomationAlertEvent[]
-  automationAlertDeliveries AutomationAlertDelivery[]
 }
 
 model WorkspaceInvitation {
