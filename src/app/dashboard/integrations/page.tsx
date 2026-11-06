@@ -4,7 +4,7 @@ import {db} from "@/lib/db";
 import {integrationProviders} from "@/lib/integration-providers";
 import {consumeRateLimit} from "@/lib/rate-limit";
 import {decryptIntegrationCredentials} from "@/lib/integration-crypto";
-import {getN8nWorkflowDetail, listN8nWorkflows, type N8nWorkflowDetail, type N8nWorkflowSummary} from "@/lib/n8n-client";
+import {getN8nWorkflowDetail, listN8nExecutions, listN8nWorkflows, type N8nExecutionStatus, type N8nExecutionSummary, type N8nWorkflowDetail, type N8nWorkflowSummary} from "@/lib/n8n-client";
 import {
   addIntegration,
   checkN8nIntegrationHealth,
@@ -31,7 +31,7 @@ const statusStyles: Record<string,string> = {
   DISCONNECTED: "bg-slate-100 text-slate-600",
 };
 
-export default async function IntegrationsPage({searchParams}: {searchParams: Promise<{workflowId?: string}>}) {
+export default async function IntegrationsPage({searchParams}: {searchParams: Promise<{workflowId?: string; executionStatus?: string; executionWorkflowId?: string}>}) {
   const context = await requireWorkspaceContext();
   const integrations = await db.integration.findMany({
     where: {workspaceId: context.workspace.id},
@@ -45,7 +45,12 @@ export default async function IntegrationsPage({searchParams}: {searchParams: Pr
     | {kind: "unavailable"}
     | {kind: "not-connected"} = {kind: "not-connected"};
 
-  const {workflowId} = await searchParams;
+  const {workflowId, executionStatus, executionWorkflowId} = await searchParams;
+  const safeExecutionStatus: N8nExecutionStatus | undefined =
+    executionStatus === "error" || executionStatus === "success" || executionStatus === "waiting" ? executionStatus : undefined;
+  const safeExecutionWorkflowId = executionWorkflowId && /^[A-Za-z0-9_-]{1,128}$/.test(executionWorkflowId) ? executionWorkflowId : undefined;
+  let n8nExecutions: {kind: "ready"; executions: N8nExecutionSummary[]; hasMore: boolean} | {kind: "unavailable"} | {kind: "not-connected"} =
+    {kind: "not-connected"};
   let selectedWorkflow: N8nWorkflowDetail | null = null;
   let selectedWorkflowUnavailable = false;
   const n8nIntegration = integrations.find((item) => item.provider === "n8n");
@@ -64,6 +69,20 @@ export default async function IntegrationsPage({searchParams}: {searchParams: Pr
         );
         if (typeof credentials.baseUrl === "string" && typeof credentials.apiKey === "string") {
           const result = await listN8nWorkflows(credentials.baseUrl, credentials.apiKey);
+          const executionLimit = await consumeRateLimit("n8n-execution-list:" + context.workspace.id + ":" + context.userId, 20, 3600);
+          if (executionLimit.allowed && !(process.env.NODE_ENV === "production" && !executionLimit.configured)) {
+            try {
+              const executionResult = await listN8nExecutions(credentials.baseUrl, credentials.apiKey, {
+                status: safeExecutionStatus,
+                workflowId: safeExecutionWorkflowId,
+              });
+              n8nExecutions = {kind: "ready", ...executionResult};
+            } catch {
+              n8nExecutions = {kind: "unavailable"};
+            }
+          } else {
+            n8nExecutions = {kind: "unavailable"};
+          }
           n8nWorkflowState = {kind: "ready", ...result};
           if (workflowId && /^[A-Za-z0-9_-]{1,128}$/.test(workflowId) && result.workflows.some((workflow) => workflow.id === workflowId)) {
             try {
@@ -249,6 +268,69 @@ export default async function IntegrationsPage({searchParams}: {searchParams: Pr
             )}
             <a href="/dashboard/integrations#n8n-workflows" className="mt-3 inline-block text-xs font-semibold text-indigo-700 hover:underline">Close workflow details</a>
           </div>
+        )}
+      </section>
+
+      <section className="rounded-2xl border border-slate-200 bg-white p-5 sm:p-6">
+        <div className="flex flex-col gap-1">
+          <h2 className="font-semibold text-slate-900">n8n execution monitor</h2>
+          <p className="text-sm text-slate-500">Recent execution metadata only. Workflow input/output payloads and execution data are never requested.</p>
+        </div>
+        {n8nExecutions.kind === "not-connected" ? (
+          <p className="mt-4 rounded-xl bg-slate-50 px-4 py-3 text-sm text-slate-500">Connect n8n to monitor workflow executions.</p>
+        ) : n8nExecutions.kind === "unavailable" ? (
+          <p className="mt-4 rounded-xl bg-amber-50 px-4 py-3 text-sm text-amber-800">Execution history is temporarily unavailable. Check the connection, execution:list permission, and rate limits.</p>
+        ) : (
+          <>
+            <form method="GET" action="/dashboard/integrations#n8n-executions" className="mt-4 grid gap-3 sm:grid-cols-[1fr_1fr_auto]">
+              {workflowId && <input type="hidden" name="workflowId" value={workflowId}/>}
+              <label className="grid gap-1 text-xs font-medium text-slate-600">
+                Status
+                <select name="executionStatus" defaultValue={safeExecutionStatus ?? ""} className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm">
+                  <option value="">All statuses</option><option value="error">Failed</option><option value="success">Successful</option><option value="waiting">Waiting</option>
+                </select>
+              </label>
+              <label className="grid gap-1 text-xs font-medium text-slate-600">
+                Workflow ID
+                <input name="executionWorkflowId" defaultValue={safeExecutionWorkflowId ?? ""} maxLength={128} pattern="[A-Za-z0-9_-]{1,128}" placeholder="All workflows" className="rounded-lg border border-slate-200 px-3 py-2 text-sm"/>
+              </label>
+              <button className="self-end rounded-lg bg-slate-900 px-4 py-2 text-xs font-semibold text-white hover:bg-slate-700">Apply filters</button>
+            </form>
+            {n8nExecutions.executions.length === 0 ? (
+              <p className="mt-4 rounded-xl bg-slate-50 px-4 py-3 text-sm text-slate-500">No executions matched these filters.</p>
+            ) : (
+              <div className="mt-4 overflow-x-auto rounded-xl border border-slate-100">
+                <table className="w-full min-w-[640px] text-left text-xs">
+                  <thead className="bg-slate-50 text-[11px] uppercase tracking-wide text-slate-500">
+                    <tr><th className="px-3 py-3 font-semibold">Execution</th><th className="px-3 py-3 font-semibold">Workflow</th><th className="px-3 py-3 font-semibold">Status</th><th className="px-3 py-3 font-semibold">Mode</th><th className="px-3 py-3 font-semibold">Started</th><th className="px-3 py-3 font-semibold">Duration</th></tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {n8nExecutions.executions.map((execution) => {
+                      const started = execution.startedAt ? new Date(execution.startedAt).getTime() : null;
+                      const stopped = execution.stoppedAt ? new Date(execution.stoppedAt).getTime() : null;
+                      const duration = started !== null && stopped !== null && stopped >= started
+                        ? Math.round((stopped - started) / 1000) + "s"
+                        : execution.status === "running" ? "Running" : "—";
+                      const statusClass = execution.status === "success" ? "bg-emerald-50 text-emerald-700"
+                        : execution.status === "error" || execution.status === "crashed" ? "bg-rose-50 text-rose-700"
+                        : "bg-amber-50 text-amber-700";
+                      return (
+                        <tr key={execution.id}>
+                          <td className="px-3 py-3 font-mono text-slate-700">{execution.id}</td>
+                          <td className="px-3 py-3 font-mono text-slate-500">{execution.workflowId}</td>
+                          <td className="px-3 py-3"><span className={"rounded-full px-2 py-1 font-semibold " + statusClass}>{execution.status}</span></td>
+                          <td className="px-3 py-3 text-slate-500">{execution.mode}</td>
+                          <td className="px-3 py-3 text-slate-500">{execution.startedAt ? new Date(execution.startedAt).toLocaleString() : "—"}</td>
+                          <td className="px-3 py-3 text-slate-500">{duration}</td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
+            <p className="mt-3 text-xs text-slate-400">Showing {n8nExecutions.executions.length} executions. {n8nExecutions.hasMore ? "Additional history exists; results are capped at 150 per request." : "End of available results."}</p>
+          </>
         )}
       </section>
 
