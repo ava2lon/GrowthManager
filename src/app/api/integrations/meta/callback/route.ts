@@ -32,6 +32,17 @@ function redirect(request: Request, status: string) {
   return NextResponse.redirect(new URL("/dashboard/social?meta=" + encodeURIComponent(status), request.url));
 }
 
+function clearStateCookie(response: NextResponse) {
+  response.cookies.set(COOKIE, "", {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === "production",
+    sameSite: "lax",
+    path: "/api/integrations/meta",
+    maxAge: 0,
+  });
+  return response;
+}
+
 async function graph(path: string, params: Record<string, string>) {
   const version = process.env.META_GRAPH_API_VERSION;
   if (!version || !/^v\d+\.\d+$/.test(version)) throw new Error("META_NOT_CONFIGURED");
@@ -50,7 +61,7 @@ export async function GET(request: Request) {
   const providerError = url.searchParams.get("error");
   const cookieStore = await cookies();
   const cookieState = cookieStore.get(COOKIE)?.value;
-  if (providerError) { const denied = redirect(request, "authorization_denied"); denied.cookies.delete(COOKIE); return denied; }
+  if (providerError) { const denied = redirect(request, "authorization_denied"); denied.cookies.set(COOKIE, "", {httpOnly:true,secure:process.env.NODE_ENV === "production",sameSite:"lax",path:"/api/integrations/meta",maxAge:0}); return denied; }
   if (!code || !returnedState || !cookieState || returnedState !== cookieState) {
     const failed = redirect(request, "invalid_state");
     failed.cookies.delete(COOKIE);
