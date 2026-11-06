@@ -13,7 +13,6 @@ import {
   configureResendIntegration,
   disconnectIntegration,
   setN8nWorkflowState,
-  retryN8nExecutionAction,
 } from "./actions";
 import {N8nWorkflowStateControl} from "@/components/n8n-workflow-state-control";
 import {N8nExecutionRetryControl} from "@/components/n8n-execution-retry-control";
