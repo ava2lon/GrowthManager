@@ -143,6 +143,7 @@ export async function GET(request: Request) {
         const encrypted = encryptIntegrationCredentials({
           accessToken:record.token,
           userAccessToken:longToken.access_token,
+          userAccessTokenExpiresAt:tokenExpiresAt?.toISOString() ?? null,
           tokenType:"bearer",
           provider:"meta",
           metadata:record.metadata,
@@ -154,11 +155,11 @@ export async function GET(request: Request) {
             providerUserId:record.providerUserId,accountName:record.accountName,
             credentialsEncrypted:encrypted,status:"CONNECTED",
             scopes:grantedScopes,
-            connectedAt:new Date(),lastValidatedAt:new Date(),tokenExpiresAt,lastErrorCode:null,metadata:record.metadata,
+            connectedAt:new Date(),lastValidatedAt:new Date(),lastErrorCode:null,metadata:record.metadata,
           },
           update:{
             brandId:state.brandId,accountName:record.accountName,credentialsEncrypted:encrypted,
-            status:"CONNECTED",scopes:grantedScopes,connectedAt:new Date(),lastValidatedAt:new Date(),tokenExpiresAt,lastErrorCode:null,metadata:record.metadata,
+            status:"CONNECTED",scopes:grantedScopes,connectedAt:new Date(),lastValidatedAt:new Date(),lastErrorCode:null,metadata:record.metadata,
           },
         });
       }
