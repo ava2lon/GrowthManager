@@ -172,6 +172,7 @@ export default async function IntegrationsPage({searchParams}: {searchParams: Pr
                         <>
                           <form action={configureResendIntegration} className="flex flex-col gap-2 sm:flex-row">
                             <input type="hidden" name="integrationId" value={integration.id}/>
+                            <input aria-label="Verified sender email" autoComplete="email" name="fromEmail" type="email" required maxLength={254} placeholder="alerts@your-verified-domain.com" className="min-w-0 rounded-lg border border-slate-200 px-3 py-2 text-xs outline-none focus:border-indigo-500"/>
                             <input aria-label="Resend API key" autoComplete="new-password" name="apiKey" type="password" required minLength={20} maxLength={200} placeholder="Resend API key" className="min-w-0 rounded-lg border border-slate-200 px-3 py-2 text-xs outline-none focus:border-indigo-500"/>
                             <button className="rounded-lg bg-indigo-600 px-3 py-2 text-xs font-semibold text-white hover:bg-indigo-500">Validate & connect</button>
                           </form>
