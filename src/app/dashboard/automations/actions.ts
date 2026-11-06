@@ -18,7 +18,7 @@ export async function saveAutomationAlertPolicy(formData: FormData) {
   const enabled = formData.get("enabled") === "on";
   const emailNotificationsEnabled = formData.get("emailNotificationsEnabled") === "on";
   const notificationEmail = String(formData.get("notificationEmail") ?? "").trim().toLowerCase();
-  if (emailNotificationsEnabled && (!/^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/.test(notificationEmail) || notificationEmail.length > 254)) {
+  if (emailNotificationsEnabled && (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(notificationEmail) || notificationEmail.length > 254)) {
     throw new Error("Enter a valid notification email address before enabling email alerts.");
   }
   if (emailNotificationsEnabled) {
