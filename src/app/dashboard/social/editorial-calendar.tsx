@@ -18,12 +18,12 @@ function startOfGrid(value:Date){const first=monthStart(value);const offset=(fir
 
 export default function SocialEditorialCalendar({initialMonth,posts}:{initialMonth:string;posts:CalendarPost[]}){
   const [month,setMonth]=useState(()=>monthStart(new Date(initialMonth+"-01T00:00:00Z")));
-  useEffect(()=>{setMonth(monthStart(new Date(initialMonth+"-01T00:00:00Z")));setWeekOffset(0);},[initialMonth]);
   const [view,setView]=useState<"month"|"week">("month");
   const [weekOffset,setWeekOffset]=useState(0);
   const [busy,startTransition]=useTransition();
   const [message,setMessage]=useState("");
   const router=useRouter();
+  useEffect(()=>{setMonth(monthStart(new Date(initialMonth+"-01T00:00:00Z")));setWeekOffset(0);},[initialMonth]);
   const gridStart=startOfGrid(month);
   const days=useMemo(()=>Array.from({length:42},(_,i)=>new Date(gridStart.getTime()+i*86400000)),[gridStart.getTime()]);
   const weekStart=new Date(Date.UTC(month.getUTCFullYear(),month.getUTCMonth(),1-((month.getUTCDay()+6)%7)+weekOffset*7));
