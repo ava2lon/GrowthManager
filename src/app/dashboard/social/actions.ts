@@ -197,7 +197,7 @@ export async function refreshMetaAuthorization(formData: FormData) {
   const metadata = readMetadata(account.metadata);
   const pageId = metadata.pageId;
   if (typeof userToken !== "string" || typeof pageId !== "string" || !appId || !appSecret ||
-      !version || !/^v\\d+\\.\\d+$/.test(version)) {
+      !version || !/^v\d+\.\d+$/.test(version)) {
     throw new Error("Meta refresh credentials are incomplete. Reconnect this account.");
   }
 
