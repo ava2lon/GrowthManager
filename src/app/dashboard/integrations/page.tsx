@@ -283,7 +283,7 @@ export default async function IntegrationsPage({searchParams}: {searchParams: Pr
         {n8nExecutions.kind === "not-connected" ? (
           <p className="mt-4 rounded-xl bg-slate-50 px-4 py-3 text-sm text-slate-500">Connect n8n to monitor workflow executions.</p>
         ) : n8nExecutions.kind === "unavailable" ? (
-          <p className="mt-4 rounded-xl bg-amber-50 px-4 py-3 text-sm text-amber-800">Execution history is temporarily unavailable. Check the connection, execution:list permission, and rate limits.</p>
+          <p className="mt-4 rounded-xl bg-amber-50 px-4 py-3 text-sm text-amber-800">Execution history is temporarily unavailable. Check the connection, execution:list permission, and rate limits. Retry also requires execution:retry.</p>
         ) : (
           <>
             <form method="GET" action="/dashboard/integrations#n8n-executions" className="mt-4 grid gap-3 sm:grid-cols-[1fr_1fr_auto]">
