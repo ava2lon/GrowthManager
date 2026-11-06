@@ -127,7 +127,6 @@ model Brand {
   posts          ContentPost[]
   campaigns      Campaign[]
   mediaAssets    MediaAsset[]
-  postAttachments ContentPostMedia[]
   @@unique([workspaceId, id])
   @@index([workspaceId, status])
 }
@@ -236,6 +235,7 @@ model MediaAsset {
   updatedAt        DateTime         @updatedAt
   workspace        Workspace        @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
   brand            Brand?           @relation(fields: [workspaceId, brandId], references: [workspaceId, id], onDelete: Cascade)
+  postAttachments ContentPostMedia[]
   @@unique([workspaceId, id])
   @@unique([workspaceId, objectPath])
   @@index([workspaceId, status, createdAt])
