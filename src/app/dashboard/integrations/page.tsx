@@ -2,6 +2,9 @@ import {Plug,ShieldCheck,Workflow,BarChart3,Share2,Mail,MessageSquare,Settings2}
 import {requireWorkspaceContext} from "@/lib/workspace";
 import {db} from "@/lib/db";
 import {integrationProviders} from "@/lib/integration-providers";
+import {consumeRateLimit} from "@/lib/rate-limit";
+import {decryptIntegrationCredentials} from "@/lib/integration-crypto";
+import {listN8nWorkflows, type N8nWorkflowSummary} from "@/lib/n8n-client";
 import {
   addIntegration,
   checkN8nIntegrationHealth,
@@ -35,6 +38,38 @@ export default async function IntegrationsPage() {
   });
   const byProvider = new Map(integrations.map((item) => [item.provider,item]));
   const canManage = ["OWNER","ADMIN"].includes(context.membership.role);
+  let n8nWorkflowState:
+    | {kind: "ready"; workflows: N8nWorkflowSummary[]; hasMore: boolean}
+    | {kind: "unavailable"}
+    | {kind: "not-connected"} = {kind: "not-connected"};
+
+  const n8nIntegration = integrations.find((item) => item.provider === "n8n");
+  if (n8nIntegration?.status === "CONNECTED" && n8nIntegration.credentialsEncrypted) {
+    const limit = await consumeRateLimit(
+      "n8n-workflow-list:" + context.workspace.id + ":" + context.userId,
+      20,
+      3600,
+    );
+    if (limit.allowed && !(process.env.NODE_ENV === "production" && !limit.configured)) {
+      try {
+        const credentials = decryptIntegrationCredentials(
+          n8nIntegration.credentialsEncrypted,
+          context.workspace.id,
+          n8nIntegration.id,
+        );
+        if (typeof credentials.baseUrl === "string" && typeof credentials.apiKey === "string") {
+          const result = await listN8nWorkflows(credentials.baseUrl, credentials.apiKey);
+          n8nWorkflowState = {kind: "ready", ...result};
+        } else {
+          n8nWorkflowState = {kind: "unavailable"};
+        }
+      } catch {
+        n8nWorkflowState = {kind: "unavailable"};
+      }
+    } else {
+      n8nWorkflowState = {kind: "unavailable"};
+    }
+  }
 
   return (
     <div className="mx-auto max-w-6xl space-y-8">
@@ -109,6 +144,48 @@ export default async function IntegrationsPage() {
               );
             })}
           </div>
+        )}
+      </section>
+
+      <section className="rounded-2xl border border-slate-200 bg-white p-5 sm:p-6">
+        <div className="flex flex-col gap-1">
+          <h2 className="font-semibold text-slate-900">n8n workflows</h2>
+          <p className="text-sm text-slate-500">Read-only workflow inventory from the connected n8n instance.</p>
+        </div>
+        {n8nWorkflowState.kind === "not-connected" ? (
+          <p className="mt-4 rounded-xl bg-slate-50 px-4 py-3 text-sm text-slate-500">Connect n8n to view workflows in this workspace.</p>
+        ) : n8nWorkflowState.kind === "unavailable" ? (
+          <p className="mt-4 rounded-xl bg-amber-50 px-4 py-3 text-sm text-amber-800">Workflow discovery is temporarily unavailable. Check the connection, API-key permissions, and rate limits, then reload this page.</p>
+        ) : n8nWorkflowState.workflows.length === 0 ? (
+          <p className="mt-4 rounded-xl bg-slate-50 px-4 py-3 text-sm text-slate-500">No workflows were returned by this n8n account.</p>
+        ) : (
+          <>
+            <div className="mt-4 overflow-hidden rounded-xl border border-slate-100">
+              <div className="grid grid-cols-[minmax(0,1fr)_auto] gap-3 bg-slate-50 px-4 py-2 text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+                <span>Workflow</span><span>Status</span>
+              </div>
+              <div className="divide-y divide-slate-100">
+                {n8nWorkflowState.workflows.map((workflow) => (
+                  <div key={workflow.id} className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-3 px-4 py-3">
+                    <div className="min-w-0">
+                      <p className="truncate text-sm font-medium text-slate-800">{workflow.name}</p>
+                      <p className="mt-0.5 text-[11px] text-slate-400">
+                        ID: {workflow.id}
+                        {workflow.updatedAt ? " · Updated " + new Date(workflow.updatedAt).toLocaleString() : ""}
+                      </p>
+                    </div>
+                    <span className={"rounded-full px-2.5 py-1 text-[11px] font-semibold " + (workflow.active ? "bg-emerald-50 text-emerald-700" : "bg-slate-100 text-slate-600")}>
+                      {workflow.active ? "Active" : "Inactive"}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
+            <p className="mt-3 text-xs text-slate-400">
+              Showing {n8nWorkflowState.workflows.length} workflows.
+              {n8nWorkflowState.hasMore ? " More workflows exist; this view is capped to protect page latency." : ""}
+            </p>
+          </>
         )}
       </section>
 
