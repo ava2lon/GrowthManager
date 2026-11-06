@@ -6,7 +6,7 @@ import {addIntegration,disconnectIntegration} from "./actions";
 
 const categoryIcons = {
   AUTOMATION: Workflow,
-  ANALYTICS: ChartNoAxesCombined,
+  ANALYTICS: BarChart3,
   SOCIAL: Share2,
   EMAIL: Mail,
   COMMUNICATION: MessageSquare,
