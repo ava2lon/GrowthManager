@@ -91,3 +91,13 @@ Integration records store:
 - `lastErrorCode`: a sanitized classification such as `AUTH_FAILED`, `PROVIDER_RATE_LIMITED`, or `PROVIDER_UNAVAILABLE`; provider response bodies and credentials are not stored.
 
 The migration `20261106200000_integration_health_metadata` adds these fields and a workspace/status index. Apply it with `npm run db:deploy` only after the GrowthManager database environment variables are configured and the migration target has been verified. Other catalog providers remain setup placeholders until their provider-specific authorization and lifecycle flows are implemented.
+
+## n8n workspace integration
+
+Workspace owners and administrators can connect an n8n instance using an n8n public API key. GrowthManager validates the connection with `GET /api/v1/workflows?limit=1` and the `X-N8N-API-KEY` header, then stores the base URL and API key in the workspace's AES-256-GCM encrypted credential envelope. Workflow definitions and execution data are not copied into GrowthManager by the connection health check.
+
+n8n Cloud hostnames matching `<instance>.app.n8n.cloud` are accepted by default. Self-hosted n8n instances require the platform operator to set `N8N_ALLOWED_HOSTS` to a comma-separated list of exact hostnames (no URL scheme, port, path, or wildcard). This restriction prevents a workspace administrator from using the integration as an arbitrary server-side HTTP request/SSRF primitive. The connection uses HTTPS only, rejects redirects, and has a 10-second timeout.
+
+To create an API key in n8n, open **Settings → n8n API → Create an API key**. Use the minimum available workflow-list/read scope for health validation. n8n API access is not available during the free Cloud trial; self-hosted instances provide API access according to the n8n plan and configuration.
+
+The integration supports manual health checks and stores only sanitized status metadata. Workflow discovery, activation/deactivation, execution monitoring, and webhook management are separate capabilities and are not enabled by this initial connection release.
