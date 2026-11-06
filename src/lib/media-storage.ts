@@ -15,7 +15,7 @@ export function validateMediaUpload(input: {fileName: unknown; mimeType: unknown
   if (typeof input.fileName !== "string" || input.fileName.length < 1 || input.fileName.length > 255) {
     throw new Error("A valid filename is required.");
   }
-  if (typeof input.mimeType !== "string" || !(input.mimeType in MIME_EXTENSIONS)) {
+  if (typeof input.mimeType !== "string" || !Object.hasOwn(MIME_EXTENSIONS, input.mimeType)) {
     throw new Error("Supported formats are JPEG, PNG, WebP, MP4, and MOV.");
   }
   if (typeof input.sizeBytes !== "number" || !Number.isSafeInteger(input.sizeBytes) || input.sizeBytes < 1) {
@@ -36,6 +36,9 @@ export function getSupabaseStorageConfig() {
   const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
   if (!rawUrl || !serviceKey) throw new Error("Media storage is not configured.");
   const url = new URL(rawUrl);
+  if (url.username || url.password || url.search || url.hash || url.pathname !== "/") {
+    throw new Error("Media storage URL must be a project origin without credentials or a path.");
+  }
   if (url.protocol !== "https:" && !(process.env.NODE_ENV !== "production" && url.hostname === "localhost")) {
     throw new Error("Media storage URL must use HTTPS.");
   }
