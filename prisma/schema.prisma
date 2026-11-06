@@ -68,6 +68,8 @@ model Workspace {
   automations  Automation[]
   activityLogs ActivityLog[]
   invitations  WorkspaceInvitation[]
+  automationAlertPolicy AutomationAlertPolicy?
+  automationAlertEvents AutomationAlertEvent[]
 }
 
 model WorkspaceInvitation {
@@ -219,4 +221,41 @@ model ActivityLog {
   workspace   Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
   user        User?     @relation(fields: [userId], references: [id], onDelete: SetNull)
   @@index([workspaceId, createdAt])
+}
+
+
+model AutomationAlertPolicy {
+  id                    String    @id @default(cuid())
+  workspaceId           String    @unique
+  enabled               Boolean   @default(true)
+  failureCountThreshold Int       @default(3)
+  failureRateThreshold  Float     @default(10)
+  lookbackMinutes       Int       @default(1440)
+  cooldownMinutes       Int       @default(60)
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
+  workspace             Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+}
+
+model AutomationAlertEvent {
+  id                String    @id @default(cuid())
+  workspaceId       String
+  integrationId     String
+  provider          String    @default("n8n")
+  alertType         String
+  severity          String    @default("WARNING")
+  dedupeKey         String
+  message           String
+  observedCount     Int
+  observedRate      Float
+  sampleSize        Int
+  status            String    @default("OPEN")
+  acknowledgedAt    DateTime?
+  acknowledgedById  String?
+  lastNotifiedAt    DateTime?
+  createdAt         DateTime  @default(now())
+  workspace         Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  @@unique([workspaceId, dedupeKey])
+  @@index([workspaceId, status, createdAt])
+  @@index([workspaceId, integrationId, createdAt])
 }
