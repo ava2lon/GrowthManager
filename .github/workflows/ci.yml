@@ -40,6 +40,8 @@ jobs:
       DATABASE_URL_TEST: postgresql://postgres:postgres@localhost:5432/growthmanager_ci
       AUTH_SECRET: ci-only-not-a-production-secret
       AUTH_URL: http://localhost:3000
+      INTEGRATION_ENCRYPTION_KEY: AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=
+      INTEGRATION_ENCRYPTION_KEY_ID: ci-test-key
       NODE_ENV: test
 
     steps:
