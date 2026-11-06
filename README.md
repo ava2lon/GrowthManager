@@ -16,5 +16,8 @@ Use Node.js 20.9+ and PostgreSQL. Copy .env.example to .env and configure DATABA
 ## Vercel
 Set DATABASE_URL to a managed PostgreSQL connection string, AUTH_SECRET to a cryptographically random 32+ byte secret, AUTH_URL to the canonical deployment URL, and UPSTASH_REDIS_REST_URL plus UPSTASH_REDIS_REST_TOKEN from an Upstash Redis database. Configure the database before enabling account registration. Use committed Prisma migrations for production schema changes. Configure `DIRECT_URL` for Prisma migration connections (Supabase session pooler on port 5432) and `DATABASE_URL` for serverless runtime queries (transaction pooler on port 6543, with `pgbouncer=true&connection_limit=1`). Apply production migrations with `npm run db:deploy`.
 
+## Workspace invitations
+Workspace owners and administrators can invite teammates from `/dashboard/team`. Invitations use random 256-bit tokens; only SHA-256 token hashes are stored in PostgreSQL. Links expire after seven days, are single-use, and require an authenticated account whose normalized email matches the invitation. Owners can invite administrators; administrators can invite members and viewers. Configure `RESEND_API_KEY`, `RESEND_FROM_EMAIL` (a verified Resend sender), and `AUTH_URL` to enable invitation delivery. If email delivery fails, the invitation is revoked. Apply the `20261106170000_workspace_invitations` migration with `npm run db:deploy` after configuring the database.
+
 ## Security follow-ups
 Encrypt provider credentials at rest before enabling integrations. Registration and credentials login use Redis-backed rate limits. Configure both Upstash variables in every Vercel environment before enabling production sign-up or sign-in. Add email verification and abuse monitoring before public launch.
