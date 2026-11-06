@@ -424,6 +424,55 @@ export async function scheduleFacebookDraft(formData: FormData) {
   if(changed) revalidatePath("/dashboard/social");
 }
 
+export async function scheduleFacebookDraftTargets(formData: FormData) {
+  const context = await requireWorkspaceRole("MEMBER");
+  const contentPostId = String(formData.get("contentPostId") ?? "").trim();
+  const scheduledAtRaw = String(formData.get("scheduledAt") ?? "").trim();
+  if (!contentPostId || contentPostId.length > 128 ||
+      !/^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}$/.test(scheduledAtRaw)) {
+    throw new Error("Choose a valid UTC date and time.");
+  }
+  const scheduledAt = new Date(scheduledAtRaw + ":00Z");
+  if (!Number.isFinite(scheduledAt.getTime()) || scheduledAt.getTime() < Date.now() + 60_000 ||
+      scheduledAt.getTime() > Date.now() + 365 * 24 * 60 * 60_000) {
+    throw new Error("Schedule must be at least one minute in the future and within the next year.");
+  }
+  const post = await db.contentPost.findFirst({
+    where: {id: contentPostId, workspaceId: context.workspace.id},
+    select: {id: true, brandId: true, status: true},
+  });
+  if (!post) throw new Error("Draft not found in the active workspace.");
+  const targets = await db.socialPostTarget.findMany({
+    where: {workspaceId: context.workspace.id, contentPostId: post.id, provider: "FACEBOOK", status: "DRAFT"},
+    include: {socialAccount: {select: {id: true, brandId: true, status: true, scopes: true}}},
+  });
+  if (targets.length < 1 || targets.length > 10 ||
+      targets.some((target) => target.socialAccount.brandId !== post.brandId ||
+        target.socialAccount.status !== "CONNECTED" ||
+        !target.socialAccount.scopes.includes("pages_manage_posts"))) {
+    throw new Error("Every draft target must be a connected Facebook Page with publishing permission under this brand.");
+  }
+  await db.$transaction(async (tx) => {
+    const ids = targets.map((target) => target.id);
+    const claimed = await tx.socialPostTarget.updateMany({
+      where: {workspaceId: context.workspace.id, contentPostId: post.id, id: {in: ids}, status: "DRAFT"},
+      data: {status: "SCHEDULED", errorCode: null},
+    });
+    if (claimed.count !== targets.length) throw new Error("One or more targets changed. Refresh and try again.");
+    const updated = await tx.contentPost.updateMany({
+      where: {id: post.id, workspaceId: context.workspace.id, status: {in: ["DRAFT", "SCHEDULED"]}},
+      data: {status: "SCHEDULED", scheduledAt},
+    });
+    if (updated.count !== 1) throw new Error("The draft changed while it was being scheduled.");
+    await tx.activityLog.create({data: {
+      workspaceId: context.workspace.id, userId: context.userId,
+      action: "social_post.bulk_scheduled", entityType: "ContentPost", entityId: post.id,
+      metadata: {provider: "FACEBOOK", targetCount: targets.length, targetIds: ids, scheduledAt: scheduledAt.toISOString()},
+    }});
+  });
+  revalidatePath("/dashboard/social");
+}
+
 export async function publishFacebookDraft(formData: FormData) {
   const context = await requireWorkspaceRole("MEMBER");
   const targetId = String(formData.get("targetId") ?? "").trim();
@@ -457,10 +506,15 @@ export async function cancelFacebookSchedule(formData: FormData) {
       data:{status:"DRAFT",errorCode:null},
     });
     if (changed.count !== 1) throw new Error("This post started publishing. Refresh to see its latest status.");
-    await tx.contentPost.updateMany({
-      where:{id:target.contentPostId,workspaceId:context.workspace.id,status:"SCHEDULED"},
-      data:{status:"DRAFT",scheduledAt:null},
+    const stillScheduled = await tx.socialPostTarget.count({
+      where: {workspaceId: context.workspace.id, contentPostId: target.contentPostId, status: "SCHEDULED"},
     });
+    if (stillScheduled === 0) {
+      await tx.contentPost.updateMany({
+        where: {id: target.contentPostId, workspaceId: context.workspace.id, status: "SCHEDULED"},
+        data: {status: "DRAFT", scheduledAt: null},
+      });
+    }
     await tx.activityLog.create({data:{
       workspaceId:context.workspace.id,userId:context.userId,action:"social_post.schedule_cancelled",
       entityType:"ContentPost",entityId:target.contentPostId,metadata:{provider:"FACEBOOK",targetId:target.id},
