@@ -33,7 +33,7 @@ export async function POST(req: Request) {
     60 * 60,
   );
 
-  if (!limit.configured && process.env.NODE_ENV === "production") {
+  if (limit.unavailable || (!limit.configured && process.env.NODE_ENV === "production")) {
     return rateLimitUnavailableResponse();
   }
   if (!limit.allowed) {
