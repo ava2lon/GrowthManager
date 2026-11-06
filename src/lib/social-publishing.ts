@@ -73,7 +73,13 @@ export async function publishFacebookTarget(input:{targetId:string;workspaceId:s
   return {status:finalStatus,errorCode:errorCode??undefined};
 
   async function failBeforeClaim(code:string):Promise<PublishResult>{
-    await db.socialPostTarget.updateMany({where:{id:input.targetId,workspaceId:input.workspaceId,status:{in:allowed}},data:{status:"FAILED",errorCode:code}});
+    await db.$transaction(async tx=>{
+      const changed=await tx.socialPostTarget.updateMany({where:{id:input.targetId,workspaceId:input.workspaceId,status:{in:allowed}},data:{status:"FAILED",errorCode:code}});
+      if(changed.count){
+        const failedTarget=await tx.socialPostTarget.findFirst({where:{id:input.targetId,workspaceId:input.workspaceId},select:{contentPostId:true}});
+        if(failedTarget) await tx.contentPost.updateMany({where:{id:failedTarget.contentPostId,workspaceId:input.workspaceId},data:{status:"FAILED"}});
+      }
+    });
     return {status:"FAILED",errorCode:code};
   }
 }
