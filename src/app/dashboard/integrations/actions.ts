@@ -11,6 +11,9 @@ export async function addIntegration(formData: FormData) {
   const providerId = String(formData.get("providerId") ?? "");
   const provider = getIntegrationProvider(providerId);
   if (!provider) throw new Error("Unsupported integration provider.");
+  if (provider.id !== "resend") {
+    throw new Error("This provider connection flow is not available yet.");
+  }
 
   await db.$transaction(async (tx) => {
     const existing = await tx.integration.findUnique({
