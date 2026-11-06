@@ -127,6 +127,7 @@ model Brand {
   posts          ContentPost[]
   campaigns      Campaign[]
   mediaAssets    MediaAsset[]
+  postAttachments ContentPostMedia[]
   @@unique([workspaceId, id])
   @@index([workspaceId, status])
 }
@@ -169,6 +170,7 @@ model ContentPost {
   updatedAt   DateTime   @updatedAt
   brand       Brand      @relation(fields: [workspaceId, brandId], references: [workspaceId, id], onDelete: Cascade)
   publishTargets SocialPostTarget[]
+  mediaAssets ContentPostMedia[]
   @@unique([workspaceId, id])
   @@index([workspaceId, brandId, status, scheduledAt])
 }
@@ -238,6 +240,20 @@ model MediaAsset {
   @@unique([workspaceId, objectPath])
   @@index([workspaceId, status, createdAt])
   @@index([workspaceId, brandId, createdAt])
+}
+
+model ContentPostMedia {
+  id            String      @id @default(cuid())
+  workspaceId   String
+  contentPostId String
+  mediaAssetId  String
+  position      Int         @default(0)
+  createdAt     DateTime    @default(now())
+  contentPost   ContentPost @relation(fields: [workspaceId, contentPostId], references: [workspaceId, id], onDelete: Cascade)
+  mediaAsset    MediaAsset  @relation(fields: [workspaceId, mediaAssetId], references: [workspaceId, id], onDelete: Cascade)
+  @@unique([workspaceId, contentPostId, mediaAssetId])
+  @@unique([workspaceId, contentPostId, position])
+  @@index([workspaceId, mediaAssetId])
 }
 
 model Campaign {
