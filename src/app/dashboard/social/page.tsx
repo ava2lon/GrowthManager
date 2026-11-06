@@ -11,7 +11,7 @@ const capabilityLabels: Record<string,string> = {
 
 export default async function SocialPage({searchParams}:{searchParams:Promise<{month?:string}>}) {
   const params=await searchParams;
-  const requestedMonth=typeof params.month==="string"&&/^\\d{4}-\\d{2}$/.test(params.month)?params.month:new Date().toISOString().slice(0,7);
+  const requestedMonth=typeof params.month==="string"&&/^\d{4}-\d{2}$/.test(params.month)?params.month:new Date().toISOString().slice(0,7);
   const monthDate=new Date(requestedMonth+"-01T00:00:00Z");
   const monthStart=new Date(Date.UTC(monthDate.getUTCFullYear(),monthDate.getUTCMonth(),1));
   const gridStart=new Date(monthStart.getTime()-((monthStart.getUTCDay()+6)%7)*86400000);
