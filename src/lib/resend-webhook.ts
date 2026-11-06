@@ -12,7 +12,7 @@ export function verifyResendWebhookSignature(
   signingSecret: string,
   nowSeconds = Math.floor(Date.now() / 1000),
 ): boolean {
-  if (!/^whsec_[A-Za-z0-9_-]+$/.test(signingSecret)) return false;
+  if (!/^whsec_[A-Za-z0-9_+/=-]+$/.test(signingSecret)) return false;
   const id = headers.id ?? "";
   const timestamp = headers.timestamp ?? "";
   const signature = headers.signature ?? "";
