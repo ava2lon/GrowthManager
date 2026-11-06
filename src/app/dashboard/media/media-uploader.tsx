@@ -1,0 +1,66 @@
+"use client";
+
+import {useRef,useState} from "react";
+import {useRouter} from "next/navigation";
+
+type BrandOption={id:string;name:string};
+
+export function MediaUploader({brands}:{brands:BrandOption[]}) {
+  const router=useRouter();
+  const inputRef=useRef<HTMLInputElement>(null);
+  const [brandId,setBrandId]=useState("");
+  const [busy,setBusy]=useState(false);
+  const [message,setMessage]=useState("");
+  const [error,setError]=useState("");
+
+  async function upload(file?:File) {
+    if(!file||busy)return;
+    setBusy(true);setMessage("");setError("");
+    try {
+      const init=await fetch("/api/media/upload",{
+        method:"POST",headers:{"Content-Type":"application/json"},
+        body:JSON.stringify({fileName:file.name,mimeType:file.type,sizeBytes:file.size,brandId:brandId||null}),
+      });
+      const initBody=await init.json().catch(()=>null);
+      if(!init.ok||!initBody?.uploadUrl||!initBody?.assetId)throw new Error(initBody?.error||"Could not initialize upload.");
+      const uploaded=await fetch(initBody.uploadUrl,{
+        method:initBody.method||"POST",
+        headers:initBody.headers||{"Content-Type":file.type},
+        body:file,
+      });
+      if(!uploaded.ok)throw new Error("Storage rejected the upload. Check the file format and size, then retry.");
+      const complete=await fetch("/api/media/complete",{
+        method:"POST",headers:{"Content-Type":"application/json"},
+        body:JSON.stringify({assetId:initBody.assetId}),
+      });
+      const completeBody=await complete.json().catch(()=>null);
+      if(!complete.ok)throw new Error(completeBody?.error||"Upload verification failed.");
+      setMessage(file.name+" uploaded and verified.");
+      router.refresh();
+    } catch(cause) {
+      setError(cause instanceof Error?cause.message:"Upload failed.");
+    } finally {
+      setBusy(false);
+      if(inputRef.current)inputRef.current.value="";
+    }
+  }
+
+  return (
+    <section className="rounded-2xl border border-slate-200 bg-white p-5 sm:p-6">
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+        <div><h2 className="font-semibold text-slate-900">Upload media</h2><p className="mt-1 text-sm text-slate-500">Images up to 20 MB and videos up to 100 MB. JPEG, PNG, WebP, MP4, and MOV.</p></div>
+        <div className="flex flex-col gap-2 sm:min-w-64">
+          <label htmlFor="media-brand" className="text-xs font-medium text-slate-600">Assign to brand (optional)</label>
+          <select id="media-brand" value={brandId} onChange={(event)=>setBrandId(event.target.value)} className="rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm">
+            <option value="">Workspace media</option>
+            {brands.map((brand)=><option key={brand.id} value={brand.id}>{brand.name}</option>)}
+          </select>
+        </div>
+      </div>
+      <input ref={inputRef} type="file" accept="image/jpeg,image/png,image/webp,video/mp4,video/quicktime" className="mt-5 block w-full cursor-pointer rounded-xl border border-dashed border-slate-300 bg-slate-50 p-4 text-sm file:mr-4 file:rounded-lg file:border-0 file:bg-indigo-600 file:px-4 file:py-2 file:text-sm file:font-semibold file:text-white" disabled={busy} onChange={(event)=>void upload(event.target.files?.[0])}/>
+      {busy&&<p role="status" className="mt-3 text-sm text-indigo-700">Uploading and verifying media…</p>}
+      {message&&<p role="status" className="mt-3 text-sm text-emerald-700">{message}</p>}
+      {error&&<p role="alert" className="mt-3 text-sm text-rose-700">{error}</p>}
+    </section>
+  );
+}
