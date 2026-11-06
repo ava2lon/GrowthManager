@@ -132,7 +132,7 @@ export async function configureResendIntegration(formData: FormData) {
   await db.$transaction(async (tx) => {
     const changed = await tx.integration.updateMany({
       where: {id: integration.id, workspaceId: context.workspace.id, status: integration.status},
-      data: {credentialsEncrypted: encrypted, status: "CONNECTED"},
+      data: {credentialsEncrypted: encrypted, status: "CONNECTED", lastValidatedAt: new Date(), lastErrorAt: null, lastErrorCode: null},
     });
     if (changed.count !== 1) throw new Error("Integration changed concurrently. Refresh and retry.");
     await tx.activityLog.create({
@@ -143,6 +143,122 @@ export async function configureResendIntegration(formData: FormData) {
         entityType: "integration",
         entityId: integration.id,
         metadata: {provider: "resend", validation: "success"},
+      },
+    });
+  });
+  revalidatePath("/dashboard/integrations");
+}
+
+
+export async function checkResendIntegrationHealth(formData: FormData) {
+  const context = await requireWorkspaceRole("ADMIN");
+  const integrationId = String(formData.get("integrationId") ?? "");
+  if (!integrationId || integrationId.length > 128) throw new Error("Invalid integration.");
+
+  const rateLimit = await consumeRateLimit(
+    "resend-health:" + context.workspace.id + ":" + context.userId,
+    20,
+    3600,
+  );
+  if (!rateLimit.allowed || (process.env.NODE_ENV === "production" && !rateLimit.configured)) {
+    throw new Error("Health-check limit reached or connection protection is unavailable.");
+  }
+
+  const integration = await db.integration.findFirst({
+    where: {id: integrationId, workspaceId: context.workspace.id, provider: "resend"},
+    select: {id: true, status: true, credentialsEncrypted: true},
+  });
+  if (!integration) throw new Error("Resend integration not found in the active workspace.");
+
+  const recordFailure = async (code: "MISSING_CREDENTIALS" | "AUTH_FAILED" | "PROVIDER_UNAVAILABLE") => {
+    await db.$transaction(async (tx) => {
+      const changed = await tx.integration.updateMany({
+        where: {
+          id: integration.id,
+          workspaceId: context.workspace.id,
+          status: integration.status,
+          credentialsEncrypted: integration.credentialsEncrypted,
+        },
+        data: {status: "ERROR", lastErrorAt: new Date(), lastErrorCode: code},
+      });
+      if (changed.count !== 1) throw new Error("Integration changed concurrently. Refresh and retry.");
+      await tx.activityLog.create({
+        data: {
+          workspaceId: context.workspace.id,
+          userId: context.userId,
+          action: "integration.health_check_failed",
+          entityType: "integration",
+          entityId: integration.id,
+          metadata: {provider: "resend", errorCode: code},
+        },
+      });
+    });
+    revalidatePath("/dashboard/integrations");
+  };
+
+  if (!integration.credentialsEncrypted) {
+    await recordFailure("MISSING_CREDENTIALS");
+    throw new Error("No saved Resend credentials. Reconnect the integration.");
+  }
+
+  let apiKey: string;
+  try {
+    const {decryptIntegrationCredentials} = await import("@/lib/integration-crypto");
+    const credentials = decryptIntegrationCredentials(
+      integration.credentialsEncrypted,
+      context.workspace.id,
+      integration.id,
+    );
+    if (typeof credentials.apiKey !== "string" || credentials.apiKey.length < 20) {
+      await recordFailure("MISSING_CREDENTIALS");
+      throw new Error("Saved Resend credentials are incomplete. Reconnect the integration.");
+    }
+    apiKey = credentials.apiKey;
+  } catch (error) {
+    if (error instanceof Error && error.message.includes("Saved Resend credentials")) throw error;
+    throw new Error("Could not decrypt saved credentials. Check the integration encryption key configuration.");
+  }
+
+  let response: Response;
+  try {
+    response = await fetch("https://api.resend.com/domains", {
+      method: "GET",
+      headers: {Authorization: "Bearer " + apiKey, Accept: "application/json"},
+      cache: "no-store",
+      redirect: "error",
+      signal: AbortSignal.timeout(10000),
+    });
+  } catch {
+    await recordFailure("PROVIDER_UNAVAILABLE");
+    throw new Error("Resend could not be reached. The health check was recorded.");
+  }
+
+  if (!response.ok) {
+    await recordFailure(response.status === 401 || response.status === 403 ? "AUTH_FAILED" : "PROVIDER_UNAVAILABLE");
+    throw new Error(response.status === 401 || response.status === 403
+      ? "Resend rejected the saved API key. Reconnect with a valid key."
+      : "Resend returned an unsuccessful response. Retry the health check later.");
+  }
+
+  await db.$transaction(async (tx) => {
+    const changed = await tx.integration.updateMany({
+      where: {
+        id: integration.id,
+        workspaceId: context.workspace.id,
+        status: integration.status,
+        credentialsEncrypted: integration.credentialsEncrypted,
+      },
+      data: {status: "CONNECTED", lastValidatedAt: new Date(), lastErrorAt: null, lastErrorCode: null},
+    });
+    if (changed.count !== 1) throw new Error("Integration changed concurrently. Refresh and retry.");
+    await tx.activityLog.create({
+      data: {
+        workspaceId: context.workspace.id,
+        userId: context.userId,
+        action: "integration.health_check_succeeded",
+        entityType: "integration",
+        entityId: integration.id,
+        metadata: {provider: "resend"},
       },
     });
   });
