@@ -11,7 +11,7 @@ export async function addIntegration(formData: FormData) {
   const providerId = String(formData.get("providerId") ?? "");
   const provider = getIntegrationProvider(providerId);
   if (!provider) throw new Error("Unsupported integration provider.");
-  if (provider.id !== "resend") {
+  if (provider.id !== "resend" && provider.id !== "n8n") {
     throw new Error("This provider connection flow is not available yet.");
   }
 
@@ -267,6 +267,157 @@ export async function checkResendIntegrationHealth(formData: FormData) {
         entityType: "integration",
         entityId: integration.id,
         metadata: {provider: "resend"},
+      },
+    });
+  });
+  revalidatePath("/dashboard/integrations");
+}
+
+
+export async function configureN8nIntegration(formData: FormData) {
+  const context = await requireWorkspaceRole("ADMIN");
+  const integrationId = String(formData.get("integrationId") ?? "");
+  const baseUrlInput = String(formData.get("baseUrl") ?? "").trim();
+  const apiKey = String(formData.get("apiKey") ?? "").trim();
+
+  if (!integrationId || integrationId.length > 128 || apiKey.length < 16 || apiKey.length > 512) {
+    throw new Error("Enter a valid n8n API key and integration.");
+  }
+
+  const rateLimit = await consumeRateLimit("n8n-configure:" + context.workspace.id + ":" + context.userId, 5, 3600);
+  if (!rateLimit.allowed || (process.env.NODE_ENV === "production" && !rateLimit.configured)) {
+    throw new Error("Too many attempts or connection protection is unavailable. Try again later.");
+  }
+
+  const integration = await db.integration.findFirst({
+    where: {id: integrationId, workspaceId: context.workspace.id, provider: "n8n"},
+    select: {id: true, status: true},
+  });
+  if (!integration || !["PENDING_SETUP", "ERROR", "CONNECTED"].includes(integration.status)) {
+    throw new Error("n8n integration is not available for setup.");
+  }
+
+  const {validateN8nConnection, normalizeN8nBaseUrl} = await import("@/lib/n8n-client");
+  const baseUrl = normalizeN8nBaseUrl(baseUrlInput);
+  try {
+    await validateN8nConnection(baseUrl, apiKey);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "";
+    throw new Error(message === "N8N_AUTH_FAILED"
+      ? "n8n rejected this API key. Check the key and its workflow:list permission."
+      : message === "N8N_HOST_NOT_ALLOWED"
+        ? "This n8n host is not approved. Use an n8n Cloud host or ask the platform administrator to allowlist your self-hosted hostname."
+        : "Could not validate the n8n connection. Check the URL, API availability, and TLS configuration.");
+  }
+
+  const {encryptIntegrationCredentials} = await import("@/lib/integration-crypto");
+  const encrypted = encryptIntegrationCredentials({baseUrl, apiKey}, context.workspace.id, integration.id);
+  await db.$transaction(async (tx) => {
+    const changed = await tx.integration.updateMany({
+      where: {id: integration.id, workspaceId: context.workspace.id, status: integration.status},
+      data: {credentialsEncrypted: encrypted, status: "CONNECTED", lastValidatedAt: new Date(), lastErrorAt: null, lastErrorCode: null},
+    });
+    if (changed.count !== 1) throw new Error("Integration changed concurrently. Refresh and retry.");
+    await tx.activityLog.create({
+      data: {
+        workspaceId: context.workspace.id,
+        userId: context.userId,
+        action: "integration.credentials_validated",
+        entityType: "integration",
+        entityId: integration.id,
+        metadata: {provider: "n8n", validation: "success"},
+      },
+    });
+  });
+  revalidatePath("/dashboard/integrations");
+}
+
+export async function checkN8nIntegrationHealth(formData: FormData) {
+  const context = await requireWorkspaceRole("ADMIN");
+  const integrationId = String(formData.get("integrationId") ?? "");
+  if (!integrationId || integrationId.length > 128) throw new Error("Invalid integration.");
+
+  const rateLimit = await consumeRateLimit("n8n-health:" + context.workspace.id + ":" + context.userId, 20, 3600);
+  if (!rateLimit.allowed || (process.env.NODE_ENV === "production" && !rateLimit.configured)) {
+    throw new Error("Health-check limit reached or connection protection is unavailable.");
+  }
+
+  const integration = await db.integration.findFirst({
+    where: {id: integrationId, workspaceId: context.workspace.id, provider: "n8n"},
+    select: {id: true, status: true, credentialsEncrypted: true},
+  });
+  if (!integration) throw new Error("n8n integration not found in the active workspace.");
+
+  const recordFailure = async (code: "MISSING_CREDENTIALS" | "AUTH_FAILED" | "PROVIDER_UNAVAILABLE" | "HOST_NOT_ALLOWED" | "CREDENTIAL_DECRYPTION_FAILED") => {
+    await db.$transaction(async (tx) => {
+      const changed = await tx.integration.updateMany({
+        where: {id: integration.id, workspaceId: context.workspace.id, status: integration.status, credentialsEncrypted: integration.credentialsEncrypted},
+        data: {status: "ERROR", lastErrorAt: new Date(), lastErrorCode: code},
+      });
+      if (changed.count !== 1) throw new Error("Integration changed concurrently. Refresh and retry.");
+      await tx.activityLog.create({
+        data: {
+          workspaceId: context.workspace.id,
+          userId: context.userId,
+          action: "integration.health_check_failed",
+          entityType: "integration",
+          entityId: integration.id,
+          metadata: {provider: "n8n", errorCode: code},
+        },
+      });
+    });
+    revalidatePath("/dashboard/integrations");
+  };
+
+  if (!integration.credentialsEncrypted) {
+    await recordFailure("MISSING_CREDENTIALS");
+    throw new Error("No saved n8n credentials. Reconnect the integration.");
+  }
+
+  let credentials: Record<string, unknown>;
+  try {
+    const {decryptIntegrationCredentials} = await import("@/lib/integration-crypto");
+    credentials = decryptIntegrationCredentials(integration.credentialsEncrypted, context.workspace.id, integration.id);
+  } catch {
+    await recordFailure("CREDENTIAL_DECRYPTION_FAILED");
+    throw new Error("Could not decrypt saved n8n credentials. Check the integration encryption key configuration.");
+  }
+
+  if (typeof credentials.baseUrl !== "string" || typeof credentials.apiKey !== "string") {
+    await recordFailure("MISSING_CREDENTIALS");
+    throw new Error("Saved n8n credentials are incomplete. Reconnect the integration.");
+  }
+
+  try {
+    const {validateN8nConnection} = await import("@/lib/n8n-client");
+    await validateN8nConnection(credentials.baseUrl, credentials.apiKey);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "";
+    const code = message === "N8N_AUTH_FAILED" ? "AUTH_FAILED"
+      : message === "N8N_HOST_NOT_ALLOWED" ? "HOST_NOT_ALLOWED"
+      : "PROVIDER_UNAVAILABLE";
+    await recordFailure(code);
+    throw new Error(code === "AUTH_FAILED"
+      ? "n8n rejected the saved API key. Reconnect with a valid key."
+      : code === "HOST_NOT_ALLOWED"
+        ? "The saved n8n hostname is no longer allowlisted. Contact the platform administrator."
+        : "n8n could not be reached. The health check was recorded.");
+  }
+
+  await db.$transaction(async (tx) => {
+    const changed = await tx.integration.updateMany({
+      where: {id: integration.id, workspaceId: context.workspace.id, status: integration.status, credentialsEncrypted: integration.credentialsEncrypted},
+      data: {status: "CONNECTED", lastValidatedAt: new Date(), lastErrorAt: null, lastErrorCode: null},
+    });
+    if (changed.count !== 1) throw new Error("Integration changed concurrently. Refresh and retry.");
+    await tx.activityLog.create({
+      data: {
+        workspaceId: context.workspace.id,
+        userId: context.userId,
+        action: "integration.health_check_succeeded",
+        entityType: "integration",
+        entityId: integration.id,
+        metadata: {provider: "n8n"},
       },
     });
   });
