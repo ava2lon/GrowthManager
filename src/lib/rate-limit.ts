@@ -4,6 +4,7 @@ type RateLimitResult = {
   allowed: boolean;
   retryAfter: number;
   configured: boolean;
+  unavailable?: boolean;
 };
 
 const incrementScript = [
@@ -79,7 +80,7 @@ export async function consumeRateLimit(
     };
   } catch (error) {
     console.error("Rate-limit check failed.", error);
-    return {allowed: false, retryAfter: 60, configured: true};
+    return {allowed: false, retryAfter: 60, configured: true, unavailable: true};
   }
 }
 
