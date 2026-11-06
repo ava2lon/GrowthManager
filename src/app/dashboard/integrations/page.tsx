@@ -102,12 +102,15 @@ export default async function IntegrationsPage({searchParams}: {searchParams: Pr
           }
         } else {
           n8nWorkflowState = {kind: "unavailable"};
+          n8nExecutions = {kind: "unavailable"};
         }
       } catch {
         n8nWorkflowState = {kind: "unavailable"};
+          n8nExecutions = {kind: "unavailable"};
       }
     } else {
       n8nWorkflowState = {kind: "unavailable"};
+          n8nExecutions = {kind: "unavailable"};
     }
   }
 
