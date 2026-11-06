@@ -20,7 +20,7 @@ Set DATABASE_URL to a managed PostgreSQL connection string, AUTH_SECRET to a cry
 Workspace owners and administrators can invite teammates from `/dashboard/team`. Invitations use random 256-bit tokens; only SHA-256 token hashes are stored in PostgreSQL. Links expire after seven days, are single-use, and require an authenticated account whose normalized email matches the invitation. Owners can invite administrators; administrators can invite members and viewers. Configure `RESEND_API_KEY`, `RESEND_FROM_EMAIL` (a verified Resend sender), and `AUTH_URL` to enable invitation delivery. If email delivery fails, the invitation is revoked. Apply the `20261106170000_workspace_invitations` migration with `npm run db:deploy` after configuring the database.
 
 ## Security follow-ups
-Encrypt provider credentials at rest before enabling integrations. Registration and credentials login use Redis-backed rate limits. Configure both Upstash variables in every Vercel environment before enabling production sign-up or sign-in. Add email verification and abuse monitoring before public launch.
+Provider credentials are encrypted at rest using AES-256-GCM. Registration and credentials login use Redis-backed rate limits. Configure both Upstash variables in every Vercel environment before enabling production sign-up or sign-in. Add email verification and abuse monitoring before public launch.
 
 
 ### Workspace-scoped brand integrity
@@ -57,3 +57,25 @@ npm run test:integration
 
 The integration test guard rejects production mode and non-local database hosts. It creates uniquely named fixtures and deletes only those fixtures. Never point `DATABASE_URL_TEST` at the production GrowthManager database. These tests validate PostgreSQL constraints; they do not replace authorization tests for every server action.
 
+
+
+## Integration credential encryption
+
+The `Integration.credentialsEncrypted` column stores versioned AES-256-GCM envelopes, not plaintext JSON. Encryption uses a fresh 96-bit nonce per write and authenticates the workspace and integration IDs as additional authenticated data. The application refuses to encrypt or decrypt credentials when the key is missing or invalid.
+
+Generate a 32-byte key:
+
+```bash
+openssl rand -base64 32
+```
+
+Configure `INTEGRATION_ENCRYPTION_KEY` and a stable `INTEGRATION_ENCRYPTION_KEY_ID` in Vercel and local secret stores. Never commit a real key or send it through chat. The optional previous-key variables support staged rotation:
+
+1. Set the new key as `INTEGRATION_ENCRYPTION_KEY` with a new key ID.
+2. Set the old key as `INTEGRATION_ENCRYPTION_KEY_PREVIOUS` with its former ID.
+3. Run the owner-only `rotateWorkspaceIntegrationCredentials()` operation for each workspace.
+4. Verify all workspace credentials have been re-encrypted before removing the previous key.
+
+The migration `20261106190000_encrypt_integration_credentials` deliberately aborts if any existing integration row contains non-null plaintext credentials. Export and encrypt such values through a controlled migration process before retrying; do not bypass the guard or apply this migration to a database containing unreviewed credentials.
+
+Only workspace ADMIN/OWNER roles can save or read integration credentials; only OWNER can initiate workspace key rotation. All credential reads and writes include the active workspace ID in their database predicates. Never log decrypted credential objects.
