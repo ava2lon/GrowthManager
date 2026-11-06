@@ -6,6 +6,19 @@ import {signIn} from "next-auth/react";
 import {useRouter} from "next/navigation";
 import {BrandMark} from "@/components/brand-mark";
 
+function getSafeCallbackDestination(callbackUrl: string | null): string {
+  if (!callbackUrl) return "/dashboard";
+
+  try {
+    const destination = new URL(callbackUrl, window.location.origin);
+    if (destination.origin !== window.location.origin) return "/dashboard";
+    if (!destination.pathname.startsWith("/") || destination.pathname.startsWith("//")) return "/dashboard";
+    return `${destination.pathname}${destination.search}${destination.hash}`;
+  } catch {
+    return "/dashboard";
+  }
+}
+
 export default function SignInPage() {
   const router = useRouter();
   const [error, setError] = useState("");
@@ -31,10 +44,7 @@ export default function SignInPage() {
       }
 
       const callbackUrl = new URLSearchParams(window.location.search).get("callbackUrl");
-      const destination = callbackUrl && callbackUrl.startsWith("/") && !callbackUrl.startsWith("//")
-        ? callbackUrl
-        : "/dashboard";
-      router.push(destination);
+      router.push(getSafeCallbackDestination(callbackUrl));
       router.refresh();
     } catch {
       setError("Sign-in is temporarily unavailable. Check your connection and try again.");
