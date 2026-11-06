@@ -34,3 +34,8 @@ npm run db:deploy
 ```
 
 Do not use `prisma db push` for production schema changes. Review migration status and the target database before applying.
+
+
+### Invitation-based account registration
+
+Recipients who do not yet have a GrowthManager account can create one directly from `/invite/[token]`. Registration requires the exact invited email address, validates the invitation token and expiry, applies the normal password policy, and atomically claims the invitation, creates the user, creates the workspace membership with the invited role, and records the acceptance activity. It does not create a second workspace. Invitation registration is rate-limited by client IP and fails closed in production when the rate-limit store is unavailable. Existing users should sign in with the invited email and accept the invitation from the invitation page.
