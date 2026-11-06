@@ -37,7 +37,7 @@ jobs:
     env:
       DATABASE_URL: postgresql://postgres:postgres@localhost:5432/growthmanager_ci
       DIRECT_URL: postgresql://postgres:postgres@localhost:5432/growthmanager_ci
-      DATABASE_URL_TEST: postgresql://postgres:postgres@localhost:5432/growthmanager_ci
+      DATABASE_URL_TEST: postgresql://postgres:postgres@localhost:5432/growthmanager_test_ci
       AUTH_SECRET: ci-only-not-a-production-secret
       AUTH_URL: http://localhost:3000
       INTEGRATION_ENCRYPTION_KEY: AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=
@@ -73,6 +73,11 @@ jobs:
 
       - name: Apply migrations to disposable PostgreSQL
         run: npm run db:deploy
+
+      - name: Create disposable tenant-test database
+        run: createdb --host=localhost --username=postgres growthmanager_test_ci
+        env:
+          PGPASSWORD: postgres
 
       - name: PostgreSQL tenant-isolation tests
         run: npm run test:integration
