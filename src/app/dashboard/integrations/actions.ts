@@ -96,7 +96,7 @@ export async function configureResendIntegration(formData: FormData) {
   const fromEmail = String(formData.get("fromEmail") ?? "").trim().toLowerCase();
 
   if (!integrationId || integrationId.length > 128 || apiKey.length < 20 || apiKey.length > 200 ||
-      !/^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/.test(fromEmail) || fromEmail.length > 254) {
+      !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(fromEmail) || fromEmail.length > 254) {
     throw new Error("Enter a valid Resend API key and sender email address.");
   }
 
