@@ -7,11 +7,38 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
-enum WorkspaceRole { OWNER ADMIN MEMBER VIEWER }
-enum BrandStatus { ACTIVE ARCHIVED }
-enum SocialProvider { INSTAGRAM FACEBOOK LINKEDIN X TIKTOK YOUTUBE PINTEREST }
-enum PostStatus { DRAFT SCHEDULED PUBLISHING PUBLISHED FAILED }
-enum CampaignStatus { PLANNING ACTIVE PAUSED COMPLETED }
+enum WorkspaceRole {
+  OWNER
+  ADMIN
+  MEMBER
+  VIEWER
+}
+enum BrandStatus {
+  ACTIVE
+  ARCHIVED
+}
+enum SocialProvider {
+  INSTAGRAM
+  FACEBOOK
+  LINKEDIN
+  X
+  TIKTOK
+  YOUTUBE
+  PINTEREST
+}
+enum PostStatus {
+  DRAFT
+  SCHEDULED
+  PUBLISHING
+  PUBLISHED
+  FAILED
+}
+enum CampaignStatus {
+  PLANNING
+  ACTIVE
+  PAUSED
+  COMPLETED
+}
 
 model User {
   id           String                @id @default(cuid())
