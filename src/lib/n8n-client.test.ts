@@ -2,7 +2,7 @@ import {afterEach,describe,expect,it,vi} from "vitest";
 
 vi.mock("server-only", () => ({}));
 
-import {listN8nWorkflows,normalizeN8nBaseUrl,validateN8nConnection} from "./n8n-client";
+import {getN8nWorkflowDetail,listN8nWorkflows,normalizeN8nBaseUrl,validateN8nConnection} from "./n8n-client";
 
 afterEach(() => {
   vi.unstubAllGlobals();
@@ -188,5 +188,49 @@ describe("getN8nWorkflowDetail", () => {
       "n8n_test_api_key_123456",
       "wf_missing",
     )).rejects.toThrow("N8N_WORKFLOW_NOT_FOUND");
+  });
+});
+
+
+describe("getN8nWorkflowDetail", () => {
+  it("returns safe node summaries and excludes node parameters and credential metadata", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({
+      id: "wf_123", name: "Lead pipeline", active: true,
+      createdAt: "2026-10-01T10:00:00.000Z", updatedAt: "2026-11-01T10:00:00.000Z",
+      nodes: [
+        {name: "Webhook", type: "n8n-nodes-base.webhook", parameters: {path: "private-path"}, credentials: {httpBasicAuth: {id: "secret-id"}}},
+        {name: "CRM", type: "n8n-nodes-base.httpRequest", parameters: {url: "https://private.example"}},
+      ],
+      connections: {Webhook: {main: [[{node: "CRM", type: "main", index: 0}]]}},
+      pinData: {Webhook: [{json: {private: "data"}}]},
+    }), {status: 200, headers: {"content-type": "application/json"}}));
+    vi.stubGlobal("fetch", fetchMock);
+    const result = await getN8nWorkflowDetail("https://growth-team.app.n8n.cloud", "n8n_test_api_key_123456", "wf_123");
+    expect(result).toEqual({
+      id: "wf_123", name: "Lead pipeline", active: true,
+      createdAt: "2026-10-01T10:00:00.000Z", updatedAt: "2026-11-01T10:00:00.000Z",
+      nodeCount: 2,
+      nodes: [
+        {name: "Webhook", type: "n8n-nodes-base.webhook"},
+        {name: "CRM", type: "n8n-nodes-base.httpRequest"},
+      ],
+      connectionCount: 1,
+    });
+    const [url] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(url).toContain("/api/v1/workflows/wf_123?excludePinnedData=true");
+  });
+
+  it("rejects malformed workflow IDs before making a request", async () => {
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+    await expect(getN8nWorkflowDetail("https://growth-team.app.n8n.cloud", "n8n_test_api_key_123456", "../other"))
+      .rejects.toThrow("Invalid n8n workflow ID.");
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("sanitizes not-found responses", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response("private provider body", {status: 404})));
+    await expect(getN8nWorkflowDetail("https://growth-team.app.n8n.cloud", "n8n_test_api_key_123456", "wf_missing"))
+      .rejects.toThrow("N8N_WORKFLOW_NOT_FOUND");
   });
 });
