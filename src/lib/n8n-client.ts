@@ -427,8 +427,10 @@ export async function retryN8nExecution(
   }
   if (retryResponse.status === 401 || retryResponse.status === 403) throw new Error("N8N_AUTH_FAILED");
   if (retryResponse.status === 404) throw new Error("N8N_EXECUTION_NOT_FOUND");
-  if (retryResponse.status === 409) throw new Error("N8N_EXECUTION_NOT_RETRYABLE");
+  if (retryResponse.status === 400 || retryResponse.status === 409 || retryResponse.status === 422) throw new Error("N8N_EXECUTION_NOT_RETRYABLE");
   if (retryResponse.status === 429) throw new Error("N8N_PROVIDER_RATE_LIMITED");
+  // A server-side failure may occur after n8n has accepted the retry; treat it as ambiguous.
+  if (retryResponse.status >= 500) throw new Error("N8N_RETRY_OUTCOME_UNKNOWN");
   if (!retryResponse.ok) throw new Error("N8N_PROVIDER_UNAVAILABLE");
 
   let retryPayload: unknown;
