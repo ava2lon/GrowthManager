@@ -2,7 +2,7 @@ import {afterEach, describe, expect, it} from "vitest";
 import {
   decryptIntegrationCredentials,
   encryptIntegrationCredentials,
-} from "@/lib/integration-crypto";
+} from "./integration-crypto";
 
 const originalEnv = {
   key: process.env.INTEGRATION_ENCRYPTION_KEY,
