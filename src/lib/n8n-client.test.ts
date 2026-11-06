@@ -2,7 +2,7 @@ import {afterEach,describe,expect,it,vi} from "vitest";
 
 vi.mock("server-only", () => ({}));
 
-import {getN8nWorkflowDetail,listN8nWorkflows,normalizeN8nBaseUrl,setN8nWorkflowActive,validateN8nConnection} from "./n8n-client";
+import {getN8nWorkflowDetail,listN8nExecutions,listN8nWorkflows,normalizeN8nBaseUrl,retryN8nExecution,setN8nWorkflowActive,validateN8nConnection} from "./n8n-client";
 
 afterEach(() => {
   vi.unstubAllGlobals();
@@ -341,5 +341,63 @@ describe("listN8nExecutions", () => {
     await expect(listN8nExecutions("https://growth-team.app.n8n.cloud", "n8n_test_api_key_123456")).rejects.toThrow("N8N_PROVIDER_RATE_LIMITED");
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response("private", {status: 200})));
     await expect(listN8nExecutions("https://growth-team.app.n8n.cloud", "n8n_test_api_key_123456")).rejects.toThrow("N8N_PROVIDER_UNAVAILABLE");
+  });
+});
+
+
+describe("retryN8nExecution", () => {
+  it("checks failed status without execution data and retries the original workflow version", async () => {
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(new Response(JSON.stringify({
+        id: "123", workflowId: "wf_1", status: "error",
+        data: {resultData: {runData: {private: "must not be read"}}},
+      }), {status: 200, headers: {"content-type": "application/json"}}))
+      .mockResolvedValueOnce(new Response(JSON.stringify({
+        id: "124", retryOf: "123", workflowId: "wf_1", status: "success", data: {secret: true},
+      }), {status: 200, headers: {"content-type": "application/json"}}));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const result = await retryN8nExecution(
+      "https://growth-team.app.n8n.cloud",
+      "n8n_test_api_key_123456",
+      "123",
+    );
+
+    expect(result).toEqual({id: "124", retryOf: "123", workflowId: "wf_1", status: "success"});
+    const [getUrl, getOptions] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(getUrl).toBe("https://growth-team.app.n8n.cloud/api/v1/executions/123?includeData=false");
+    expect(getOptions.method).toBe("GET");
+    const [retryUrl, retryOptions] = fetchMock.mock.calls[1] as [string, RequestInit];
+    expect(retryUrl).toBe("https://growth-team.app.n8n.cloud/api/v1/executions/123/retry");
+    expect(retryOptions.method).toBe("POST");
+    expect(JSON.parse(String(retryOptions.body))).toEqual({loadWorkflow: false});
+    expect((retryOptions.headers as Record<string,string>)["X-N8N-API-KEY"]).toBe("n8n_test_api_key_123456");
+  });
+
+  it("rejects non-numeric IDs before making a request", async () => {
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+    await expect(retryN8nExecution("https://growth-team.app.n8n.cloud", "n8n_test_api_key_123456", "../123"))
+      .rejects.toThrow("Invalid n8n execution ID.");
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("refuses to retry successful executions", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({
+      id: "123", workflowId: "wf_1", status: "success",
+    }), {status: 200, headers: {"content-type": "application/json"}}));
+    vi.stubGlobal("fetch", fetchMock);
+    await expect(retryN8nExecution("https://growth-team.app.n8n.cloud", "n8n_test_api_key_123456", "123"))
+      .rejects.toThrow("N8N_EXECUTION_NOT_RETRYABLE");
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("rejects retry responses that do not reference the original execution", async () => {
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(new Response(JSON.stringify({id: "123", workflowId: "wf_1", status: "error"}), {status: 200}))
+      .mockResolvedValueOnce(new Response(JSON.stringify({id: "124", retryOf: "999", workflowId: "wf_1"}), {status: 200}));
+    vi.stubGlobal("fetch", fetchMock);
+    await expect(retryN8nExecution("https://growth-team.app.n8n.cloud", "n8n_test_api_key_123456", "123"))
+      .rejects.toThrow("N8N_RETRY_OUTCOME_UNKNOWN");
   });
 });
