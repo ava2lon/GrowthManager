@@ -3,6 +3,7 @@ import {notFound} from "next/navigation";
 import {auth} from "@/auth";
 import {db} from "@/lib/db";
 import {acceptWorkspaceInvitation} from "@/app/dashboard/team/invitation-actions";
+import {InvitationRegisterForm} from "@/components/invitation-register-form";
 
 export default async function InvitationPage({params}: {params: Promise<{token: string}>}) {
   const {token} = await params;
@@ -31,7 +32,7 @@ export default async function InvitationPage({params}: {params: Promise<{token: 
         <p className="mt-4 rounded-lg bg-slate-50 p-3 text-sm text-slate-600">Invitation sent to <strong>{invitation.email}</strong></p>
         {session && !emailMatches ? <div className="mt-5 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">You are signed in as {session.user?.email}. Sign out and sign in with the invited email address to accept.</div> : session && emailMatches ? (
           <form action={acceptWorkspaceInvitation} className="mt-6"><input type="hidden" name="token" value={token}/><button className="w-full rounded-lg bg-indigo-600 px-4 py-3 text-sm font-semibold text-white hover:bg-indigo-700">Accept invitation</button></form>
-        ) : <Link href={`/sign-in?callbackUrl=${encodeURIComponent(`/invite/${token}`)}`} className="mt-6 flex w-full justify-center rounded-lg bg-indigo-600 px-4 py-3 text-sm font-semibold text-white">Sign in to accept</Link>}
+        ) : <><p className="mt-5 text-sm text-slate-600">Create an account using this invited email address to join directly. No new workspace will be created.</p><InvitationRegisterForm token={token} email={invitation.email}/><p className="mt-4 text-center text-sm text-slate-500">Already have an account? <Link href={`/sign-in?callbackUrl=${encodeURIComponent(`/invite/${token}`)}`} className="font-semibold text-indigo-600">Sign in to accept</Link></p></>}
         <p className="mt-5 text-center text-xs text-slate-400">This invitation expires {invitation.expiresAt.toLocaleDateString()}.</p>
       </div>
     </main>
