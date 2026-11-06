@@ -167,7 +167,7 @@ export async function saveResendWebhookSecret(formData: FormData) {
   const context = await requireWorkspaceRole("ADMIN");
   const integrationId = String(formData.get("integrationId") ?? "");
   const webhookSecret = String(formData.get("webhookSecret") ?? "").trim();
-  if (!integrationId || integrationId.length > 128 || !/^whsec_[A-Za-z0-9_=-]{20,200}$/.test(webhookSecret)) {
+  if (!integrationId || integrationId.length > 128 || !/^whsec_[A-Za-z0-9_+/=-]{20,200}$/.test(webhookSecret)) {
     throw new Error("Enter a valid Resend webhook signing secret.");
   }
 
