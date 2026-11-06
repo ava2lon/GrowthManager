@@ -38,7 +38,7 @@ async function graph(path: string, params: Record<string, string>) {
   const url = new URL(`https://graph.facebook.com/${version}/${path.replace(/^\//, "")}`);
   for (const [key, value] of Object.entries(params)) url.searchParams.set(key, value);
   const response = await fetch(url, {cache: "no-store", signal: AbortSignal.timeout(12_000)});
-  const body = await response.json().catch(() => null) as {error?: {code?: number}; access_token?: string; data?: Array<{id?: string; name?: string; access_token?: string; instagram_business_account?: {id?: string; username?: string}; permission?: string; status?: string}> } | null;
+  const body = await response.json().catch(() => null) as {error?: {code?: number}; access_token?: string; expires_in?: number; data?: Array<{id?: string; name?: string; access_token?: string; instagram_business_account?: {id?: string; username?: string}; permission?: string; status?: string}> } | null;
   if (!response.ok || !body) throw new Error("META_PROVIDER_ERROR");
   return body;
 }
@@ -103,6 +103,9 @@ export async function GET(request: Request) {
       fb_exchange_token: shortToken.access_token,
     });
     if (typeof longToken.access_token !== "string") throw new Error("META_PROVIDER_ERROR");
+    const tokenExpiresAt = Number.isFinite(longToken.expires_in) && (longToken.expires_in ?? 0) > 0
+      ? new Date(Date.now() + (longToken.expires_in as number) * 1000)
+      : null;
 
     const permissions = await graph("me/permissions", {access_token:longToken.access_token});
     const grantedScopes = (permissions.data ?? []).filter((item) => item.status === "granted" && item.permission).map((item) => item.permission as string);
@@ -151,11 +154,11 @@ export async function GET(request: Request) {
             providerUserId:record.providerUserId,accountName:record.accountName,
             credentialsEncrypted:encrypted,status:"CONNECTED",
             scopes:grantedScopes,
-            connectedAt:new Date(),lastValidatedAt:new Date(),lastErrorCode:null,metadata:record.metadata,
+            connectedAt:new Date(),lastValidatedAt:new Date(),tokenExpiresAt,lastErrorCode:null,metadata:record.metadata,
           },
           update:{
             brandId:state.brandId,accountName:record.accountName,credentialsEncrypted:encrypted,
-            status:"CONNECTED",scopes:grantedScopes,connectedAt:new Date(),lastValidatedAt:new Date(),lastErrorCode:null,metadata:record.metadata,
+            status:"CONNECTED",scopes:grantedScopes,connectedAt:new Date(),lastValidatedAt:new Date(),tokenExpiresAt,lastErrorCode:null,metadata:record.metadata,
           },
         });
       }
