@@ -75,7 +75,7 @@ export async function POST(request: Request) {
 
   try {
     const response = await fetch(endpoint, {
-      method: "PUT",
+      method: "POST",
       headers: {...storageHeaders(storage.serviceKey), "Content-Type": "application/json"},
       body: JSON.stringify({upsert: false}),
       cache: "no-store",
@@ -120,7 +120,7 @@ export async function POST(request: Request) {
     return NextResponse.json({
       assetId: asset.id,
       uploadUrl: uploadUrl.toString(),
-      method: "POST",
+      method: "PUT",
       headers: {"Content-Type": String(body.mimeType), "x-upsert": "false"},
     }, {headers: {"Cache-Control": "no-store"}});
   } catch {
