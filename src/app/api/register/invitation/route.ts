@@ -1,4 +1,5 @@
 import {NextResponse} from "next/server";
+import {cookies} from "next/headers";
 import {hash} from "bcryptjs";
 import {createHash} from "node:crypto";
 import {z} from "zod";
@@ -37,7 +38,6 @@ export async function POST(req: Request) {
   }
 
   const email = parsed.data.email.trim().toLowerCase();
-  const passwordHash = await hash(parsed.data.password, 12);
   const invitation = await db.workspaceInvitation.findUnique({
     where: {tokenHash: hashToken(parsed.data.token)},
     select: {id: true, workspaceId: true, email: true, role: true, expiresAt: true, acceptedAt: true, revokedAt: true},
@@ -49,6 +49,10 @@ export async function POST(req: Request) {
   if (invitation.email !== email) {
     return NextResponse.json({error: "Use the email address that received this invitation."}, {status: 400});
   }
+
+  // Only spend bcrypt CPU after proving that the supplied invitation is valid
+  // and belongs to the submitted email address.
+  const passwordHash = await hash(parsed.data.password, 12);
 
   try {
     await db.$transaction(async (tx) => {
@@ -75,6 +79,15 @@ export async function POST(req: Request) {
           metadata: {email, registration: true},
         },
       });
+    });
+
+    const cookieStore = await cookies();
+    cookieStore.set("gm_active_workspace", invitation.workspaceId, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === "production",
+      sameSite: "lax",
+      path: "/",
+      maxAge: 60 * 60 * 24 * 30,
     });
 
     return NextResponse.json({ok: true}, {status: 201});
