@@ -136,3 +136,16 @@ Email delivery is available as an explicit workspace opt-in:
 - Manual evaluation dispatches a small batch immediately. The daily Cron also dispatches a bounded batch, so retries may wait until the next invocation on plans restricted to daily Cron schedules. The dashboard shows the latest 25 send records. A `SENT` status means Resend accepted the API request. To track subsequent outcomes, configure a Resend webhook targeting `/api/webhooks/resend`, subscribe to `email.sent`, `email.delivered`, `email.bounced`, `email.complained`, `email.delivery_delayed`, and `email.failed`, then save that webhook's `whsec_` signing secret in the Resend integration settings. Webhook signatures are verified against the raw request body with a five-minute replay window; provider event IDs are deduplicated, and only the matching tenant's delivery record can be updated. The dashboard then distinguishes accepted, delivered, delayed, bounced, complained, and failed states.
 
 Email notifications are transactional operational alerts, not marketing messages. Slack delivery is not implemented. Vercel does not automatically retry failed Cron invocations, so inspect Cron invocation logs and the aggregate failure response when diagnosing missed evaluations.
+
+
+## Media library and storage
+
+The media library at `/dashboard/media` stores workspace-scoped metadata in PostgreSQL and file bytes in a **private Supabase Storage bucket**. Browser uploads use short-lived signed upload URLs; the Supabase service-role key remains server-only. Upload initialization and completion are authenticated, workspace-scoped, rate-limited, and audited. The completion endpoint verifies the stored object's size and MIME type before marking the asset `READY`.
+
+When configuring storage:
+1. Create a **private** Supabase Storage bucket named `growthmanager-media` (or set `SUPABASE_MEDIA_BUCKET` to another valid bucket name).
+2. Set the bucket's maximum file size to at least 100 MB and restrict allowed MIME types to `image/jpeg`, `image/png`, `image/webp`, `video/mp4`, and `video/quicktime`.
+3. Add `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, and optionally `SUPABASE_MEDIA_BUCKET` to the server-side Vercel environment. Never use a `NEXT_PUBLIC_` prefix for the service-role key.
+4. Apply the committed Prisma migration `20261107110000_media_assets` only after the GrowthManager database target and connection variables have been confirmed.
+
+Application limits are 20 MB per image and 100 MB per video. Supported formats are JPEG, PNG, WebP, MP4, and MOV. Files are organized under a workspace-specific object prefix, and downloads are issued as five-minute signed URLs after membership and workspace ownership checks. The bucket must remain private; do not enable public object access.
