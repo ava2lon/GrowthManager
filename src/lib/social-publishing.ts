@@ -11,13 +11,14 @@ export async function publishFacebookTarget(input:{targetId:string;workspaceId:s
   const target=await db.socialPostTarget.findFirst({
     where:{id:input.targetId,workspaceId:input.workspaceId,provider:"FACEBOOK",status:{in:allowed}},
     include:{
-      contentPost:{select:{id:true,workspaceId:true,body:true,brandId:true}},
+      contentPost:{select:{id:true,workspaceId:true,body:true,brandId:true,mediaAssets:{select:{mediaAssetId:true}}}},
       socialAccount:{select:{id:true,workspaceId:true,brandId:true,provider:true,status:true,scopes:true,credentialsEncrypted:true,metadata:true}},
     },
   });
   if(!target||target.contentPost.workspaceId!==input.workspaceId||target.socialAccount.workspaceId!==input.workspaceId||
     target.contentPost.brandId!==target.socialAccount.brandId||target.socialAccount.status!=="CONNECTED"||
     !target.socialAccount.credentialsEncrypted)return {status:"SKIPPED"};
+  if(target.contentPost.mediaAssets.length>0)return failBeforeClaim("MEDIA_PUBLISHING_NOT_SUPPORTED");
   if(!target.socialAccount.scopes.includes("pages_manage_posts"))return failBeforeClaim("META_PERMISSION_DENIED");
   const metadata=target.socialAccount.metadata&&typeof target.socialAccount.metadata==="object"&&!Array.isArray(target.socialAccount.metadata)
     ?target.socialAccount.metadata as Record<string,unknown>:{};
