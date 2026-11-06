@@ -59,3 +59,9 @@ describe("validateN8nConnection", () => {
       .rejects.toThrow("N8N_AUTH_FAILED");
   });
 });
+
+  it("classifies provider rate limits", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response("rate limited", {status: 429})));
+    await expect(validateN8nConnection("https://growth-team.app.n8n.cloud", "n8n_test_api_key_123456"))
+      .rejects.toThrow("N8N_PROVIDER_RATE_LIMITED");
+  });
