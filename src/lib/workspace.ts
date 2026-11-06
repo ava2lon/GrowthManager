@@ -16,7 +16,7 @@ export async function requireWorkspaceContext() {
 
   if (!userId) redirect("/sign-in");
 
-  // Until workspace switching is implemented, use the user's oldest membership
+  // Until workspace switching is implemented, use the oldest membership
   // consistently across the dashboard and all workspace-scoped pages.
   const membership = await db.workspaceMembership.findFirst({
     where: {userId},
@@ -26,7 +26,7 @@ export async function requireWorkspaceContext() {
 
   if (!membership) redirect("/");
 
-  return {userId, membership, workspace: membership.workspace};
+  return {session, userId, membership, workspace: membership.workspace};
 }
 
 export async function requireWorkspaceRole(minimumRole: WorkspaceRole) {
