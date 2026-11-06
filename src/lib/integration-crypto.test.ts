@@ -57,7 +57,9 @@ describe("integration credential encryption", () => {
     configureCurrentKey();
     const encrypted = encryptIntegrationCredentials({token: "secret"}, "workspace-1", "integration-1");
     const parts = encrypted.split(".");
-    parts[4] = `${parts[4].slice(0, -1)}A`;
+    const ciphertext = Buffer.from(parts[4], "base64url");
+    ciphertext[0] ^= 1;
+    parts[4] = ciphertext.toString("base64url");
     expect(() => decryptIntegrationCredentials(parts.join("."), "workspace-1", "integration-1")).toThrow();
   });
 
