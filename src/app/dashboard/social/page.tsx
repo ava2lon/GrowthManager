@@ -18,14 +18,11 @@ export default async function SocialPage() {
     }),
     db.brand.findMany({where:{workspaceId:workspace.id,status:"ACTIVE"},orderBy:{name:"asc"},select:{id:true,name:true}}),
   ]);
-  const [drafts, targets] = await Promise.all([
-    db.contentPost.findMany({
-      where:{workspaceId:workspace.id,targets:{some:{provider:"FACEBOOK"}}},
+  const drafts = await db.contentPost.findMany({
+      where:{workspaceId:workspace.id,publishTargets:{some:{provider:"FACEBOOK"}}},
       orderBy:{createdAt:"desc"},take:25,
-      select:{id:true,body:true,status:true,createdAt:true,targets:{select:{id:true,status:true,errorCode:true,socialAccount:{select:{accountName:true}}}}},
-    }),
-    Promise.resolve(null),
-  ]);
+      select:{id:true,body:true,status:true,createdAt:true,publishTargets:{select:{id:true,status:true,errorCode:true,socialAccount:{select:{accountName:true}}}}},
+    });
   const facebookAccounts=accounts.filter((account)=>account.provider==="FACEBOOK"&&account.status==="CONNECTED");
   const brandNames = new Map(brands.map((brand)=>[brand.id,brand.name]));
   const connected = accounts.filter((account)=>account.status==="CONNECTED").length;
@@ -63,7 +60,7 @@ export default async function SocialPage() {
           <button type="submit" className="w-fit rounded-xl bg-indigo-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-indigo-700">Save draft</button>
         </form> : <p className="mt-3 text-sm text-slate-500">Connect a Facebook Page with publishing permission and assign it to an active brand to use the composer.</p>}
         <div className="mt-6 border-t border-slate-100 pt-4"><h3 className="text-sm font-semibold text-slate-900">Recent publishing activity</h3>
-          {drafts.length===0 ? <p className="mt-3 text-sm text-slate-500">No Facebook drafts or publishing activity yet.</p> : <div className="mt-3 divide-y divide-slate-100">{drafts.map((post)=><div key={post.id} className="py-3"><p className="whitespace-pre-wrap text-sm text-slate-800">{post.body}</p><div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-slate-500">{post.targets.map((target)=><span key={target.id} className="rounded-full bg-slate-100 px-2 py-1">{target.socialAccount.accountName}: {target.status}{target.errorCode?" · "+target.errorCode:""}</span>)}</div>{post.targets.some((target)=>target.status==="DRAFT")&&<div className="mt-2 flex flex-wrap gap-2">{post.targets.filter((target)=>target.status==="DRAFT").map((target)=><form key={target.id} action={publishFacebookDraft}><input type="hidden" name="targetId" value={target.id}/><button type="submit" className="rounded-lg border border-indigo-200 px-3 py-2 text-xs font-semibold text-indigo-700 hover:bg-indigo-50">Publish to {target.socialAccount.accountName}</button></form>)}</div>}<p className="mt-2 text-[11px] text-slate-400">{post.createdAt.toLocaleString()}</p></div>)}</div>}
+          {drafts.length===0 ? <p className="mt-3 text-sm text-slate-500">No Facebook drafts or publishing activity yet.</p> : <div className="mt-3 divide-y divide-slate-100">{drafts.map((post)=><div key={post.id} className="py-3"><p className="whitespace-pre-wrap text-sm text-slate-800">{post.body}</p><div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-slate-500">{post.publishTargets.map((target)=><span key={target.id} className="rounded-full bg-slate-100 px-2 py-1">{target.socialAccount.accountName}: {target.status}{target.errorCode?" · "+target.errorCode:""}</span>)}</div>{post.targets.some((target)=>target.status==="DRAFT")&&<div className="mt-2 flex flex-wrap gap-2">{post.targets.filter((target)=>target.status==="DRAFT").map((target)=><form key={target.id} action={publishFacebookDraft}><input type="hidden" name="targetId" value={target.id}/><button type="submit" className="rounded-lg border border-indigo-200 px-3 py-2 text-xs font-semibold text-indigo-700 hover:bg-indigo-50">Publish to {target.socialAccount.accountName}</button></form>)}</div>}<p className="mt-2 text-[11px] text-slate-400">{post.createdAt.toLocaleString()}</p></div>)}</div>}
         </div>
       </section>
 
