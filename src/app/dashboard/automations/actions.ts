@@ -117,7 +117,7 @@ export async function evaluateAutomationAlerts() {
       sampleSize: recent.length,
     });
   }
-  await dispatchAutomationAlertEmails();
+  await dispatchAutomationAlertEmails(5);
   await db.activityLog.create({
     data: {
       workspaceId: context.workspace.id,
