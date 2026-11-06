@@ -181,6 +181,7 @@ model Integration {
   workspace   Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
   automationAlertEvents AutomationAlertEvent[]
   automationAlertDeliveries AutomationAlertDelivery[]
+  resendWebhookEvents ResendWebhookEvent[]
   @@unique([workspaceId, provider])
   @@unique([workspaceId, id])
   @@index([workspaceId, status, updatedAt])
@@ -281,6 +282,7 @@ model AutomationAlertDelivery {
   nextAttemptAt     DateTime @default(now())
   lockedAt          DateTime?
   providerMessageId String?
+  lastProviderEventAt DateTime?
   lastErrorCode     String?
   sentAt            DateTime?
   createdAt         DateTime @default(now())
@@ -290,4 +292,18 @@ model AutomationAlertDelivery {
   @@unique([workspaceId, alertEventId, channel, recipient])
   @@index([status, nextAttemptAt])
   @@index([workspaceId, createdAt])
+  @@index([providerMessageId])
+}
+
+model ResendWebhookEvent {
+  id              String   @id @default(cuid())
+  workspaceId     String
+  integrationId   String
+  providerEventId String
+  eventType       String
+  receivedAt      DateTime @default(now())
+  processedAt     DateTime?
+  integration     Integration @relation(fields: [workspaceId, integrationId], references: [workspaceId, id], onDelete: Cascade)
+  @@unique([integrationId, providerEventId])
+  @@index([workspaceId, receivedAt])
 }
