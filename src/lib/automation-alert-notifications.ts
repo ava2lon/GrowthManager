@@ -76,7 +76,7 @@ export async function recordAutomationAlert(input: AlertInput): Promise<{created
 }
 
 function isRetryable(status: number): boolean {
-  return status === 429 || status >= 500;
+  return status === 408 || status === 429 || status >= 500;
 }
 
 /**
@@ -195,8 +195,9 @@ export async function dispatchAutomationAlertEmails(limit = 20): Promise<{
             if (!response.ok) {
               failureCode = response.status === 401 || response.status === 403
                 ? "RESEND_AUTH_FAILED"
-                : response.status === 429 ? "RESEND_RATE_LIMITED"
-                  : response.status >= 500 ? "RESEND_PROVIDER_ERROR" : "RESEND_REQUEST_REJECTED";
+                : response.status === 408 ? "RESEND_REQUEST_TIMEOUT"
+                  : response.status === 429 ? "RESEND_RATE_LIMITED"
+                    : response.status >= 500 ? "RESEND_PROVIDER_ERROR" : "RESEND_REQUEST_REJECTED";
               retryable = isRetryable(response.status);
             } else {
               let payload: unknown;
