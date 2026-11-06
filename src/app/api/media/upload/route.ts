@@ -75,7 +75,7 @@ export async function POST(request: Request) {
 
   try {
     const response = await fetch(endpoint, {
-      method: "POST",
+      method: "PUT",
       headers: {...storageHeaders(storage.serviceKey), "Content-Type": "application/json"},
       body: JSON.stringify({upsert: false}),
       cache: "no-store",
