@@ -127,6 +127,11 @@ export async function dispatchAutomationAlertEmails(limit = 20): Promise<{
     if (claim.count !== 1) continue;
     claimed += 1;
     const attempt = delivery.attempts + 1;
+    const attemptHistory = await db.automationAlertDeliveryAttempt.aggregate({
+      where: {workspaceId: delivery.workspaceId, deliveryId: delivery.id},
+      _max: {attemptNumber: true},
+    });
+    const attemptNumber = (attemptHistory._max.attemptNumber ?? 0) + 1;
 
     let failureCode: string | null = null;
     let retryable = false;
@@ -170,7 +175,7 @@ export async function dispatchAutomationAlertEmails(limit = 20): Promise<{
           ].join("");
           let response: Response;
           attemptRecordId = (await db.automationAlertDeliveryAttempt.create({
-            data: {workspaceId: delivery.workspaceId, deliveryId: delivery.id, attemptNumber: attempt, status: "STARTED"},
+            data: {workspaceId: delivery.workspaceId, deliveryId: delivery.id, attemptNumber, status: "STARTED"},
             select: {id: true},
           })).id;
           try {
