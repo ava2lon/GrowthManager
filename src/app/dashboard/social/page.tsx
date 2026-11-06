@@ -41,6 +41,15 @@ export default async function SocialPage() {
         )}
       </section>
 
+      <section className="rounded-2xl border border-indigo-100 bg-indigo-50/50 p-5 sm:p-6">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div><h2 className="font-semibold text-slate-900">Connect Meta accounts</h2><p className="mt-1 text-sm text-slate-600">Authorize Facebook Pages and linked Instagram Professional accounts using Meta OAuth. Only workspace administrators can start a connection.</p></div>
+          <span className="w-fit rounded-full bg-white px-3 py-1 text-xs font-semibold text-indigo-700">OAuth foundation</span>
+        </div>
+        {brands.length ? <div className="mt-4 flex flex-wrap gap-2">{brands.map((brand)=><a key={brand.id} href={`/api/integrations/meta/connect?brandId=${encodeURIComponent(brand.id)}`} className="inline-flex items-center rounded-xl bg-indigo-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-indigo-700">Connect for {brand.name}</a>)}</div> : <p className="mt-3 text-sm text-slate-500">Create an active brand before connecting social accounts.</p>}
+        <p className="mt-3 text-xs leading-5 text-slate-500">Requires META_APP_ID, META_APP_SECRET, META_REDIRECT_URI and META_GRAPH_API_VERSION. Configure the callback URL as /api/integrations/meta/callback in your Meta app. Meta app review and permission approval may be required.</p>
+      </section>
+
       <section>
         <div className="mb-4"><h2 className="font-semibold text-slate-900">Provider registry</h2><p className="mt-1 text-sm text-slate-500">Capabilities are provider- and permission-dependent. Publishing and analytics remain disabled until the corresponding official API access is approved and implemented.</p></div>
         <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
