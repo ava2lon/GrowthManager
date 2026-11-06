@@ -76,7 +76,7 @@ export async function checkSocialAccountHealth(formData: FormData) {
     where: {id: accountId, workspaceId: context.workspace.id},
     select: {
       id: true, provider: true, status: true, credentialsEncrypted: true,
-      metadata: true, accountName: true,
+      metadata: true, accountName: true, scopes: true,
     },
   });
   if (!account || !["FACEBOOK", "INSTAGRAM"].includes(account.provider)) {
@@ -110,7 +110,36 @@ export async function checkSocialAccountHealth(formData: FormData) {
   }
 
   let failureCode: string | null = null;
+  let grantedScopes = account.scopes;
+  const userAccessToken = credentials.userAccessToken;
+  if (typeof userAccessToken === "string") {
+    try {
+      const permissionUrl = new URL("https://graph.facebook.com/" + version + "/me/permissions");
+      permissionUrl.searchParams.set("access_token", userAccessToken);
+      const permissionResponse = await fetch(permissionUrl, {
+        cache: "no-store", redirect: "error", signal: AbortSignal.timeout(10000),
+      });
+      const permissionBody = await permissionResponse.json().catch(() => null) as {
+        data?: Array<{permission?: string; status?: string}>
+      } | null;
+      if (!permissionResponse.ok || !permissionBody?.data) failureCode = "PERMISSION_CHECK_FAILED";
+      else {
+        grantedScopes = permissionBody.data
+          .filter((item) => item.status === "granted" && typeof item.permission === "string")
+          .map((item) => item.permission as string);
+        const requiredScopes = ["pages_show_list", "pages_read_engagement"];
+        if (account.provider === "FACEBOOK") requiredScopes.push("pages_manage_posts");
+        if (account.provider === "INSTAGRAM") requiredScopes.push("instagram_basic", "instagram_content_publish", "instagram_manage_insights");
+        if (requiredScopes.some((scope) => !grantedScopes.includes(scope))) failureCode = "MISSING_PERMISSIONS";
+      }
+    } catch {
+      failureCode = "PERMISSION_CHECK_UNAVAILABLE";
+    }
+  } else {
+    failureCode = "USER_AUTHORIZATION_MISSING";
+  }
   try {
+    if (!failureCode) {
     const fields = account.provider === "INSTAGRAM" ? "id,username" : "id,name";
     const endpoint = new URL("https://graph.facebook.com/" + version + "/" + encodeURIComponent(graphId));
     endpoint.searchParams.set("fields", fields);
@@ -127,6 +156,7 @@ export async function checkSocialAccountHealth(formData: FormData) {
       const body = await response.json().catch(() => null) as {id?: string} | null;
       if (!body || body.id !== graphId) failureCode = "ACCOUNT_MISMATCH";
     }
+    }
   } catch {
     failureCode = "PROVIDER_UNAVAILABLE";
   }
@@ -139,8 +169,8 @@ export async function checkSocialAccountHealth(formData: FormData) {
         credentialsEncrypted: account.credentialsEncrypted,
       },
       data: failureCode
-        ? {status: "ERROR", lastValidatedAt: new Date(), lastErrorCode: failureCode}
-        : {status: "CONNECTED", lastValidatedAt: new Date(), lastErrorCode: null},
+        ? {status: "ERROR", scopes: grantedScopes, lastValidatedAt: new Date(), lastErrorCode: failureCode}
+        : {status: "CONNECTED", scopes: grantedScopes, lastValidatedAt: new Date(), lastErrorCode: null},
     });
     if (changed.count !== 1) throw new Error("Social account changed concurrently. Refresh and retry.");
     await tx.activityLog.create({
@@ -159,7 +189,11 @@ export async function checkSocialAccountHealth(formData: FormData) {
   if (failureCode) {
     throw new Error(failureCode === "AUTH_FAILED"
       ? "Meta rejected this account token. Reconnect the account."
-      : failureCode === "PROVIDER_RATE_LIMITED"
+      : failureCode === "MISSING_PERMISSIONS"
+        ? "One or more required Meta permissions are missing. Reconnect and approve the requested permissions."
+        : failureCode === "PERMISSION_CHECK_FAILED" || failureCode === "PERMISSION_CHECK_UNAVAILABLE" || failureCode === "USER_AUTHORIZATION_MISSING"
+          ? "Meta permission status could not be verified. Reconnect the account."
+          : failureCode === "PROVIDER_RATE_LIMITED"
         ? "Meta rate-limited the health check. Retry later."
         : failureCode === "PROVIDER_UNAVAILABLE"
           ? "Meta could not be reached. The failed health check was recorded."
