@@ -324,14 +324,6 @@ export async function refreshMetaAuthorization(formData: FormData) {
   revalidatePath("/dashboard/social");
 }
 
-"use server";
-
-import {randomUUID} from "node:crypto";
-import {revalidatePath} from "next/cache";
-import {requireWorkspaceRole} from "@/lib/workspace";
-import {db} from "@/lib/db";
-import {consumeRateLimit} from "@/lib/rate-limit";
-import {decryptIntegrationCredentials} from "@/lib/integration-crypto";
 
 async function enforcePublishLimit(workspaceId: string, userId: string) {
   const result = await consumeRateLimit("social-publish:"+workspaceId+":"+userId, 10, 3600);
@@ -380,7 +372,7 @@ export async function scheduleFacebookDraft(formData: FormData) {
   const context = await requireWorkspaceRole("MEMBER");
   const targetId = String(formData.get("targetId") ?? "").trim();
   const scheduledAtRaw = String(formData.get("scheduledAt") ?? "").trim();
-  if (!targetId || targetId.length > 128 || !/^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}$/.test(scheduledAtRaw)) {
+  if (!targetId || targetId.length > 128 || !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(scheduledAtRaw)) {
     throw new Error("Choose a valid UTC date and time.");
   }
   // The form explicitly labels the value UTC, avoiding server-local timezone ambiguity.
