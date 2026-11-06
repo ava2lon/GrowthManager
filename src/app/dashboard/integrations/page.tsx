@@ -4,7 +4,7 @@ import {db} from "@/lib/db";
 import {integrationProviders} from "@/lib/integration-providers";
 import {consumeRateLimit} from "@/lib/rate-limit";
 import {decryptIntegrationCredentials} from "@/lib/integration-crypto";
-import {listN8nWorkflows, type N8nWorkflowSummary} from "@/lib/n8n-client";
+import {getN8nWorkflowDetail, listN8nWorkflows, type N8nWorkflowDetail, type N8nWorkflowSummary} from "@/lib/n8n-client";
 import {
   addIntegration,
   checkN8nIntegrationHealth,
@@ -29,7 +29,7 @@ const statusStyles: Record<string,string> = {
   DISCONNECTED: "bg-slate-100 text-slate-600",
 };
 
-export default async function IntegrationsPage() {
+export default async function IntegrationsPage({searchParams}: {searchParams: Promise<{workflowId?: string}>}) {
   const context = await requireWorkspaceContext();
   const integrations = await db.integration.findMany({
     where: {workspaceId: context.workspace.id},
@@ -43,7 +43,7 @@ export default async function IntegrationsPage() {
     | {kind: "unavailable"}
     | {kind: "not-connected"} = {kind: "not-connected"};
 
-  const n8nIntegration = integrations.find((item) => item.provider === "n8n");
+  const {workflowId} = await searchParams;\n  let selectedWorkflow: N8nWorkflowDetail | null = null;\n  let selectedWorkflowUnavailable = false;\n  const n8nIntegration = integrations.find((item) => item.provider === "n8n");
   if (n8nIntegration?.status === "CONNECTED" && n8nIntegration.credentialsEncrypted) {
     const limit = await consumeRateLimit(
       "n8n-workflow-list:" + context.workspace.id + ":" + context.userId,
@@ -168,7 +168,7 @@ export default async function IntegrationsPage() {
                 {n8nWorkflowState.workflows.map((workflow) => (
                   <div key={workflow.id} className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-3 px-4 py-3">
                     <div className="min-w-0">
-                      <p className="truncate text-sm font-medium text-slate-800">{workflow.name}</p>
+                      <a href={"/dashboard/integrations?workflowId=" + encodeURIComponent(workflow.id) + "#n8n-workflows"} className="truncate text-sm font-medium text-indigo-700 hover:text-indigo-900 hover:underline">{workflow.name}</a>
                       <p className="mt-0.5 text-[11px] text-slate-400">
                         ID: {workflow.id}
                         {workflow.updatedAt ? " · Updated " + new Date(workflow.updatedAt).toLocaleString() : ""}
@@ -186,6 +186,41 @@ export default async function IntegrationsPage() {
               {n8nWorkflowState.hasMore ? " More workflows exist; this view is capped to protect page latency." : ""}
             </p>
           </>
+        )}
+        {selectedWorkflowUnavailable && (
+          <p className="mt-4 rounded-xl bg-amber-50 px-4 py-3 text-sm text-amber-800">Workflow details are unavailable. Check the API key permissions and retry.</p>
+        )}
+        {selectedWorkflow && (
+          <div className="mt-5 rounded-xl border border-indigo-100 bg-indigo-50/40 p-4">
+            <div className="flex flex-col justify-between gap-2 sm:flex-row sm:items-start">
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-wide text-indigo-700">Selected workflow</p>
+                <h3 className="mt-1 font-semibold text-slate-900">{selectedWorkflow.name}</h3>
+                <p className="mt-1 text-xs text-slate-500">ID: {selectedWorkflow.id}</p>
+              </div>
+              <span className={"w-fit rounded-full px-2.5 py-1 text-xs font-semibold " + (selectedWorkflow.active ? "bg-emerald-100 text-emerald-800" : "bg-slate-200 text-slate-700")}>
+                {selectedWorkflow.active ? "Active" : "Inactive"}
+              </span>
+            </div>
+            <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-4">
+              <div><p className="text-[11px] text-slate-500">Nodes</p><p className="text-lg font-semibold text-slate-900">{selectedWorkflow.nodeCount}</p></div>
+              <div><p className="text-[11px] text-slate-500">Connections</p><p className="text-lg font-semibold text-slate-900">{selectedWorkflow.connectionCount}</p></div>
+              <div><p className="text-[11px] text-slate-500">Created</p><p className="text-xs font-medium text-slate-800">{selectedWorkflow.createdAt ? new Date(selectedWorkflow.createdAt).toLocaleDateString() : "—"}</p></div>
+              <div><p className="text-[11px] text-slate-500">Updated</p><p className="text-xs font-medium text-slate-800">{selectedWorkflow.updatedAt ? new Date(selectedWorkflow.updatedAt).toLocaleDateString() : "—"}</p></div>
+            </div>
+            <div className="mt-4 border-t border-indigo-100 pt-3">
+              <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">Workflow nodes</p>
+              <ul className="grid gap-2 sm:grid-cols-2">
+                {selectedWorkflow.nodes.map((node, index) => (
+                  <li key={node.name + ":" + index} className="flex min-w-0 items-center justify-between gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2">
+                    <span className="truncate text-xs font-medium text-slate-800">{node.name}</span>
+                    <span className="shrink-0 truncate text-[10px] text-slate-400">{node.type}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+            <a href="/dashboard/integrations#n8n-workflows" className="mt-3 inline-block text-xs font-semibold text-indigo-700 hover:underline">Close workflow details</a>
+          </div>
         )}
       </section>
 
