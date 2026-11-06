@@ -21,6 +21,7 @@ export function N8nWorkflowStateControl({
         const action = active ? "unpublish and deactivate" : "publish and activate";
         if (!window.confirm("Are you sure you want to " + action + " this live workflow? This changes its production trigger behavior in n8n.")) {
           event.preventDefault();
+          return;
         }
         setPending(true);
       }}
