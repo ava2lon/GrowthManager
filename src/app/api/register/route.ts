@@ -1,0 +1,7 @@
+import {NextResponse} from "next/server";
+import {hash} from "bcryptjs";
+import {z} from "zod";
+import {db} from "@/lib/db";
+const schema=z.object({name:z.string().trim().min(2).max(80),email:z.email(),password:z.string().min(12).max(128),workspaceName:z.string().trim().min(2).max(80)});
+function slugify(v:string){return v.toLowerCase().normalize("NFKD").replace(/[\\u0300-\\u036f]/g,"").replace(/[^a-z0-9]+/g,"-").replace(/^-|-$/g,"").slice(0,48);}
+export async function POST(req:Request){const body=await req.json().catch(()=>null);const p=schema.safeParse(body);if(!p.success)return NextResponse.json({error:"Check the submitted fields. Passwords must be at least 12 characters."},{status:400});const email=p.data.email.toLowerCase().trim();if(await db.user.findUnique({where:{email},select:{id:true}}))return NextResponse.json({error:"An account with this email already exists."},{status:409});const slug=(slugify(p.data.workspaceName)||"workspace")+"-"+crypto.randomUUID().slice(0,8);const passwordHash=await hash(p.data.password,12);await db.$transaction(async tx=>{const user=await tx.user.create({data:{name:p.data.name,email,passwordHash}});const workspace=await tx.workspace.create({data:{name:p.data.workspaceName,slug}});await tx.workspaceMembership.create({data:{userId:user.id,workspaceId:workspace.id,role:"OWNER"}});await tx.activityLog.create({data:{workspaceId:workspace.id,userId:user.id,action:"workspace.created",entityType:"workspace"}});});return NextResponse.json({ok:true},{status:201});}
