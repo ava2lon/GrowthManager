@@ -429,7 +429,7 @@ export async function scheduleFacebookDraftTargets(formData: FormData) {
   const contentPostId = String(formData.get("contentPostId") ?? "").trim();
   const scheduledAtRaw = String(formData.get("scheduledAt") ?? "").trim();
   if (!contentPostId || contentPostId.length > 128 ||
-      !/^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}$/.test(scheduledAtRaw)) {
+      !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(scheduledAtRaw)) {
     throw new Error("Choose a valid UTC date and time.");
   }
   const scheduledAt = new Date(scheduledAtRaw + ":00Z");
