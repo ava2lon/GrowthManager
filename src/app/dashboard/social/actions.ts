@@ -421,3 +421,30 @@ export async function publishFacebookDraft(formData: FormData) {
       :"Meta rejected the post or its connection is not eligible. Review the Page and create a new draft if needed.");
   }
 }
+
+export async function cancelFacebookSchedule(formData: FormData) {
+  const context = await requireWorkspaceRole("MEMBER");
+  const targetId = String(formData.get("targetId") ?? "").trim();
+  if (!targetId || targetId.length > 128) throw new Error("Invalid publishing target.");
+  await db.$transaction(async tx => {
+    const target = await tx.socialPostTarget.findFirst({
+      where:{id:targetId,workspaceId:context.workspace.id,provider:"FACEBOOK",status:"SCHEDULED"},
+      select:{id:true,contentPostId:true},
+    });
+    if (!target) throw new Error("This scheduled post is already processing or no longer available.");
+    const changed = await tx.socialPostTarget.updateMany({
+      where:{id:target.id,workspaceId:context.workspace.id,status:"SCHEDULED"},
+      data:{status:"DRAFT",errorCode:null},
+    });
+    if (changed.count !== 1) throw new Error("This post started publishing. Refresh to see its latest status.");
+    await tx.contentPost.updateMany({
+      where:{id:target.contentPostId,workspaceId:context.workspace.id,status:"SCHEDULED"},
+      data:{status:"DRAFT",scheduledAt:null},
+    });
+    await tx.activityLog.create({data:{
+      workspaceId:context.workspace.id,userId:context.userId,action:"social_post.schedule_cancelled",
+      entityType:"ContentPost",entityId:target.contentPostId,metadata:{provider:"FACEBOOK",targetId:target.id},
+    }});
+  });
+  revalidatePath("/dashboard/social");
+}
