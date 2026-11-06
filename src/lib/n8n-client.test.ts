@@ -2,7 +2,7 @@ import {afterEach,describe,expect,it,vi} from "vitest";
 
 vi.mock("server-only", () => ({}));
 
-import {getN8nWorkflowDetail,listN8nWorkflows,normalizeN8nBaseUrl,validateN8nConnection} from "./n8n-client";
+import {getN8nWorkflowDetail,listN8nWorkflows,normalizeN8nBaseUrl,setN8nWorkflowActive,validateN8nConnection} from "./n8n-client";
 
 afterEach(() => {
   vi.unstubAllGlobals();
@@ -232,5 +232,44 @@ describe("getN8nWorkflowDetail", () => {
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response("private provider body", {status: 404})));
     await expect(getN8nWorkflowDetail("https://growth-team.app.n8n.cloud", "n8n_test_api_key_123456", "wf_missing"))
       .rejects.toThrow("N8N_WORKFLOW_NOT_FOUND");
+  });
+});
+
+
+describe("setN8nWorkflowActive", () => {
+  it("uses the fixed activate endpoint and API-key header", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response(null, {status: 200}));
+    vi.stubGlobal("fetch", fetchMock);
+    await setN8nWorkflowActive(
+      "https://growth-team.app.n8n.cloud",
+      "n8n_test_api_key_123456",
+      "wf_123",
+      true,
+    );
+    const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(url).toBe("https://growth-team.app.n8n.cloud/api/v1/workflows/wf_123/activate");
+    expect(init.method).toBe("POST");
+    expect((init.headers as Record<string, string>)["X-N8N-API-KEY"]).toBe("n8n_test_api_key_123456");
+  });
+
+  it("uses the fixed deactivate endpoint", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response(null, {status: 200}));
+    vi.stubGlobal("fetch", fetchMock);
+    await setN8nWorkflowActive("https://growth-team.app.n8n.cloud", "n8n_test_api_key_123456", "wf_123", false);
+    expect(fetchMock.mock.calls[0][0]).toContain("/api/v1/workflows/wf_123/deactivate");
+  });
+
+  it("rejects malformed workflow IDs without making a request", async () => {
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+    await expect(setN8nWorkflowActive("https://growth-team.app.n8n.cloud", "n8n_test_api_key_123456", "../other", true))
+      .rejects.toThrow("Invalid n8n workflow ID.");
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("sanitizes missing activation permissions", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response("private response", {status: 403})));
+    await expect(setN8nWorkflowActive("https://growth-team.app.n8n.cloud", "n8n_test_api_key_123456", "wf_123", true))
+      .rejects.toThrow("N8N_AUTH_FAILED");
   });
 });
