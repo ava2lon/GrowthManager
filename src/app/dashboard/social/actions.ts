@@ -473,6 +473,44 @@ export async function scheduleFacebookDraftTargets(formData: FormData) {
   revalidatePath("/dashboard/social");
 }
 
+
+export async function rescheduleFacebookPost(formData: FormData) {
+  const context = await requireWorkspaceRole("MEMBER");
+  const contentPostId = String(formData.get("contentPostId") ?? "").trim();
+  const scheduledAtRaw = String(formData.get("scheduledAt") ?? "").trim();
+  if (!contentPostId || contentPostId.length > 128 ||
+      !/^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}$/.test(scheduledAtRaw)) {
+    throw new Error("Choose a valid calendar date and time.");
+  }
+  const scheduledAt = new Date(scheduledAtRaw + ":00Z");
+  if (!Number.isFinite(scheduledAt.getTime()) || scheduledAt.getTime() < Date.now() + 60_000 ||
+      scheduledAt.getTime() > Date.now() + 365 * 24 * 60 * 60_000) {
+    throw new Error("Rescheduled time must be at least one minute in the future and within one year.");
+  }
+  await db.$transaction(async (tx) => {
+    const post = await tx.contentPost.findFirst({
+      where: {id: contentPostId, workspaceId: context.workspace.id, status: "SCHEDULED"},
+      select: {id: true, scheduledAt: true},
+    });
+    if (!post) throw new Error("This scheduled post is no longer available.");
+    const scheduledTargets = await tx.socialPostTarget.count({
+      where: {workspaceId: context.workspace.id, contentPostId: post.id, provider: "FACEBOOK", status: "SCHEDULED"},
+    });
+    if (scheduledTargets < 1) throw new Error("This post has no scheduled Facebook targets.");
+    const updated = await tx.contentPost.updateMany({
+      where: {id: post.id, workspaceId: context.workspace.id, status: "SCHEDULED", scheduledAt: post.scheduledAt},
+      data: {scheduledAt},
+    });
+    if (updated.count !== 1) throw new Error("The post changed while being moved. Refresh and try again.");
+    await tx.activityLog.create({data: {
+      workspaceId: context.workspace.id, userId: context.userId,
+      action: "social_post.rescheduled", entityType: "ContentPost", entityId: post.id,
+      metadata: {previousScheduledAt: post.scheduledAt?.toISOString() ?? null, scheduledAt: scheduledAt.toISOString(), scheduledTargetCount: scheduledTargets},
+    }});
+  });
+  revalidatePath("/dashboard/social");
+}
+
 export async function publishFacebookDraft(formData: FormData) {
   const context = await requireWorkspaceRole("MEMBER");
   const targetId = String(formData.get("targetId") ?? "").trim();
