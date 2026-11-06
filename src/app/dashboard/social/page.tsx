@@ -49,11 +49,11 @@ export default async function SocialPage() {
       </section>
 
       <section className="rounded-2xl border border-slate-200 bg-white p-5 sm:p-6">
-        <div><h2 className="font-semibold text-slate-900">Facebook Page composer</h2><p className="mt-1 text-sm text-slate-500">Create a text draft, publish immediately, or schedule it for a UTC date and time.</p></div>
+        <div><h2 className="font-semibold text-slate-900">Facebook Page composer</h2><p className="mt-1 text-sm text-slate-500">Create one text draft for multiple Facebook Pages under the same brand, publish targets individually, or schedule them.</p></div>
         {facebookAccounts.length&&brands.length ? <form action={createFacebookDraft} className="mt-4 grid gap-3">
-          <label className="grid gap-1 text-xs font-medium text-slate-600">Facebook Page<select name="accountId" required className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm">{facebookAccounts.map((account)=><option key={account.id} value={account.id}>{account.accountName} · {brandNames.get(account.brandId)??"Brand unavailable"}</option>)}</select></label>
+          <label className="grid gap-1 text-xs font-medium text-slate-600">Facebook Pages <span className="font-normal text-slate-400">Select up to 10 Pages for the same brand (Ctrl/Cmd-click for multiple).</span><select name="accountIds" required multiple size={Math.min(6, Math.max(3, facebookAccounts.length))} className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm">{facebookAccounts.map((account)=><option key={account.id} value={account.id}>{account.accountName} · {brandNames.get(account.brandId)??"Brand unavailable"}</option>)}</select></label>
           <label className="grid gap-1 text-xs font-medium text-slate-600">Post text<textarea name="body" required maxLength={63206} rows={4} placeholder="Write your Facebook Page post…" className="rounded-lg border border-slate-300 px-3 py-2 text-sm"/></label>
-          <p className="text-xs text-slate-500">Text-only Facebook Page posts are supported in this phase. Image/video and Instagram publishing remain staged.</p>
+          <p className="text-xs text-slate-500">Each selected Page receives an independent publishing target. Select Pages from one brand only. Text-only Facebook publishing is supported; image/video and Instagram publishing remain staged.</p>
           <button type="submit" className="w-fit rounded-xl bg-indigo-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-indigo-700">Save draft</button>
         </form> : <p className="mt-3 text-sm text-slate-500">Connect a Facebook Page with publishing permission and assign it to an active brand to use the composer.</p>}
         <div className="mt-6 border-t border-slate-100 pt-4"><h3 className="text-sm font-semibold text-slate-900">Publishing calendar and activity</h3>
