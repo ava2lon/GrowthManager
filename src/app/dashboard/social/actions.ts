@@ -334,39 +334,59 @@ async function enforcePublishLimit(workspaceId: string, userId: string) {
 
 export async function createFacebookDraft(formData: FormData) {
   const context = await requireWorkspaceRole("MEMBER");
-  const accountId = String(formData.get("accountId") ?? "").trim();
+  const accountIds = [...new Set(formData.getAll("accountIds").map((value) => String(value).trim()).filter(Boolean))];
+  const legacyAccountId = String(formData.get("accountId") ?? "").trim();
+  if (accountIds.length === 0 && legacyAccountId) accountIds.push(legacyAccountId);
   const body = String(formData.get("body") ?? "").trim();
-  if (!accountId || !body || body.length > 63206) {
-    throw new Error("Choose a Facebook Page and enter post text (maximum 63,206 characters).");
+  if (accountIds.length < 1 || accountIds.length > 10 || accountIds.some((id) => id.length > 128) || !body || body.length > 63206) {
+    throw new Error("Select 1–10 Facebook Pages and enter post text (maximum 63,206 characters).");
   }
-  const account = await db.socialAccount.findFirst({
-    where:{id:accountId,workspaceId:context.workspace.id,provider:"FACEBOOK",status:"CONNECTED"},
-    select:{id:true,brandId:true,scopes:true},
+
+  const accounts = await db.socialAccount.findMany({
+    where: {id: {in: accountIds}, workspaceId: context.workspace.id, provider: "FACEBOOK", status: "CONNECTED"},
+    select: {id: true, brandId: true, scopes: true},
   });
-  if (!account) throw new Error("The selected connected Facebook Page is unavailable.");
+  if (accounts.length !== accountIds.length) throw new Error("One or more selected Facebook Pages are unavailable in this workspace.");
+  const brandIds = [...new Set(accounts.map((account) => account.brandId))];
+  if (brandIds.length !== 1) throw new Error("All selected Pages must belong to the same brand.");
+  if (accounts.some((account) => !account.scopes.includes("pages_manage_posts"))) {
+    throw new Error("Every selected Page must have pages_manage_posts permission.");
+  }
   const brand = await db.brand.findFirst({
-    where:{id:account.brandId,workspaceId:context.workspace.id,status:"ACTIVE"},
-    select:{id:true},
+    where: {id: brandIds[0], workspaceId: context.workspace.id, status: "ACTIVE"},
+    select: {id: true},
   });
-  if (!brand) throw new Error("The Facebook Page is not assigned to an active brand.");
-  if (!account.scopes.includes("pages_manage_posts")) throw new Error("This Page connection is missing pages_manage_posts. Reconnect and grant the required permission.");
+  if (!brand) throw new Error("The selected Pages are not assigned to an active brand.");
+
   const post = await db.$transaction(async (tx) => {
     const created = await tx.contentPost.create({
-      data:{workspaceId:context.workspace.id,brandId:brand.id,body,status:"DRAFT"},
-      select:{id:true},
+      data: {workspaceId: context.workspace.id, brandId: brand.id, body, status: "DRAFT"},
+      select: {id: true},
     });
-    await tx.socialPostTarget.create({
-      data:{workspaceId:context.workspace.id,contentPostId:created.id,socialAccountId:account.id,provider:"FACEBOOK",status:"DRAFT"},
+    await tx.socialPostTarget.createMany({
+      data: accounts.map((account) => ({
+        workspaceId: context.workspace.id,
+        contentPostId: created.id,
+        socialAccountId: account.id,
+        provider: "FACEBOOK",
+        status: "DRAFT",
+      })),
     });
     await tx.activityLog.create({
-      data:{workspaceId:context.workspace.id,userId:context.userId,action:"social_post.draft_created",entityType:"ContentPost",entityId:created.id,metadata:{provider:"FACEBOOK",targetCount:1}},
+      data: {
+        workspaceId: context.workspace.id,
+        userId: context.userId,
+        action: "social_post.draft_created",
+        entityType: "ContentPost",
+        entityId: created.id,
+        metadata: {provider: "FACEBOOK", targetCount: accounts.length, accountIds: accounts.map((account) => account.id)},
+      },
     });
     return created;
   });
   revalidatePath("/dashboard/social");
   return post.id;
 }
-
 
 export async function scheduleFacebookDraft(formData: FormData) {
   const context = await requireWorkspaceRole("MEMBER");
