@@ -1,4 +1,5 @@
-import {WorkspaceRole} from "@prisma/client";
+import "server-only";
+import type {WorkspaceRole} from "@prisma/client";
 import {notFound, redirect} from "next/navigation";
 import {auth} from "@/auth";
 import {db} from "@/lib/db";
