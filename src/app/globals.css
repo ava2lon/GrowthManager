@@ -1,0 +1,5 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+:root{--background:220 25% 98%;--foreground:222 47% 11%;--muted:215 20% 94%;--border:214 25% 88%;--primary:245 75% 59%;}
+*{box-sizing:border-box}body{background:hsl(var(--background));color:hsl(var(--foreground));}
