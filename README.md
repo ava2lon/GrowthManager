@@ -149,3 +149,10 @@ When configuring storage:
 4. Apply the committed Prisma migration `20261107110000_media_assets` only after the GrowthManager database target and connection variables have been confirmed.
 
 Application limits are 20 MB per image and 100 MB per video. Supported formats are JPEG, PNG, WebP, MP4, and MOV. Files are organized under a workspace-specific object prefix, and downloads are issued as five-minute signed URLs after membership and workspace ownership checks. The bucket must remain private; do not enable public object access.
+
+
+### Media attachments on social drafts
+
+The Facebook composer can attach up to 10 `READY` media assets to a draft. The attachment relation is workspace-scoped at the database level and the server verifies that each selected asset is either workspace-wide or assigned to the same brand as the selected Facebook Pages. Drafts display their attached filenames and media types.
+
+**Important:** this is attachment and draft-management support, not media publishing. The current Facebook publisher remains text-only. To prevent silent content loss, the server rejects publishing and scheduling of drafts that contain media until the provider media publishing pipeline is enabled. Instagram publishing, Reels, and carousel publishing are not yet enabled.
