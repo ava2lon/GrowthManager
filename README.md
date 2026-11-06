@@ -111,3 +111,20 @@ n8n Cloud hostnames matching `<instance>.app.n8n.cloud` are accepted by default.
 To create an API key in n8n, open **Settings → n8n API → Create an API key**. Use the minimum available workflow-list/read scope for health validation. n8n API access is not available during the free Cloud trial; self-hosted instances provide API access according to the n8n plan and configuration.
 
 The integration supports manual health checks and stores only sanitized status metadata. Workflow discovery, activation/deactivation, execution monitoring, and webhook management are separate capabilities and are not enabled by this initial connection release.
+
+
+## Automation alert evaluation
+
+The automation health dashboard supports workspace-scoped n8n alert policies and a persisted alert history. Owners and admins can configure failure-count and failure-rate thresholds, the lookback window, and event deduplication cooldown. Manual evaluation is available from `/dashboard/automations`.
+
+A protected Vercel Cron endpoint is configured at `/api/cron/automation-alerts` and scheduled daily at 06:00 UTC. The endpoint:
+- Requires `Authorization: Bearer <CRON_SECRET>` and rejects missing or short secrets.
+- Evaluates up to 50 enabled workspace policies per invocation.
+- Reads n8n credentials only from encrypted workspace integration records.
+- Stores events using a workspace-scoped unique deduplication key.
+- Records an audit activity for each successfully evaluated workspace.
+- Returns only aggregate counts; provider errors and workspace identifiers are not returned.
+
+Set `CRON_SECRET` in the Vercel Production environment and redeploy to activate scheduled evaluation. Generate a random secret locally (for example, `openssl rand -hex 32`) and do not commit it or paste it into chat. Vercel Cron invokes production deployments only. The daily schedule is compatible with Vercel Hobby's once-per-day restriction; higher-frequency schedules require a plan that supports them. Cron runs use UTC.
+
+The endpoint currently creates in-app alert events only. Email/Slack delivery, delivery retries, and alert-notification history are not enabled yet. Vercel does not automatically retry failed Cron invocations, so inspect Cron invocation logs and the aggregate failure response when diagnosing missed evaluations.
