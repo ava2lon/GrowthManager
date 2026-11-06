@@ -45,6 +45,13 @@ enum CampaignStatus {
   COMPLETED
 }
 
+enum MediaAssetStatus {
+  PENDING
+  READY
+  FAILED
+  DELETED
+}
+
 model User {
   id           String                @id @default(cuid())
   name         String?
@@ -74,6 +81,7 @@ model Workspace {
   invitations  WorkspaceInvitation[]
   automationAlertPolicy AutomationAlertPolicy?
   automationAlertEvents AutomationAlertEvent[]
+  mediaAssets MediaAsset[]
 }
 
 model WorkspaceInvitation {
@@ -118,6 +126,7 @@ model Brand {
   socialAccounts SocialAccount[]
   posts          ContentPost[]
   campaigns      Campaign[]
+  mediaAssets    MediaAsset[]
   @@unique([workspaceId, id])
   @@index([workspaceId, status])
 }
@@ -201,6 +210,34 @@ model SocialPublishAttempt {
   target         SocialPostTarget @relation(fields: [workspaceId, targetId], references: [workspaceId, id], onDelete: Cascade)
   @@unique([targetId, attemptNumber])
   @@index([workspaceId, startedAt])
+}
+
+model MediaAsset {
+  id               String           @id @default(cuid())
+  workspaceId      String
+  brandId          String?
+  createdById      String
+  storageProvider  String           @default("SUPABASE")
+  bucket           String
+  objectPath       String
+  originalFilename String
+  mimeType         String
+  sizeBytes        BigInt
+  checksumSha256   String?
+  width            Int?
+  height           Int?
+  durationMs       Int?
+  altText          String?
+  status           MediaAssetStatus @default(PENDING)
+  uploadedAt       DateTime?
+  createdAt        DateTime         @default(now())
+  updatedAt        DateTime         @updatedAt
+  workspace        Workspace        @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  brand            Brand?           @relation(fields: [workspaceId, brandId], references: [workspaceId, id], onDelete: Cascade)
+  @@unique([workspaceId, id])
+  @@unique([workspaceId, objectPath])
+  @@index([workspaceId, status, createdAt])
+  @@index([workspaceId, brandId, createdAt])
 }
 
 model Campaign {
