@@ -3,6 +3,7 @@ import {NextResponse} from "next/server";
 import {db} from "@/lib/db";
 import {decryptIntegrationCredentials} from "@/lib/integration-crypto";
 import {listN8nExecutions} from "@/lib/n8n-client";
+import {dispatchAutomationAlertEmails, recordAutomationAlert} from "@/lib/automation-alert-notifications";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -84,26 +85,17 @@ export async function GET(request: Request) {
         const message = alertType === "FAILURE_COUNT"
           ? `${failed.length} failed executions in the last ${policy.lookbackMinutes} minutes (threshold: ${policy.failureCountThreshold}).`
           : `Execution failure rate is ${failureRate.toFixed(1)}% over ${recent.length} sampled executions (threshold: ${policy.failureRateThreshold}%).`;
-        await db.automationAlertEvent.upsert({
-          where: {workspaceId_dedupeKey: {workspaceId: policy.workspaceId, dedupeKey}},
-          create: {
-            workspaceId: policy.workspaceId,
-            integrationId: integration.id,
-            provider: "n8n",
-            alertType,
-            severity: failed.length >= policy.failureCountThreshold * 2 ? "CRITICAL" : "WARNING",
-            dedupeKey,
-            message,
-            observedCount: failed.length,
-            observedRate: failureRate,
-            sampleSize: recent.length,
-          },
-          update: {
-            message,
-            observedCount: failed.length,
-            observedRate: failureRate,
-            sampleSize: recent.length,
-          },
+        await recordAutomationAlert({
+          workspaceId: policy.workspaceId,
+          integrationId: integration.id,
+          provider: "n8n",
+          alertType,
+          severity: failed.length >= policy.failureCountThreshold * 2 ? "CRITICAL" : "WARNING",
+          dedupeKey,
+          message,
+          observedCount: failed.length,
+          observedRate: failureRate,
+          sampleSize: recent.length,
         });
       }
 
@@ -129,7 +121,9 @@ export async function GET(request: Request) {
     }
   }
 
-  const result = {policies: policies.length, evaluated, skipped, alertsTriggered, failedWorkspaces};
+  let emailDelivery: {claimed: number; sent: number; retried: number; failed: number} = {claimed: 0, sent: 0, retried: 0, failed: 0};
+  try { emailDelivery = await dispatchAutomationAlertEmails(25); } catch { failedWorkspaces += 1; }
+  const result = {policies: policies.length, evaluated, skipped, alertsTriggered, failedWorkspaces, emailDelivery};
   if (failedWorkspaces) {
     return NextResponse.json(result, {status: 500});
   }
