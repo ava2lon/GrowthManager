@@ -9,7 +9,7 @@ function formatBytes(value:bigint) {
 }
 
 export default async function MediaLibraryPage() {
-  const {workspace,userId}=await requireWorkspaceContext();
+  const {workspace}=await requireWorkspaceContext();
   const [brands,assets]=await Promise.all([
     db.brand.findMany({where:{workspaceId:workspace.id,status:"ACTIVE"},orderBy:{name:"asc"},select:{id:true,name:true}}),
     db.mediaAsset.findMany({
