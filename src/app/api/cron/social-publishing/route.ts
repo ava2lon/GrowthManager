@@ -46,7 +46,7 @@ export async function GET(request:Request){
   }
 
   const due=await db.socialPostTarget.findMany({
-    where:{provider:"FACEBOOK",status:"SCHEDULED",contentPost:{status:"SCHEDULED",scheduledAt:{lte:now}}},
+    where:{provider:"FACEBOOK",status:"SCHEDULED",contentPost:{scheduledAt:{lte:now}}},
     select:{id:true,workspaceId:true},
     orderBy:{contentPost:{scheduledAt:"asc"}},
     take:2,
