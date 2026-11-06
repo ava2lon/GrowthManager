@@ -4,15 +4,9 @@ import {cookies} from "next/headers";
 import {notFound, redirect} from "next/navigation";
 import {auth} from "@/auth";
 import {db} from "@/lib/db";
+import {hasMinimumWorkspaceRole} from "@/lib/workspace-access";
 
 const ACTIVE_WORKSPACE_COOKIE = "gm_active_workspace";
-const roleRank: Record<WorkspaceRole, number> = {
-  OWNER: 4,
-  ADMIN: 3,
-  MEMBER: 2,
-  VIEWER: 1,
-};
-
 export async function requireWorkspaceContext() {
   const session = await auth();
   const userId = session?.user?.id;
@@ -47,7 +41,7 @@ export async function requireWorkspaceContext() {
 
 export async function requireWorkspaceRole(minimumRole: WorkspaceRole) {
   const context = await requireWorkspaceContext();
-  if (roleRank[context.membership.role] < roleRank[minimumRole]) notFound();
+  if (!hasMinimumWorkspaceRole(context.membership.role, minimumRole)) notFound();
   return context;
 }
 
