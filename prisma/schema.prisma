@@ -26,6 +26,10 @@ enum SocialProvider {
   TIKTOK
   YOUTUBE
   PINTEREST
+  THREADS
+  SNAPCHAT
+  REDDIT
+  TELEGRAM
 }
 enum PostStatus {
   DRAFT
@@ -125,14 +129,20 @@ model SocialAccount {
   provider       SocialProvider
   providerUserId String?
   accountName    String
-  accessToken    String?
-  refreshToken   String?
+  credentialsEncrypted String?   @db.Text
+  status         String         @default("DISCONNECTED")
+  scopes         String[]       @default([])
   tokenExpiresAt DateTime?
+  connectedAt    DateTime?
+  lastValidatedAt DateTime?
+  lastErrorCode  String?
   metadata       Json?
   createdAt      DateTime       @default(now())
   updatedAt      DateTime       @updatedAt
   brand          Brand          @relation(fields: [workspaceId, brandId], references: [workspaceId, id], onDelete: Cascade)
+  @@unique([workspaceId, provider, providerUserId])
   @@index([workspaceId, brandId, provider])
+  @@index([workspaceId, provider, status])
 }
 
 model ContentPost {
