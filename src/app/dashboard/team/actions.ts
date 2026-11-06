@@ -30,10 +30,17 @@ export async function updateMemberRole(formData: FormData) {
   }
 
   await db.$transaction(async (tx) => {
-    await tx.workspaceMembership.update({
-      where: {id: target.id},
+    const changed = await tx.workspaceMembership.updateMany({
+      where: {
+        id: target.id,
+        workspaceId: context.workspace.id,
+        role: target.role,
+      },
       data: {role: nextRole},
     });
+    if (changed.count !== 1) {
+      throw new Error("Membership changed concurrently. Refresh and try again.");
+    }
     await tx.activityLog.create({
       data: {
         workspaceId: context.workspace.id,
@@ -66,7 +73,16 @@ export async function removeWorkspaceMember(formData: FormData) {
   }
 
   await db.$transaction(async (tx) => {
-    await tx.workspaceMembership.delete({where: {id: target.id}});
+    const removed = await tx.workspaceMembership.deleteMany({
+      where: {
+        id: target.id,
+        workspaceId: context.workspace.id,
+        role: target.role,
+      },
+    });
+    if (removed.count !== 1) {
+      throw new Error("Membership changed concurrently. Refresh and try again.");
+    }
     await tx.activityLog.create({
       data: {
         workspaceId: context.workspace.id,
