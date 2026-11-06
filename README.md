@@ -21,3 +21,16 @@ Workspace owners and administrators can invite teammates from `/dashboard/team`.
 
 ## Security follow-ups
 Encrypt provider credentials at rest before enabling integrations. Registration and credentials login use Redis-backed rate limits. Configure both Upstash variables in every Vercel environment before enabling production sign-up or sign-in. Add email verification and abuse monitoring before public launch.
+
+
+### Workspace-scoped brand integrity
+
+The migration `20261106180000_enforce_workspace_brand_integrity` backfills `workspaceId` onto social accounts and content posts, then replaces brand-only foreign keys with composite `(workspaceId, brandId)` constraints. Campaign-to-brand references use the same composite key and restrict brand deletion while a campaign still references it. This makes cross-workspace brand references fail at the PostgreSQL layer, even if an application query is incorrectly scoped.
+
+Apply migrations only after configuring `DATABASE_URL` and `DIRECT_URL` for the GrowthManager Supabase project:
+
+```bash
+npm run db:deploy
+```
+
+Do not use `prisma db push` for production schema changes. Review migration status and the target database before applying.
