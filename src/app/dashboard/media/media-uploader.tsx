@@ -24,7 +24,7 @@ export function MediaUploader({brands}:{brands:BrandOption[]}) {
       const initBody=await init.json().catch(()=>null);
       if(!init.ok||!initBody?.uploadUrl||!initBody?.assetId)throw new Error(initBody?.error||"Could not initialize upload.");
       const uploaded=await fetch(initBody.uploadUrl,{
-        method:initBody.method||"POST",
+        method:initBody.method||"PUT",
         headers:initBody.headers||{"Content-Type":file.type},
         body:file,
       });
