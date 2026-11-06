@@ -4,7 +4,7 @@ import {revalidatePath} from "next/cache";
 import {requireWorkspaceRole} from "@/lib/workspace";
 import {db} from "@/lib/db";
 import {consumeRateLimit} from "@/lib/rate-limit";
-import {decryptIntegrationCredentials} from "@/lib/integration-crypto";
+import {decryptIntegrationCredentials, encryptIntegrationCredentials} from "@/lib/integration-crypto";
 
 function readMetadata(value: unknown): Record<string, unknown> {
   if (!value || typeof value !== "object" || Array.isArray(value)) return {};
@@ -165,4 +165,121 @@ export async function checkSocialAccountHealth(formData: FormData) {
           ? "Meta could not be reached. The failed health check was recorded."
           : "Meta could not validate this account. Reconnect or review its permissions.");
   }
+}
+
+export async function refreshMetaAuthorization(formData: FormData) {
+  const context = await requireWorkspaceRole("ADMIN");
+  const accountId = String(formData.get("accountId") ?? "").trim();
+  if (!accountId || accountId.length > 128) throw new Error("Invalid social account.");
+  await enforceSocialRateLimit(context.workspace.id, context.userId, "refresh");
+
+  const account = await db.socialAccount.findFirst({
+    where: {id: accountId, workspaceId: context.workspace.id},
+    select: {
+      id: true, provider: true, status: true, providerUserId: true,
+      credentialsEncrypted: true, metadata: true, accountName: true,
+    },
+  });
+  if (!account || !["FACEBOOK", "INSTAGRAM"].includes(account.provider) || !account.credentialsEncrypted) {
+    throw new Error("A connected Meta account with saved credentials is required.");
+  }
+
+  let credentials: Record<string, unknown>;
+  try {
+    credentials = decryptIntegrationCredentials(account.credentialsEncrypted, context.workspace.id, account.id);
+  } catch {
+    throw new Error("Saved credentials could not be decrypted. Reconnect this account.");
+  }
+  const userToken = credentials.userAccessToken;
+  const appId = process.env.META_APP_ID;
+  const appSecret = process.env.META_APP_SECRET;
+  const version = process.env.META_GRAPH_API_VERSION;
+  const metadata = readMetadata(account.metadata);
+  const pageId = metadata.pageId;
+  if (typeof userToken !== "string" || typeof pageId !== "string" || !appId || !appSecret ||
+      !version || !/^v\\d+\\.\\d+$/.test(version)) {
+    throw new Error("Meta refresh credentials are incomplete. Reconnect this account.");
+  }
+
+  const refreshUrl = new URL("https://graph.facebook.com/" + version + "/oauth/access_token");
+  refreshUrl.searchParams.set("grant_type", "fb_exchange_token");
+  refreshUrl.searchParams.set("client_id", appId);
+  refreshUrl.searchParams.set("client_secret", appSecret);
+  refreshUrl.searchParams.set("fb_exchange_token", userToken);
+  let refreshed: {access_token?: string; expires_in?: number} | null = null;
+  try {
+    const response = await fetch(refreshUrl, {
+      cache: "no-store", redirect: "error", signal: AbortSignal.timeout(12000),
+    });
+    refreshed = await response.json().catch(() => null) as typeof refreshed;
+    if (!response.ok || !refreshed || typeof refreshed.access_token !== "string") {
+      throw new Error("META_REFRESH_REJECTED");
+    }
+  } catch {
+    await db.socialAccount.updateMany({
+      where: {id: account.id, workspaceId: context.workspace.id, credentialsEncrypted: account.credentialsEncrypted},
+      data: {status: "ERROR", lastValidatedAt: new Date(), lastErrorCode: "AUTH_REFRESH_FAILED"},
+    });
+    revalidatePath("/dashboard/social");
+    throw new Error("Meta could not refresh this authorization. Reconnect the account.");
+  }
+
+  const expiry = Number.isFinite(refreshed.expires_in) && (refreshed.expires_in ?? 0) > 0
+    ? new Date(Date.now() + (refreshed.expires_in as number) * 1000)
+    : null;
+  const pagesUrl = new URL("https://graph.facebook.com/" + version + "/me/accounts");
+  pagesUrl.searchParams.set("fields", "id,name,access_token,instagram_business_account{id,username}");
+  pagesUrl.searchParams.set("access_token", refreshed.access_token);
+  let page: {id?: string; name?: string; access_token?: string; instagram_business_account?: {id?: string}} | undefined;
+  try {
+    const response = await fetch(pagesUrl, {
+      cache: "no-store", redirect: "error", signal: AbortSignal.timeout(12000),
+    });
+    const payload = await response.json().catch(() => null) as {data?: Array<typeof page>} | null;
+    if (!response.ok || !payload?.data) throw new Error("META_PAGE_LOOKUP_FAILED");
+    page = payload.data.find((item) => item?.id === pageId);
+  } catch {
+    throw new Error("Meta authorization refreshed, but the Page token could not be verified. Run a health check or reconnect.");
+  }
+  if (!page?.access_token || (account.provider === "INSTAGRAM" &&
+      page.instagram_business_account?.id !== account.providerUserId)) {
+    await db.socialAccount.updateMany({
+      where: {id: account.id, workspaceId: context.workspace.id, credentialsEncrypted: account.credentialsEncrypted},
+      data: {status: "ERROR", lastValidatedAt: new Date(), lastErrorCode: "ACCOUNT_ACCESS_REVOKED"},
+    });
+    revalidatePath("/dashboard/social");
+    throw new Error("This Meta user no longer has access to the linked account. Reconnect it with the correct permissions.");
+  }
+
+  const encrypted = encryptIntegrationCredentials({
+    ...credentials,
+    accessToken: page.access_token,
+    userAccessToken: refreshed.access_token,
+    userAccessTokenExpiresAt: expiry?.toISOString() ?? null,
+  }, context.workspace.id, account.id);
+
+  await db.$transaction(async (tx) => {
+    const changed = await tx.socialAccount.updateMany({
+      where: {id: account.id, workspaceId: context.workspace.id, credentialsEncrypted: account.credentialsEncrypted},
+      data: {
+        credentialsEncrypted: encrypted,
+        tokenExpiresAt: expiry,
+        status: "CONNECTED",
+        lastValidatedAt: new Date(),
+        lastErrorCode: null,
+      },
+    });
+    if (changed.count !== 1) throw new Error("Social account changed concurrently. Refresh and retry.");
+    await tx.activityLog.create({
+      data: {
+        workspaceId: context.workspace.id,
+        userId: context.userId,
+        action: "social_account.authorization_refreshed",
+        entityType: "SocialAccount",
+        entityId: account.id,
+        metadata: {provider: account.provider, accountName: account.accountName, tokenExpiryTracked: Boolean(expiry)},
+      },
+    });
+  });
+  revalidatePath("/dashboard/social");
 }
