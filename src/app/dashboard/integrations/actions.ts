@@ -431,6 +431,94 @@ export async function checkN8nIntegrationHealth(formData: FormData) {
 }
 
 
+
+export async function retryN8nExecutionAction(formData: FormData) {
+  const context = await requireWorkspaceRole("ADMIN");
+  const integrationId = String(formData.get("integrationId") ?? "");
+  const executionId = String(formData.get("executionId") ?? "");
+  const workflowId = String(formData.get("workflowId") ?? "");
+  if (!integrationId || integrationId.length > 128 ||
+      !/^\\d{1,20}$/.test(executionId) ||
+      !/^[A-Za-z0-9_-]{1,128}$/.test(workflowId)) {
+    throw new Error("Invalid execution retry request.");
+  }
+
+  const rateLimit = await consumeRateLimit(
+    "n8n-execution-retry:" + context.workspace.id + ":" + context.userId,
+    5,
+    3600,
+  );
+  if (!rateLimit.allowed || (process.env.NODE_ENV === "production" && !rateLimit.configured)) {
+    throw new Error("Execution retry limit reached or connection protection is unavailable.");
+  }
+
+  const integration = await db.integration.findFirst({
+    where: {id: integrationId, workspaceId: context.workspace.id, provider: "n8n", status: "CONNECTED"},
+    select: {id: true, credentialsEncrypted: true},
+  });
+  if (!integration?.credentialsEncrypted) throw new Error("A connected n8n integration is required.");
+
+  const {decryptIntegrationCredentials} = await import("@/lib/integration-crypto");
+  const {retryN8nExecution} = await import("@/lib/n8n-client");
+  let credentials: Record<string, unknown>;
+  try {
+    credentials = decryptIntegrationCredentials(integration.credentialsEncrypted, context.workspace.id, integration.id);
+  } catch {
+    throw new Error("Could not decrypt saved n8n credentials. Check the integration encryption key configuration.");
+  }
+  if (typeof credentials.baseUrl !== "string" || typeof credentials.apiKey !== "string") {
+    throw new Error("Saved n8n credentials are incomplete. Reconnect n8n.");
+  }
+
+  let retryResult: Awaited<ReturnType<typeof retryN8nExecution>>;
+  try {
+    retryResult = await retryN8nExecution(credentials.baseUrl, credentials.apiKey, executionId);
+    if (retryResult.workflowId !== workflowId) {
+      throw new Error("N8N_EXECUTION_WORKFLOW_MISMATCH");
+    }
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "";
+    if (message === "N8N_RETRY_OUTCOME_UNKNOWN") {
+      await db.activityLog.create({
+        data: {
+          workspaceId: context.workspace.id,
+          userId: context.userId,
+          action: "integration.n8n_execution_retry_unconfirmed",
+          entityType: "n8n_execution",
+          entityId: executionId,
+          metadata: {integrationId: integration.id, workflowId, confirmed: false},
+        },
+      });
+      throw new Error("n8n may have accepted the retry, but GrowthManager could not verify the response. Check n8n before retrying again.");
+    }
+    if (message === "N8N_EXECUTION_NOT_FOUND") throw new Error("Execution not found in the connected n8n account.");
+    if (message === "N8N_EXECUTION_NOT_RETRYABLE") throw new Error("Only failed executions can be retried.");
+    if (message === "N8N_EXECUTION_WORKFLOW_MISMATCH") throw new Error("Execution does not belong to the selected workflow.");
+    if (message === "N8N_AUTH_FAILED") throw new Error("n8n rejected the API key or its execution:retry permission.");
+    if (message === "N8N_PROVIDER_RATE_LIMITED") throw new Error("n8n rate-limited the retry request. Retry later.");
+    if (message === "N8N_PROVIDER_UNAVAILABLE") throw new Error("n8n is unavailable. Check its execution history before retrying again.");
+    throw new Error("Could not retry this execution. Check n8n before attempting another retry.");
+  }
+
+  await db.activityLog.create({
+    data: {
+      workspaceId: context.workspace.id,
+      userId: context.userId,
+      action: "integration.n8n_execution_retried",
+      entityType: "n8n_execution",
+      entityId: executionId,
+      metadata: {
+        integrationId: integration.id,
+        workflowId: retryResult.workflowId,
+        retryExecutionId: retryResult.id,
+        providerStatus: retryResult.status,
+        loadWorkflow: false,
+      },
+    },
+  });
+  revalidatePath("/dashboard/integrations");
+}
+
 export async function setN8nWorkflowState(formData: FormData) {
   const context = await requireWorkspaceRole("ADMIN");
   const integrationId = String(formData.get("integrationId") ?? "");
