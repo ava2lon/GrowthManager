@@ -2,7 +2,7 @@ import {createHmac} from "node:crypto";
 import {describe, expect, it} from "vitest";
 import {verifyResendWebhookSignature} from "./resend-webhook";
 
-const secretBytes = Buffer.alloc(32, 7);
+const secretBytes = Buffer.alloc(32, 255);
 const secret = "whsec_" + secretBytes.toString("base64");
 const now = 1_800_000_000;
 const body = JSON.stringify({type:"email.delivered",data:{email_id:"email_123"}});
