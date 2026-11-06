@@ -51,6 +51,7 @@ model User {
   updatedAt    DateTime              @updatedAt
   memberships  WorkspaceMembership[]
   activityLogs ActivityLog[]
+  sentWorkspaceInvitations WorkspaceInvitation[] @relation("WorkspaceInvitationInviter")
 }
 
 model Workspace {
@@ -66,6 +67,24 @@ model Workspace {
   integrations Integration[]
   automations  Automation[]
   activityLogs ActivityLog[]
+  invitations  WorkspaceInvitation[]
+}
+
+model WorkspaceInvitation {
+  id          String        @id @default(cuid())
+  workspaceId String
+  email       String
+  role        WorkspaceRole @default(MEMBER)
+  tokenHash   String        @unique
+  expiresAt   DateTime
+  acceptedAt  DateTime?
+  revokedAt   DateTime?
+  invitedById String
+  createdAt   DateTime      @default(now())
+  workspace   Workspace     @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  invitedBy   User          @relation("WorkspaceInvitationInviter", fields: [invitedById], references: [id], onDelete: Cascade)
+  @@index([workspaceId, email, createdAt])
+  @@index([expiresAt, acceptedAt, revokedAt])
 }
 
 model WorkspaceMembership {
