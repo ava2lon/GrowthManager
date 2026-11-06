@@ -140,7 +140,9 @@ model SocialAccount {
   createdAt      DateTime       @default(now())
   updatedAt      DateTime       @updatedAt
   brand          Brand          @relation(fields: [workspaceId, brandId], references: [workspaceId, id], onDelete: Cascade)
+  publishTargets SocialPostTarget[]
   @@unique([workspaceId, provider, providerUserId])
+  @@unique([workspaceId, id])
   @@index([workspaceId, brandId, provider])
   @@index([workspaceId, provider, status])
 }
@@ -157,7 +159,48 @@ model ContentPost {
   createdAt   DateTime   @default(now())
   updatedAt   DateTime   @updatedAt
   brand       Brand      @relation(fields: [workspaceId, brandId], references: [workspaceId, id], onDelete: Cascade)
+  publishTargets SocialPostTarget[]
+  @@unique([workspaceId, id])
   @@index([workspaceId, brandId, status, scheduledAt])
+}
+
+model SocialPostTarget {
+  id             String   @id @default(cuid())
+  workspaceId    String
+  contentPostId  String
+  socialAccountId String
+  provider       SocialProvider
+  status         String   @default("DRAFT")
+  providerPostId String?
+  errorCode      String?
+  publishedAt    DateTime?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+  contentPost    ContentPost @relation(fields: [workspaceId, contentPostId], references: [workspaceId, id], onDelete: Cascade)
+  socialAccount  SocialAccount @relation(fields: [workspaceId, socialAccountId], references: [workspaceId, id], onDelete: Cascade)
+  attempts       SocialPublishAttempt[]
+  @@unique([workspaceId, id])
+  @@unique([contentPostId, socialAccountId])
+  @@index([workspaceId, status, createdAt])
+  @@index([workspaceId, socialAccountId, status])
+}
+
+model SocialPublishAttempt {
+  id             String   @id @default(cuid())
+  workspaceId    String
+  targetId       String
+  attemptNumber  Int
+  idempotencyKey String   @unique
+  status         String
+  providerPostId String?
+  errorCode      String?
+  httpStatus     Int?
+  startedAt      DateTime @default(now())
+  finishedAt     DateTime?
+  durationMs     Int?
+  target         SocialPostTarget @relation(fields: [workspaceId, targetId], references: [workspaceId, id], onDelete: Cascade)
+  @@unique([targetId, attemptNumber])
+  @@index([workspaceId, startedAt])
 }
 
 model Campaign {
