@@ -163,6 +163,47 @@ export async function configureResendIntegration(formData: FormData) {
 }
 
 
+export async function saveResendWebhookSecret(formData: FormData) {
+  const context = await requireWorkspaceRole("ADMIN");
+  const integrationId = String(formData.get("integrationId") ?? "");
+  const webhookSecret = String(formData.get("webhookSecret") ?? "").trim();
+  if (!integrationId || integrationId.length > 128 || !/^whsec_[A-Za-z0-9_=-]{20,200}$/.test(webhookSecret)) {
+    throw new Error("Enter a valid Resend webhook signing secret.");
+  }
+
+  const integration = await db.integration.findFirst({
+    where: {id: integrationId, workspaceId: context.workspace.id, provider: "resend", status: "CONNECTED"},
+    select: {id: true, credentialsEncrypted: true},
+  });
+  if (!integration?.credentialsEncrypted) throw new Error("Connect Resend before configuring webhook tracking.");
+
+  const {decryptIntegrationCredentials, encryptIntegrationCredentials} = await import("@/lib/integration-crypto");
+  const credentials = decryptIntegrationCredentials(integration.credentialsEncrypted, context.workspace.id, integration.id);
+  if (typeof credentials.apiKey !== "string" || typeof credentials.fromEmail !== "string") {
+    throw new Error("Reconnect Resend before configuring webhook tracking.");
+  }
+  const encrypted = encryptIntegrationCredentials({...credentials, webhookSecret}, context.workspace.id, integration.id);
+  await db.$transaction(async (tx) => {
+    const changed = await tx.integration.updateMany({
+      where: {id: integration.id, workspaceId: context.workspace.id, status: "CONNECTED", credentialsEncrypted: integration.credentialsEncrypted},
+      data: {credentialsEncrypted: encrypted},
+    });
+    if (changed.count !== 1) throw new Error("Integration changed concurrently. Refresh and retry.");
+    await tx.activityLog.create({
+      data: {
+        workspaceId: context.workspace.id,
+        userId: context.userId,
+        action: "integration.resend_webhook_configured",
+        entityType: "integration",
+        entityId: integration.id,
+        metadata: {provider: "resend", webhookSigningSecretConfigured: true},
+      },
+    });
+  });
+  revalidatePath("/dashboard/integrations");
+}
+
+
 export async function checkResendIntegrationHealth(formData: FormData) {
   const context = await requireWorkspaceRole("ADMIN");
   const integrationId = String(formData.get("integrationId") ?? "");
