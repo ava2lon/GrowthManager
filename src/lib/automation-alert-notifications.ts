@@ -1,0 +1,241 @@
+import {db} from "@/lib/db";
+import {decryptIntegrationCredentials} from "@/lib/integration-crypto";
+
+type AlertInput = {
+  workspaceId: string;
+  integrationId: string;
+  provider: string;
+  alertType: string;
+  severity: string;
+  dedupeKey: string;
+  message: string;
+  observedCount: number;
+  observedRate: number;
+  sampleSize: number;
+};
+
+function escapeHtml(value: string): string {
+  return value.replace(/[&<>"']/g, (character) => ({
+    "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;",
+  })[character] ?? character);
+}
+
+/**
+ * Creates an alert once per workspace dedupe key and atomically enqueues
+ * one email only for newly-created events with explicit workspace opt-in.
+ */
+export async function recordAutomationAlert(input: AlertInput): Promise<{created: boolean; queued: boolean}> {
+  return db.$transaction(async (tx) => {
+    const inserted = await tx.automationAlertEvent.createMany({
+      data: [{
+        workspaceId: input.workspaceId,
+        integrationId: input.integrationId,
+        provider: input.provider,
+        alertType: input.alertType,
+        severity: input.severity,
+        dedupeKey: input.dedupeKey,
+        message: input.message,
+        observedCount: input.observedCount,
+        observedRate: input.observedRate,
+        sampleSize: input.sampleSize,
+      }],
+      skipDuplicates: true,
+    });
+
+    const event = await tx.automationAlertEvent.findUnique({
+      where: {workspaceId_dedupeKey: {workspaceId: input.workspaceId, dedupeKey: input.dedupeKey}},
+      select: {id: true},
+    });
+    if (!event || inserted.count !== 1) return {created: false, queued: false};
+
+    const policy = await tx.automationAlertPolicy.findUnique({
+      where: {workspaceId: input.workspaceId},
+      select: {emailNotificationsEnabled: true, notificationEmail: true},
+    });
+    if (!policy?.emailNotificationsEnabled || !policy.notificationEmail) {
+      return {created: true, queued: false};
+    }
+
+    const resend = await tx.integration.findFirst({
+      where: {workspaceId: input.workspaceId, provider: "resend", status: "CONNECTED", credentialsEncrypted: {not: null}},
+      select: {id: true},
+    });
+    if (!resend) return {created: true, queued: false};
+
+    await tx.automationAlertDelivery.create({
+      data: {
+        workspaceId: input.workspaceId,
+        alertEventId: event.id,
+        integrationId: resend.id,
+        channel: "EMAIL",
+        recipient: policy.notificationEmail,
+      },
+    });
+    return {created: true, queued: true};
+  });
+}
+
+function isRetryable(status: number): boolean {
+  return status === 429 || status >= 500;
+}
+
+/**
+ * Claims a bounded batch from the database outbox. The deterministic Resend
+ * idempotency key makes an ambiguous network retry safe within Resend's
+ * idempotency retention window.
+ */
+export async function dispatchAutomationAlertEmails(limit = 20): Promise<{
+  claimed: number; sent: number; retried: number; failed: number;
+}> {
+  const now = new Date();
+  const staleLock = new Date(now.getTime() - 10 * 60_000);
+  const pending = await db.automationAlertDelivery.findMany({
+    where: {
+      status: {in: ["PENDING", "RETRY", "PROCESSING"]},
+      nextAttemptAt: {lte: now},
+      OR: [{lockedAt: null}, {lockedAt: {lte: staleLock}}],
+    },
+    orderBy: {createdAt: "asc"},
+    take: Math.max(1, Math.min(limit, 50)),
+    select: {id: true, workspaceId: true, integrationId: true, alertEventId: true, recipient: true, attempts: true},
+  });
+
+  let claimed = 0;
+  let sent = 0;
+  let retried = 0;
+  let failed = 0;
+
+  for (const delivery of pending) {
+    const claimedAt = new Date();
+    const claim = await db.automationAlertDelivery.updateMany({
+      where: {
+        id: delivery.id,
+        status: {in: ["PENDING", "RETRY", "PROCESSING"]},
+        nextAttemptAt: {lte: claimedAt},
+        OR: [{lockedAt: null}, {lockedAt: {lte: staleLock}}],
+      },
+      data: {status: "PROCESSING", lockedAt: claimedAt, attempts: {increment: 1}},
+    });
+    if (claim.count !== 1) continue;
+    claimed += 1;
+    const attempt = delivery.attempts + 1;
+
+    let failureCode: string | null = null;
+    let retryable = false;
+    let messageId: string | null = null;
+    try {
+      const [integration, event] = await Promise.all([
+        db.integration.findFirst({
+          where: {id: delivery.integrationId, workspaceId: delivery.workspaceId, provider: "resend", status: "CONNECTED"},
+          select: {credentialsEncrypted: true},
+        }),
+        db.automationAlertEvent.findFirst({
+          where: {id: delivery.alertEventId, workspaceId: delivery.workspaceId},
+          select: {
+            severity: true, alertType: true, message: true, observedCount: true,
+            observedRate: true, sampleSize: true, createdAt: true,
+            workspace: {select: {name: true}},
+          },
+        }),
+      ]);
+
+      if (!integration?.credentialsEncrypted || !event) {
+        failureCode = "INTEGRATION_OR_EVENT_UNAVAILABLE";
+      } else {
+        const credentials = decryptIntegrationCredentials(
+          integration.credentialsEncrypted, delivery.workspaceId, delivery.integrationId,
+        );
+        if (typeof credentials.apiKey !== "string" || typeof credentials.fromEmail !== "string") {
+          failureCode = "RESEND_CREDENTIALS_INCOMPLETE";
+        } else {
+          const html = [
+            "<h1>GrowthManager automation alert</h1>",
+            "<p>A configured automation threshold was reached in workspace <strong>" + escapeHtml(event.workspace.name) + "</strong>.</p>",
+            "<p><strong>Severity:</strong> " + escapeHtml(event.severity) + "</p>",
+            "<p><strong>Alert:</strong> " + escapeHtml(event.alertType.replaceAll("_", " ")) + "</p>",
+            "<p>" + escapeHtml(event.message) + "</p>",
+            "<ul><li>Failed executions: " + event.observedCount + "</li><li>Failure rate: " + event.observedRate.toFixed(1) + "%</li><li>Sample size: " + event.sampleSize + "</li></ul>",
+            "<p>Review the Automation Health page in GrowthManager for details.</p>",
+          ].join("");
+          let response: Response;
+          try {
+            response = await fetch("https://api.resend.com/emails", {
+              method: "POST",
+              headers: {
+                Authorization: "Bearer " + credentials.apiKey,
+                "Content-Type": "application/json",
+                Accept: "application/json",
+                "Idempotency-Key": "growthmanager-alert-" + delivery.id,
+              },
+              body: JSON.stringify({
+                from: credentials.fromEmail,
+                to: [delivery.recipient],
+                subject: "[GrowthManager] " + event.severity + " automation alert",
+                html,
+              }),
+              cache: "no-store",
+              redirect: "error",
+              signal: AbortSignal.timeout(10_000),
+            });
+          } catch {
+            failureCode = "NETWORK_ERROR";
+            retryable = true;
+            response = null as unknown as Response;
+          }
+
+          if (response) {
+            if (!response.ok) {
+              failureCode = response.status === 401 || response.status === 403
+                ? "RESEND_AUTH_FAILED"
+                : response.status === 429 ? "RESEND_RATE_LIMITED"
+                  : response.status >= 500 ? "RESEND_PROVIDER_ERROR" : "RESEND_REQUEST_REJECTED";
+              retryable = isRetryable(response.status);
+            } else {
+              let payload: unknown;
+              try { payload = await response.json(); } catch { payload = null; }
+              const id = payload && typeof payload === "object" ? (payload as {id?: unknown}).id : null;
+              if (typeof id !== "string" || id.length > 200) {
+                failureCode = "RESEND_RESPONSE_INVALID";
+                retryable = true;
+              } else {
+                messageId = id;
+              }
+            }
+          }
+        }
+      }
+    } catch {
+      failureCode = "DELIVERY_PROCESSING_ERROR";
+      retryable = true;
+    }
+
+    if (messageId) {
+      await db.automationAlertDelivery.updateMany({
+        where: {id: delivery.id, status: "PROCESSING", lockedAt: claimedAt},
+        data: {status: "SENT", providerMessageId: messageId, sentAt: new Date(), lockedAt: null, lastErrorCode: null},
+      });
+      await db.automationAlertEvent.updateMany({
+        where: {id: delivery.alertEventId, workspaceId: delivery.workspaceId},
+        data: {lastNotifiedAt: new Date()},
+      });
+      sent += 1;
+      continue;
+    }
+
+    const canRetry = retryable && attempt < 3;
+    const retryAt = new Date(Date.now() + Math.min(24 * 60 * 60_000, 60_000 * 2 ** attempt));
+    await db.automationAlertDelivery.updateMany({
+      where: {id: delivery.id, status: "PROCESSING", lockedAt: claimedAt},
+      data: {
+        status: canRetry ? "RETRY" : "FAILED",
+        nextAttemptAt: canRetry ? retryAt : new Date(),
+        lockedAt: null,
+        lastErrorCode: failureCode ?? "DELIVERY_FAILED",
+      },
+    });
+    if (canRetry) retried += 1;
+    else failed += 1;
+  }
+
+  return {claimed, sent, retried, failed};
+}
