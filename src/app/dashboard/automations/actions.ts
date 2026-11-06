@@ -6,6 +6,7 @@ import {requireWorkspaceRole} from "@/lib/workspace";
 import {consumeRateLimit} from "@/lib/rate-limit";
 import {decryptIntegrationCredentials} from "@/lib/integration-crypto";
 import {listN8nExecutions} from "@/lib/n8n-client";
+import {dispatchAutomationAlertEmails, recordAutomationAlert} from "@/lib/automation-alert-notifications";
 
 function boundedInteger(value: FormDataEntryValue | null, min: number, max: number, fallback: number) {
   const parsed = Number(value);
@@ -15,6 +16,22 @@ function boundedInteger(value: FormDataEntryValue | null, min: number, max: numb
 export async function saveAutomationAlertPolicy(formData: FormData) {
   const context = await requireWorkspaceRole("ADMIN");
   const enabled = formData.get("enabled") === "on";
+  const emailNotificationsEnabled = formData.get("emailNotificationsEnabled") === "on";
+  const notificationEmail = String(formData.get("notificationEmail") ?? "").trim().toLowerCase();
+  if (emailNotificationsEnabled && (!/^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/.test(notificationEmail) || notificationEmail.length > 254)) {
+    throw new Error("Enter a valid notification email address before enabling email alerts.");
+  }
+  if (emailNotificationsEnabled) {
+    const resend = await db.integration.findFirst({
+      where: {workspaceId: context.workspace.id, provider: "resend", status: "CONNECTED", credentialsEncrypted: {not: null}},
+      select: {id: true, credentialsEncrypted: true},
+    });
+    if (!resend?.credentialsEncrypted) throw new Error("Connect Resend before enabling email notifications.");
+    const credentials = decryptIntegrationCredentials(resend.credentialsEncrypted, context.workspace.id, resend.id);
+    if (typeof credentials.apiKey !== "string" || typeof credentials.fromEmail !== "string") {
+      throw new Error("Reconnect Resend and configure a verified sender email before enabling notifications.");
+    }
+  }
   const failureCountThreshold = boundedInteger(formData.get("failureCountThreshold"), 1, 100, 3);
   const failureRateThreshold = Number(formData.get("failureRateThreshold"));
   const lookbackMinutes = boundedInteger(formData.get("lookbackMinutes"), 15, 10080, 1440);
@@ -25,8 +42,8 @@ export async function saveAutomationAlertPolicy(formData: FormData) {
   await db.$transaction(async (tx) => {
     await tx.automationAlertPolicy.upsert({
       where: {workspaceId: context.workspace.id},
-      create: {workspaceId: context.workspace.id, enabled, failureCountThreshold, failureRateThreshold, lookbackMinutes, cooldownMinutes},
-      update: {enabled, failureCountThreshold, failureRateThreshold, lookbackMinutes, cooldownMinutes},
+      create: {workspaceId: context.workspace.id, enabled, failureCountThreshold, failureRateThreshold, lookbackMinutes, cooldownMinutes, emailNotificationsEnabled, notificationEmail: emailNotificationsEnabled ? notificationEmail : null},
+      update: {enabled, failureCountThreshold, failureRateThreshold, lookbackMinutes, cooldownMinutes, emailNotificationsEnabled, notificationEmail: emailNotificationsEnabled ? notificationEmail : null},
     });
     await tx.activityLog.create({
       data: {
@@ -34,7 +51,7 @@ export async function saveAutomationAlertPolicy(formData: FormData) {
         userId: context.userId,
         action: "automation.alert_policy_updated",
         entityType: "automation_alert_policy",
-        metadata: {enabled, failureCountThreshold, failureRateThreshold, lookbackMinutes, cooldownMinutes},
+        metadata: {enabled, failureCountThreshold, failureRateThreshold, lookbackMinutes, cooldownMinutes, emailNotificationsEnabled, notificationEmail: emailNotificationsEnabled ? notificationEmail : null},
       },
     });
   });
@@ -87,28 +104,20 @@ export async function evaluateAutomationAlerts() {
     const message = alertType === "FAILURE_COUNT"
       ? `${failed.length} failed executions in the last ${policy.lookbackMinutes} minutes (threshold: ${policy.failureCountThreshold}).`
       : `Execution failure rate is ${failureRate.toFixed(1)}% over ${recent.length} sampled executions (threshold: ${policy.failureRateThreshold}%).`;
-    await db.automationAlertEvent.upsert({
-      where: {workspaceId_dedupeKey: {workspaceId: context.workspace.id, dedupeKey}},
-      create: {
-        workspaceId: context.workspace.id,
-        integrationId: integration.id,
-        provider: "n8n",
-        alertType,
-        severity: failed.length >= policy.failureCountThreshold * 2 ? "CRITICAL" : "WARNING",
-        dedupeKey,
-        message,
-        observedCount: failed.length,
-        observedRate: failureRate,
-        sampleSize: recent.length,
-      },
-      update: {
-        message,
-        observedCount: failed.length,
-        observedRate: failureRate,
-        sampleSize: recent.length,
-      },
+    await recordAutomationAlert({
+      workspaceId: context.workspace.id,
+      integrationId: integration.id,
+      provider: "n8n",
+      alertType,
+      severity: failed.length >= policy.failureCountThreshold * 2 ? "CRITICAL" : "WARNING",
+      dedupeKey,
+      message,
+      observedCount: failed.length,
+      observedRate: failureRate,
+      sampleSize: recent.length,
     });
   }
+  await dispatchAutomationAlertEmails();
   await db.activityLog.create({
     data: {
       workspaceId: context.workspace.id,
