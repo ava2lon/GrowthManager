@@ -57,7 +57,8 @@ export function MediaUploader({brands}:{brands:BrandOption[]}) {
           </select>
         </div>
       </div>
-      <input ref={inputRef} type="file" accept="image/jpeg,image/png,image/webp,video/mp4,video/quicktime" className="mt-5 block w-full cursor-pointer rounded-xl border border-dashed border-slate-300 bg-slate-50 p-4 text-sm file:mr-4 file:rounded-lg file:border-0 file:bg-indigo-600 file:px-4 file:py-2 file:text-sm file:font-semibold file:text-white" disabled={busy} onChange={(event)=>void upload(event.target.files?.[0])}/>
+      <label htmlFor="media-file" className="mt-5 block text-xs font-medium text-slate-600">Choose an image or video</label>
+      <input id="media-file" ref={inputRef} type="file" accept="image/jpeg,image/png,image/webp,video/mp4,video/quicktime" className="mt-2 block w-full cursor-pointer rounded-xl border border-dashed border-slate-300 bg-slate-50 p-4 text-sm file:mr-4 file:rounded-lg file:border-0 file:bg-indigo-600 file:px-4 file:py-2 file:text-sm file:font-semibold file:text-white" disabled={busy} onChange={(event)=>void upload(event.target.files?.[0])}/>
       {busy&&<p role="status" className="mt-3 text-sm text-indigo-700">Uploading and verifying media…</p>}
       {message&&<p role="status" className="mt-3 text-sm text-emerald-700">{message}</p>}
       {error&&<p role="alert" className="mt-3 text-sm text-rose-700">{error}</p>}
