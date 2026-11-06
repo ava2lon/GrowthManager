@@ -71,13 +71,16 @@ jobs:
       - name: Unit tests
         run: npm test
 
-      - name: Apply migrations to disposable PostgreSQL
-        run: npm run db:deploy
-
       - name: Create disposable tenant-test database
         run: createdb --host=localhost --username=postgres growthmanager_test_ci
         env:
           PGPASSWORD: postgres
+
+      - name: Apply migrations to disposable tenant-test database
+        run: npx prisma migrate deploy
+        env:
+          DATABASE_URL: postgresql://postgres:postgres@localhost:5432/growthmanager_test_ci
+          DIRECT_URL: postgresql://postgres:postgres@localhost:5432/growthmanager_test_ci
 
       - name: PostgreSQL tenant-isolation tests
         run: npm run test:integration
