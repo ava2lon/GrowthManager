@@ -43,7 +43,10 @@ export default async function IntegrationsPage({searchParams}: {searchParams: Pr
     | {kind: "unavailable"}
     | {kind: "not-connected"} = {kind: "not-connected"};
 
-  const {workflowId} = await searchParams;\n  let selectedWorkflow: N8nWorkflowDetail | null = null;\n  let selectedWorkflowUnavailable = false;\n  const n8nIntegration = integrations.find((item) => item.provider === "n8n");
+  const {workflowId} = await searchParams;
+  let selectedWorkflow: N8nWorkflowDetail | null = null;
+  let selectedWorkflowUnavailable = false;
+  const n8nIntegration = integrations.find((item) => item.provider === "n8n");
   if (n8nIntegration?.status === "CONNECTED" && n8nIntegration.credentialsEncrypted) {
     const limit = await consumeRateLimit(
       "n8n-workflow-list:" + context.workspace.id + ":" + context.userId,
