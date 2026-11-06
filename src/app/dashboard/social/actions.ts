@@ -338,6 +338,10 @@ export async function createFacebookDraft(formData: FormData) {
   const legacyAccountId = String(formData.get("accountId") ?? "").trim();
   if (accountIds.length === 0 && legacyAccountId) accountIds.push(legacyAccountId);
   const body = String(formData.get("body") ?? "").trim();
+  const mediaAssetIds = [...new Set(formData.getAll("mediaAssetIds").map((value) => String(value).trim()).filter(Boolean))];
+  if (mediaAssetIds.length > 10 || mediaAssetIds.some((id) => id.length > 128)) {
+    throw new Error("Select no more than 10 media assets.");
+  }
   if (accountIds.length < 1 || accountIds.length > 10 || accountIds.some((id) => id.length > 128) || !body || body.length > 63206) {
     throw new Error("Select 1–10 Facebook Pages and enter post text (maximum 63,206 characters).");
   }
@@ -357,6 +361,13 @@ export async function createFacebookDraft(formData: FormData) {
     select: {id: true},
   });
   if (!brand) throw new Error("The selected Pages are not assigned to an active brand.");
+  const mediaAssets = mediaAssetIds.length ? await db.mediaAsset.findMany({
+    where: {id: {in: mediaAssetIds}, workspaceId: context.workspace.id, status: "READY", OR: [{brandId: brand.id}, {brandId: null}]},
+    select: {id: true, mimeType: true},
+  }) : [];
+  if (mediaAssets.length !== mediaAssetIds.length) {
+    throw new Error("One or more selected media assets are unavailable, not ready, or assigned to another brand.");
+  }
 
   const post = await db.$transaction(async (tx) => {
     const created = await tx.contentPost.create({
@@ -372,6 +383,11 @@ export async function createFacebookDraft(formData: FormData) {
         status: "DRAFT",
       })),
     });
+    if (mediaAssets.length) {
+      await tx.contentPostMedia.createMany({data: mediaAssets.map((asset, position) => ({
+        workspaceId: context.workspace.id, contentPostId: created.id, mediaAssetId: asset.id, position,
+      }))});
+    }
     await tx.activityLog.create({
       data: {
         workspaceId: context.workspace.id,
@@ -379,7 +395,7 @@ export async function createFacebookDraft(formData: FormData) {
         action: "social_post.draft_created",
         entityType: "ContentPost",
         entityId: created.id,
-        metadata: {provider: "FACEBOOK", targetCount: accounts.length, accountIds: accounts.map((account) => account.id)},
+        metadata: {provider: "FACEBOOK", targetCount: accounts.length, accountIds: accounts.map((account) => account.id), mediaAssetCount: mediaAssets.length},
       },
     });
     return created;
