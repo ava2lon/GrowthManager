@@ -13,8 +13,10 @@ import {
   configureResendIntegration,
   disconnectIntegration,
   setN8nWorkflowState,
+  retryN8nExecutionAction,
 } from "./actions";
 import {N8nWorkflowStateControl} from "@/components/n8n-workflow-state-control";
+import {N8nExecutionRetryControl} from "@/components/n8n-execution-retry-control";
 
 const categoryIcons = {
   AUTOMATION: Workflow,
@@ -277,7 +279,7 @@ export default async function IntegrationsPage({searchParams}: {searchParams: Pr
       <section className="rounded-2xl border border-slate-200 bg-white p-5 sm:p-6">
         <div className="flex flex-col gap-1">
           <h2 className="font-semibold text-slate-900">n8n execution monitor</h2>
-          <p className="text-sm text-slate-500">Recent execution metadata only. Workflow input/output payloads and execution data are never requested.</p>
+          <p className="text-sm text-slate-500">Recent execution metadata only. Retry controls are available to administrators for failed runs. Execution payloads are never displayed.</p>
         </div>
         {n8nExecutions.kind === "not-connected" ? (
           <p className="mt-4 rounded-xl bg-slate-50 px-4 py-3 text-sm text-slate-500">Connect n8n to monitor workflow executions.</p>
@@ -305,7 +307,7 @@ export default async function IntegrationsPage({searchParams}: {searchParams: Pr
               <div className="mt-4 overflow-x-auto rounded-xl border border-slate-100">
                 <table className="w-full min-w-[640px] text-left text-xs">
                   <thead className="bg-slate-50 text-[11px] uppercase tracking-wide text-slate-500">
-                    <tr><th className="px-3 py-3 font-semibold">Execution</th><th className="px-3 py-3 font-semibold">Workflow</th><th className="px-3 py-3 font-semibold">Status</th><th className="px-3 py-3 font-semibold">Mode</th><th className="px-3 py-3 font-semibold">Started</th><th className="px-3 py-3 font-semibold">Duration</th></tr>
+                    <tr><th className="px-3 py-3 font-semibold">Execution</th><th className="px-3 py-3 font-semibold">Workflow</th><th className="px-3 py-3 font-semibold">Status</th><th className="px-3 py-3 font-semibold">Mode</th><th className="px-3 py-3 font-semibold">Started</th><th className="px-3 py-3 font-semibold">Duration</th>{canManage && <th className="px-3 py-3 font-semibold">Recovery</th>}</tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100">
                     {n8nExecutions.executions.map((execution) => {
@@ -325,6 +327,7 @@ export default async function IntegrationsPage({searchParams}: {searchParams: Pr
                           <td className="px-3 py-3 text-slate-500">{execution.mode}</td>
                           <td className="px-3 py-3 text-slate-500">{execution.startedAt ? new Date(execution.startedAt).toLocaleString() : "—"}</td>
                           <td className="px-3 py-3 text-slate-500">{duration}</td>
+                          {canManage && <td className="px-3 py-3">{(execution.status === "error" || execution.status === "crashed") && n8nIntegration ? <N8nExecutionRetryControl integrationId={n8nIntegration.id} executionId={execution.id} workflowId={execution.workflowId}/> : <span className="text-slate-300">—</span>}</td>}
                         </tr>
                       );
                     })}
