@@ -89,3 +89,85 @@ export async function validateN8nConnection(baseUrl: string, apiKey: string): Pr
     throw new Error("N8N_PROVIDER_UNAVAILABLE");
   }
 }
+
+
+export type N8nWorkflowSummary = {
+  id: string;
+  name: string;
+  active: boolean;
+  updatedAt: string | null;
+};
+
+export async function listN8nWorkflows(
+  baseUrl: string,
+  apiKey: string,
+): Promise<{workflows: N8nWorkflowSummary[]; hasMore: boolean}> {
+  if (typeof apiKey !== "string" || apiKey.length < 16 || apiKey.length > 512) {
+    throw new Error("Invalid n8n API key.");
+  }
+
+  const normalizedBaseUrl = normalizeN8nBaseUrl(baseUrl);
+  const workflows: N8nWorkflowSummary[] = [];
+  const seenCursors = new Set<string>();
+  let cursor: string | undefined;
+  let hasMore = false;
+
+  for (let page = 0; page < 3; page += 1) {
+    const url = new URL(normalizedBaseUrl + "/api/v1/workflows");
+    url.searchParams.set("limit", "50");
+    url.searchParams.set("excludePinnedData", "true");
+    if (cursor) url.searchParams.set("cursor", cursor);
+
+    let response: Response;
+    try {
+      response = await fetch(url, {
+        method: "GET",
+        headers: {Accept: "application/json", "X-N8N-API-KEY": apiKey},
+        cache: "no-store",
+        redirect: "error",
+        signal: AbortSignal.timeout(N8N_API_TIMEOUT_MS),
+      });
+    } catch {
+      throw new Error("N8N_PROVIDER_UNAVAILABLE");
+    }
+
+    if (response.status === 401 || response.status === 403) throw new Error("N8N_AUTH_FAILED");
+    if (response.status === 429) throw new Error("N8N_PROVIDER_RATE_LIMITED");
+    if (!response.ok) throw new Error("N8N_PROVIDER_UNAVAILABLE");
+
+    let payload: unknown;
+    try {
+      payload = await response.json();
+    } catch {
+      throw new Error("N8N_PROVIDER_UNAVAILABLE");
+    }
+    if (!payload || typeof payload !== "object" || !Array.isArray((payload as {data?: unknown}).data)) {
+      throw new Error("N8N_PROVIDER_UNAVAILABLE");
+    }
+
+    for (const item of (payload as {data: unknown[]}).data) {
+      if (!item || typeof item !== "object") continue;
+      const workflow = item as {id?: unknown; name?: unknown; active?: unknown; updatedAt?: unknown};
+      if (typeof workflow.id !== "string" || typeof workflow.name !== "string" || typeof workflow.active !== "boolean") continue;
+      workflows.push({
+        id: workflow.id.slice(0, 128),
+        name: workflow.name.slice(0, 240),
+        active: workflow.active,
+        updatedAt: typeof workflow.updatedAt === "string" && !Number.isNaN(Date.parse(workflow.updatedAt))
+          ? workflow.updatedAt
+          : null,
+      });
+    }
+
+    const nextCursor = (payload as {nextCursor?: unknown}).nextCursor;
+    if (typeof nextCursor !== "string" || !nextCursor || nextCursor.length > 2048 || seenCursors.has(nextCursor)) {
+      hasMore = false;
+      break;
+    }
+    seenCursors.add(nextCursor);
+    cursor = nextCursor;
+    hasMore = page === 2;
+  }
+
+  return {workflows, hasMore};
+}
