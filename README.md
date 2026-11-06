@@ -127,4 +127,12 @@ A protected Vercel Cron endpoint is configured at `/api/cron/automation-alerts` 
 
 Set `CRON_SECRET` in the Vercel Production environment and redeploy to activate scheduled evaluation. Generate a random secret locally (for example, `openssl rand -hex 32`) and do not commit it or paste it into chat. Vercel Cron invokes production deployments only. The daily schedule is compatible with Vercel Hobby's once-per-day restriction; higher-frequency schedules require a plan that supports them. Cron runs use UTC.
 
-The endpoint currently creates in-app alert events only. Email/Slack delivery, delivery retries, and alert-notification history are not enabled yet. Vercel does not automatically retry failed Cron invocations, so inspect Cron invocation logs and the aggregate failure response when diagnosing missed evaluations.
+Email delivery is available as an explicit workspace opt-in:
+- Connect the workspace's **Resend** integration and provide an email address on a domain verified in that Resend account. The API key and sender identity are encrypted with the workspace/integration-bound credential envelope.
+- In Automation Health, enable **Email notifications** and configure one recipient address. Email remains disabled by default; no workspace members are automatically subscribed.
+- Newly created, deduplicated alert events are atomically written to a tenant-scoped email outbox. Existing deduplicated events are not re-emailed.
+- The dispatcher sends through the workspace's own Resend API key, uses a deterministic `Idempotency-Key`, stores the provider message ID, and records status, attempts, and sanitized error codes.
+- Transient network, HTTP 429, and HTTP 5xx failures are retried up to three attempts with backoff. Permanent provider/configuration errors are marked failed. Retries older than 20 hours are stopped to stay inside the provider idempotency retention window and avoid duplicate messages.
+- Manual evaluation dispatches a small batch immediately. The daily Cron also dispatches a bounded batch, so retries may wait until the next invocation on plans restricted to daily Cron schedules. The dashboard shows the latest 25 delivery records.
+
+Email notifications are transactional operational alerts, not marketing messages. Slack delivery is not implemented. Vercel does not automatically retry failed Cron invocations, so inspect Cron invocation logs and the aggregate failure response when diagnosing missed evaluations.
