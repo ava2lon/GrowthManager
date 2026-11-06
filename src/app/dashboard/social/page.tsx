@@ -1,3 +1,4 @@
+import SocialEditorialCalendar from "./editorial-calendar";
 import {requireWorkspaceContext} from "@/lib/workspace";
 import {db} from "@/lib/db";
 import {socialProviders} from "@/lib/integration-providers";
@@ -8,15 +9,22 @@ const capabilityLabels: Record<string,string> = {
   ANALYTICS:"Analytics", COMMENTS_READ:"Comments", MESSAGING:"Messaging",
 };
 
-export default async function SocialPage() {
+export default async function SocialPage({searchParams}:{searchParams:Promise<{month?:string}>}) {
+  const params=await searchParams;
+  const requestedMonth=typeof params.month==="string"&&/^\\d{4}-\\d{2}$/.test(params.month)?params.month:new Date().toISOString().slice(0,7);
+  const monthDate=new Date(requestedMonth+"-01T00:00:00Z");
+  const monthStart=new Date(Date.UTC(monthDate.getUTCFullYear(),monthDate.getUTCMonth(),1));
+  const gridStart=new Date(monthStart.getTime()-((monthStart.getUTCDay()+6)%7)*86400000);
+  const gridEnd=new Date(gridStart.getTime()+42*86400000);
   const {workspace} = await requireWorkspaceContext();
-  const [accounts, brands] = await Promise.all([
+  const [accounts, brands, calendarPosts] = await Promise.all([
     db.socialAccount.findMany({
       where:{workspaceId:workspace.id},
       orderBy:[{updatedAt:"desc"},{accountName:"asc"}],
       select:{id:true,provider:true,accountName:true,status:true,brandId:true,connectedAt:true,lastValidatedAt:true,lastErrorCode:true,scopes:true,tokenExpiresAt:true},
     }),
     db.brand.findMany({where:{workspaceId:workspace.id,status:"ACTIVE"},orderBy:{name:"asc"},select:{id:true,name:true}}),
+    db.contentPost.findMany({where:{workspaceId:workspace.id,status:"SCHEDULED",scheduledAt:{gte:gridStart,lt:gridEnd},publishTargets:{some:{provider:"FACEBOOK",status:"SCHEDULED"}}},orderBy:{scheduledAt:"asc"},select:{id:true,body:true,scheduledAt:true,publishTargets:{where:{provider:"FACEBOOK",status:"SCHEDULED"},select:{id:true,socialAccount:{select:{accountName:true}}}}}}),
   ]);
   const drafts = await db.contentPost.findMany({
       where:{workspaceId:workspace.id,publishTargets:{some:{provider:"FACEBOOK"}}},
@@ -56,7 +64,8 @@ export default async function SocialPage() {
           <p className="text-xs text-slate-500">Each selected Page receives an independent publishing target. Select Pages from one brand only. Text-only Facebook publishing is supported; image/video and Instagram publishing remain staged.</p>
           <button type="submit" className="w-fit rounded-xl bg-indigo-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-indigo-700">Save draft</button>
         </form> : <p className="mt-3 text-sm text-slate-500">Connect a Facebook Page with publishing permission and assign it to an active brand to use the composer.</p>}
-        <div className="mt-6 border-t border-slate-100 pt-4"><h3 className="text-sm font-semibold text-slate-900">Publishing calendar and activity</h3>
+<div className="mt-6 border-t border-slate-100 pt-4"><SocialEditorialCalendar initialMonth={requestedMonth} posts={calendarPosts.filter((post)=>post.scheduledAt).map((post)=>({id:post.id,body:post.body,scheduledAt:post.scheduledAt!.toISOString(),targets:post.publishTargets.map((target)=>({id:target.id,accountName:target.socialAccount.accountName,status:"SCHEDULED"}))}))}/></div>
+                <div className="mt-6 border-t border-slate-100 pt-4"><h3 className="text-sm font-semibold text-slate-900">Publishing calendar and activity</h3>
           {drafts.length===0 ? <p className="mt-3 text-sm text-slate-500">No Facebook drafts or publishing activity yet.</p> : <div className="mt-3 divide-y divide-slate-100">{drafts.map((post)=><div key={post.id} className="py-3"><p className="whitespace-pre-wrap text-sm text-slate-800">{post.body}</p><div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-slate-500">{post.publishTargets.map((target)=><span key={target.id} className="rounded-full bg-slate-100 px-2 py-1">{target.socialAccount.accountName}: {target.status}{target.errorCode?" · "+target.errorCode:""}</span>)}</div>{post.publishTargets.some((target)=>target.status==="SCHEDULED")&&<div className="mt-2 flex flex-wrap gap-2">{post.publishTargets.filter((target)=>target.status==="SCHEDULED").map((target)=><form key={target.id} action={cancelFacebookSchedule}><input type="hidden" name="targetId" value={target.id}/><button type="submit" className="rounded-lg border border-amber-200 px-3 py-2 text-xs font-semibold text-amber-700 hover:bg-amber-50">Cancel schedule</button></form>)}</div>}
 {post.publishTargets.some((target)=>target.status==="DRAFT")&&<div className="mt-2 flex flex-wrap items-center gap-2">{post.publishTargets.filter((target)=>target.status==="DRAFT").map((target)=><form key={target.id} action={publishFacebookDraft}><input type="hidden" name="targetId" value={target.id}/><button type="submit" className="rounded-lg border border-indigo-200 px-3 py-2 text-xs font-semibold text-indigo-700 hover:bg-indigo-50">Publish {target.socialAccount.accountName}</button></form>)}<form action={scheduleFacebookDraftTargets} className="flex flex-wrap items-center gap-2"><input type="hidden" name="contentPostId" value={post.id}/><label className="text-xs text-slate-500">Schedule all remaining Pages (UTC)<input required type="datetime-local" name="scheduledAt" className="ml-2 rounded-lg border border-slate-300 px-2 py-1.5 text-xs"/></label><button type="submit" className="rounded-lg border border-slate-200 px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50">Bulk schedule</button></form></div>}<p className="mt-2 text-[11px] text-slate-400">{post.status==="SCHEDULED"&&post.scheduledAt?"Scheduled for "+post.scheduledAt.toLocaleString("en-GB",{timeZone:"UTC"})+" UTC · ":"Created "}{post.createdAt.toLocaleString()}</p></div>)}</div>}
         </div>
