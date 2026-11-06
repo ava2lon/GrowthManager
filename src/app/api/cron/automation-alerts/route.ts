@@ -122,7 +122,7 @@ export async function GET(request: Request) {
   }
 
   let emailDelivery: {claimed: number; sent: number; retried: number; failed: number} = {claimed: 0, sent: 0, retried: 0, failed: 0};
-  try { emailDelivery = await dispatchAutomationAlertEmails(25); } catch { failedWorkspaces += 1; }
+  try { emailDelivery = await dispatchAutomationAlertEmails(3); } catch { failedWorkspaces += 1; }
   const result = {policies: policies.length, evaluated, skipped, alertsTriggered, failedWorkspaces, emailDelivery};
   if (failedWorkspaces) {
     return NextResponse.json(result, {status: 500});
