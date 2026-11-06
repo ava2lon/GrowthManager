@@ -76,6 +76,7 @@ export async function validateN8nConnection(baseUrl: string, apiKey: string): Pr
   if (response.status === 401 || response.status === 403) {
     throw new Error("N8N_AUTH_FAILED");
   }
+  if (response.status === 429) throw new Error("N8N_PROVIDER_RATE_LIMITED");
   if (!response.ok) throw new Error("N8N_PROVIDER_UNAVAILABLE");
 
   let payload: unknown;
