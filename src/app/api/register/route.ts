@@ -2,6 +2,12 @@ import {NextResponse} from "next/server";
 import {hash} from "bcryptjs";
 import {z} from "zod";
 import {db} from "@/lib/db";
+import {
+  consumeRateLimit,
+  getClientIp,
+  rateLimitResponse,
+  rateLimitUnavailableResponse,
+} from "@/lib/rate-limit";
 
 const schema = z.object({
   name: z.string().trim().min(2).max(80),
@@ -21,13 +27,28 @@ function slugify(value: string) {
 }
 
 export async function POST(req: Request) {
+  const limit = await consumeRateLimit(
+    `register:ip:${getClientIp(req)}`,
+    5,
+    60 * 60,
+  );
+
+  if (!limit.configured && process.env.NODE_ENV === "production") {
+    return rateLimitUnavailableResponse();
+  }
+  if (!limit.allowed) {
+    return limit.configured
+      ? rateLimitResponse(limit.retryAfter)
+      : rateLimitUnavailableResponse();
+  }
+
   const body = await req.json().catch(() => null);
   const parsed = schema.safeParse(body);
 
   if (!parsed.success) {
     return NextResponse.json(
-      { error: "Check the submitted fields. Passwords must be at least 12 characters." },
-      { status: 400 },
+      {error: "Check the submitted fields. Passwords must be at least 12 characters."},
+      {status: 400},
     );
   }
 
@@ -35,14 +56,14 @@ export async function POST(req: Request) {
 
   try {
     const existingUser = await db.user.findUnique({
-      where: { email },
-      select: { id: true },
+      where: {email},
+      select: {id: true},
     });
 
     if (existingUser) {
       return NextResponse.json(
-        { error: "An account with this email already exists." },
-        { status: 409 },
+        {error: "An account with this email already exists."},
+        {status: 409},
       );
     }
 
@@ -54,13 +75,13 @@ export async function POST(req: Request) {
 
     await db.$transaction(async (tx) => {
       const user = await tx.user.create({
-        data: { name: parsed.data.name, email, passwordHash },
+        data: {name: parsed.data.name, email, passwordHash},
       });
       const workspace = await tx.workspace.create({
-        data: { name: parsed.data.workspaceName, slug },
+        data: {name: parsed.data.workspaceName, slug},
       });
       await tx.workspaceMembership.create({
-        data: { userId: user.id, workspaceId: workspace.id, role: "OWNER" },
+        data: {userId: user.id, workspaceId: workspace.id, role: "OWNER"},
       });
       await tx.activityLog.create({
         data: {
@@ -72,7 +93,7 @@ export async function POST(req: Request) {
       });
     });
 
-    return NextResponse.json({ ok: true }, { status: 201 });
+    return NextResponse.json({ok: true}, {status: 201});
   } catch (error) {
     if (
       typeof error === "object" &&
@@ -81,15 +102,15 @@ export async function POST(req: Request) {
       error.code === "P2002"
     ) {
       return NextResponse.json(
-        { error: "An account with this email already exists." },
-        { status: 409 },
+        {error: "An account with this email already exists."},
+        {status: 409},
       );
     }
 
     console.error("Account registration failed.", error);
     return NextResponse.json(
-      { error: "Registration is temporarily unavailable. Please try again." },
-      { status: 503 },
+      {error: "Registration is temporarily unavailable. Please try again."},
+      {status: 503},
     );
   }
 }
