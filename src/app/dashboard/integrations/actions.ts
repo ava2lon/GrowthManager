@@ -84,3 +84,58 @@ export async function disconnectIntegration(formData: FormData) {
 
   revalidatePath("/dashboard/integrations");
 }
+
+export async function configureResendIntegration(formData: FormData) {
+  const context = await requireWorkspaceRole("ADMIN");
+  const integrationId = String(formData.get("integrationId") ?? "");
+  const apiKey = String(formData.get("apiKey") ?? "").trim();
+
+  if (!integrationId || integrationId.length > 128 || apiKey.length < 20 || apiKey.length > 200) {
+    throw new Error("Enter a valid Resend API key.");
+  }
+
+  const integration = await db.integration.findFirst({
+    where: {id: integrationId, workspaceId: context.workspace.id, provider: "resend"},
+    select: {id: true, status: true},
+  });
+  if (!integration || !["PENDING_SETUP", "ERROR", "CONNECTED"].includes(integration.status)) {
+    throw new Error("Resend integration is not available for setup.");
+  }
+
+  let response: Response;
+  try {
+    response = await fetch("https://api.resend.com/domains", {
+      method: "GET",
+      headers: {Authorization: "Bearer " + apiKey, Accept: "application/json"},
+      cache: "no-store",
+      redirect: "error",
+      signal: AbortSignal.timeout(10000),
+    });
+  } catch {
+    throw new Error("Could not reach Resend. No credentials were saved.");
+  }
+  if (!response.ok) {
+    throw new Error("Resend rejected this API key. Check its validity and permissions.");
+  }
+
+  const {encryptIntegrationCredentials} = await import("@/lib/integration-crypto");
+  const encrypted = encryptIntegrationCredentials({apiKey}, context.workspace.id, integration.id);
+  await db.$transaction(async (tx) => {
+    const changed = await tx.integration.updateMany({
+      where: {id: integration.id, workspaceId: context.workspace.id, status: integration.status},
+      data: {credentialsEncrypted: encrypted, status: "CONNECTED"},
+    });
+    if (changed.count !== 1) throw new Error("Integration changed concurrently. Refresh and retry.");
+    await tx.activityLog.create({
+      data: {
+        workspaceId: context.workspace.id,
+        userId: context.userId,
+        action: "integration.credentials_validated",
+        entityType: "integration",
+        entityId: integration.id,
+        metadata: {provider: "resend", validation: "success"},
+      },
+    });
+  });
+  revalidatePath("/dashboard/integrations");
+}
