@@ -32,7 +32,7 @@ export default async function SocialPage() {
       <header>
         <p className="text-xs font-semibold uppercase tracking-widest text-indigo-600">Growth channels</p>
         <h1 className="mt-2 text-3xl font-bold tracking-tight text-slate-950">Social media</h1>
-        <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-500">Manage social identities for this workspace. Provider authorization is being introduced through encrypted, workspace-scoped connections; no account is marked connected until OAuth credentials are validated.</p>
+        <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-500">Manage connected social identities, compose publishing drafts, and monitor provider outcomes within this workspace.</p>
       </header>
 
       <section className="grid gap-3 sm:grid-cols-3">
@@ -51,10 +51,7 @@ export default async function SocialPage() {
       <section className="rounded-2xl border border-slate-200 bg-white p-5 sm:p-6">
         <div><h2 className="font-semibold text-slate-900">Facebook Page composer</h2><p className="mt-1 text-sm text-slate-500">Create a durable text draft, then explicitly publish it to one connected Facebook Page.</p></div>
         {facebookAccounts.length&&brands.length ? <form action={createFacebookDraft} className="mt-4 grid gap-3">
-          <div className="grid gap-3 sm:grid-cols-2">
-            <label className="grid gap-1 text-xs font-medium text-slate-600">Brand<select name="brandId" required className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm">{brands.map((brand)=><option key={brand.id} value={brand.id}>{brand.name}</option>)}</select></label>
-            <label className="grid gap-1 text-xs font-medium text-slate-600">Facebook Page<select name="accountId" required className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm">{facebookAccounts.map((account)=><option key={account.id} value={account.id}>{account.accountName}</option>)}</select></label>
-          </div>
+          <label className="grid gap-1 text-xs font-medium text-slate-600">Facebook Page<select name="accountId" required className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm">{facebookAccounts.map((account)=><option key={account.id} value={account.id}>{account.accountName} · {brandNames.get(account.brandId)??"Brand unavailable"}</option>)}</select></label>
           <label className="grid gap-1 text-xs font-medium text-slate-600">Post text<textarea name="body" required maxLength={63206} rows={4} placeholder="Write your Facebook Page post…" className="rounded-lg border border-slate-300 px-3 py-2 text-sm"/></label>
           <p className="text-xs text-slate-500">Phase 1 supports text-only Facebook Page posts. Image/video publishing and Instagram publishing are not enabled in this slice.</p>
           <button type="submit" className="w-fit rounded-xl bg-indigo-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-indigo-700">Save draft</button>
