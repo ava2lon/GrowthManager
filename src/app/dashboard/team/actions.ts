@@ -4,6 +4,7 @@ import {revalidatePath} from "next/cache";
 import type {WorkspaceRole} from "@prisma/client";
 import {requireWorkspaceRole} from "@/lib/workspace";
 import {db} from "@/lib/db";
+import {canChangeWorkspaceMemberRole, canRemoveWorkspaceMember} from "@/lib/workspace-member-policy";
 
 const roles: WorkspaceRole[] = ["OWNER", "ADMIN", "MEMBER", "VIEWER"];
 
@@ -24,14 +25,8 @@ export async function updateMemberRole(formData: FormData) {
   }
 
   const target = await getTargetMembership(targetUserId, context.workspace.id);
-  if (!target || target.role === "OWNER") throw new Error("This membership cannot be changed.");
-
-  // Admins can manage ordinary members and viewers, but cannot grant or
-  // modify administrator access. Only the workspace owner can do that.
-  if (context.membership.role !== "OWNER") {
-    if (target.role === "ADMIN" || nextRole === "ADMIN") {
-      throw new Error("Only the workspace owner can manage administrators.");
-    }
+  if (!target || !canChangeWorkspaceMemberRole(context.membership.role, target.role, nextRole)) {
+    throw new Error("This membership role change is not permitted.");
   }
 
   await db.$transaction(async (tx) => {
@@ -62,10 +57,12 @@ export async function removeWorkspaceMember(formData: FormData) {
   }
 
   const target = await getTargetMembership(targetUserId, context.workspace.id);
-  if (!target || target.role === "OWNER") throw new Error("This membership cannot be removed.");
-
-  if (context.membership.role !== "OWNER" && target.role === "ADMIN") {
-    throw new Error("Only the workspace owner can remove an administrator.");
+  if (!target || !canRemoveWorkspaceMember(
+    context.membership.role,
+    target.role,
+    target.userId === context.userId,
+  )) {
+    throw new Error("This membership cannot be removed.");
   }
 
   await db.$transaction(async (tx) => {
