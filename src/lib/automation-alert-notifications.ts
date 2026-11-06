@@ -97,7 +97,7 @@ export async function dispatchAutomationAlertEmails(limit = 20): Promise<{
     },
     orderBy: {createdAt: "asc"},
     take: Math.max(1, Math.min(limit, 50)),
-    select: {id: true, workspaceId: true, integrationId: true, alertEventId: true, recipient: true, attempts: true},
+    select: {id: true, workspaceId: true, integrationId: true, alertEventId: true, recipient: true, attempts: true, createdAt: true},
   });
 
   let claimed = 0;
@@ -106,6 +106,14 @@ export async function dispatchAutomationAlertEmails(limit = 20): Promise<{
   let failed = 0;
 
   for (const delivery of pending) {
+    if (delivery.attempts > 0 && delivery.createdAt.getTime() < now.getTime() - 20 * 60 * 60_000) {
+      await db.automationAlertDelivery.updateMany({
+        where: {id: delivery.id, status: {in: ["PENDING", "RETRY", "PROCESSING"]}},
+        data: {status: "FAILED", lockedAt: null, lastErrorCode: "IDEMPOTENCY_WINDOW_EXPIRED"},
+      });
+      failed += 1;
+      continue;
+    }
     const claimedAt = new Date();
     const claim = await db.automationAlertDelivery.updateMany({
       where: {
