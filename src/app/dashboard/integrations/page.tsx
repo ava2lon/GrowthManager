@@ -134,7 +134,7 @@ export default async function IntegrationsPage() {
                 <p className="mt-3 text-xs text-slate-400">Required setup: {provider.credentialFields.join(", ")}</p>
                 <div className="mt-5">
                   {active ? (
-                    <span className="inline-flex items-center gap-2 text-xs font-semibold text-slate-500"><Settings2 size={14}/>{existing.status.replaceAll("_"," ")}</span>
+                    <span className="inline-flex items-center gap-2 text-xs font-semibold text-slate-500"><Settings2 size={14}/>{existing?.status?.replaceAll("_"," ") ?? "Configured"}</span>
                   ) : canManage && supported ? (
                     <form action={addIntegration}>
                       <input type="hidden" name="providerId" value={provider.id}/>
