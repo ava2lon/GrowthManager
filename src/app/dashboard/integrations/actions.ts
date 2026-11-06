@@ -306,9 +306,11 @@ export async function configureN8nIntegration(formData: FormData) {
     const message = error instanceof Error ? error.message : "";
     throw new Error(message === "N8N_AUTH_FAILED"
       ? "n8n rejected this API key. Check the key and its workflow:list permission."
-      : message === "N8N_HOST_NOT_ALLOWED"
-        ? "This n8n host is not approved. Use an n8n Cloud host or ask the platform administrator to allowlist your self-hosted hostname."
-        : "Could not validate the n8n connection. Check the URL, API availability, and TLS configuration.");
+      : message === "N8N_PROVIDER_RATE_LIMITED"
+        ? "n8n rate-limited the validation request. Wait before retrying."
+        : message === "N8N_HOST_NOT_ALLOWED"
+          ? "This n8n host is not approved. Use an n8n Cloud host or ask the platform administrator to allowlist your self-hosted hostname."
+          : "Could not validate the n8n connection. Check the URL, API availability, and TLS configuration.");
   }
 
   const {encryptIntegrationCredentials} = await import("@/lib/integration-crypto");
@@ -349,7 +351,7 @@ export async function checkN8nIntegrationHealth(formData: FormData) {
   });
   if (!integration) throw new Error("n8n integration not found in the active workspace.");
 
-  const recordFailure = async (code: "MISSING_CREDENTIALS" | "AUTH_FAILED" | "PROVIDER_UNAVAILABLE" | "HOST_NOT_ALLOWED" | "CREDENTIAL_DECRYPTION_FAILED") => {
+  const recordFailure = async (code: "MISSING_CREDENTIALS" | "AUTH_FAILED" | "PROVIDER_UNAVAILABLE" | "PROVIDER_RATE_LIMITED" | "HOST_NOT_ALLOWED" | "CREDENTIAL_DECRYPTION_FAILED") => {
     await db.$transaction(async (tx) => {
       const changed = await tx.integration.updateMany({
         where: {id: integration.id, workspaceId: context.workspace.id, status: integration.status, credentialsEncrypted: integration.credentialsEncrypted},
@@ -395,14 +397,17 @@ export async function checkN8nIntegrationHealth(formData: FormData) {
   } catch (error) {
     const message = error instanceof Error ? error.message : "";
     const code = message === "N8N_AUTH_FAILED" ? "AUTH_FAILED"
+      : message === "N8N_PROVIDER_RATE_LIMITED" ? "PROVIDER_RATE_LIMITED"
       : message === "N8N_HOST_NOT_ALLOWED" ? "HOST_NOT_ALLOWED"
       : "PROVIDER_UNAVAILABLE";
     await recordFailure(code);
     throw new Error(code === "AUTH_FAILED"
       ? "n8n rejected the saved API key. Reconnect with a valid key."
-      : code === "HOST_NOT_ALLOWED"
-        ? "The saved n8n hostname is no longer allowlisted. Contact the platform administrator."
-        : "n8n could not be reached. The health check was recorded.");
+      : code === "PROVIDER_RATE_LIMITED"
+        ? "n8n rate-limited the health check. Retry later."
+        : code === "HOST_NOT_ALLOWED"
+          ? "The saved n8n hostname is no longer allowlisted. Contact the platform administrator."
+          : "n8n could not be reached. The health check was recorded.");
   }
 
   await db.$transaction(async (tx) => {
