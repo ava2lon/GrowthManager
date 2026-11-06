@@ -1,4 +1,4 @@
-import {Plug,ShieldCheck,Workflow,ChartNoAxesCombined,Share2,Mail,MessageSquare,Settings2} from "lucide-react";
+import {Plug,ShieldCheck,Workflow,BarChart3,Share2,Mail,MessageSquare,Settings2} from "lucide-react";
 import {requireWorkspaceContext} from "@/lib/workspace";
 import {db} from "@/lib/db";
 import {integrationProviders} from "@/lib/integration-providers";
