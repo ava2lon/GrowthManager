@@ -34,19 +34,21 @@ export async function updateMemberRole(formData: FormData) {
     }
   }
 
-  await db.workspaceMembership.update({
-    where: {id: target.id},
-    data: {role: nextRole},
-  });
-  await db.activityLog.create({
-    data: {
-      workspaceId: context.workspace.id,
-      userId: context.userId,
-      action: "workspace.member_role_updated",
-      entityType: "workspace_membership",
-      entityId: target.id,
-      metadata: {targetUserId, previousRole: target.role, nextRole},
-    },
+  await db.$transaction(async (tx) => {
+    await tx.workspaceMembership.update({
+      where: {id: target.id},
+      data: {role: nextRole},
+    });
+    await tx.activityLog.create({
+      data: {
+        workspaceId: context.workspace.id,
+        userId: context.userId,
+        action: "workspace.member_role_updated",
+        entityType: "workspace_membership",
+        entityId: target.id,
+        metadata: {targetUserId, previousRole: target.role, nextRole},
+      },
+    });
   });
   revalidatePath("/dashboard/team");
 }
