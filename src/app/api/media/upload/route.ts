@@ -87,9 +87,24 @@ export async function POST(request: Request) {
     } | null;
     if (!response.ok || !payload) throw new Error("Signed upload URL could not be created.");
     const returnedUrl = payload.signedURL ?? payload.signedUrl ?? payload.url;
-    if (typeof returnedUrl !== "string") throw new Error("Storage returned an invalid upload URL.");
-    const uploadUrl = new URL(returnedUrl, storage.baseUrl);
-    if (uploadUrl.origin !== storage.baseUrl || !uploadUrl.pathname.startsWith("/storage/v1/")) {
+    let uploadUrl: URL;
+    if (typeof payload.token === "string" && payload.token.length > 0) {
+      uploadUrl = new URL(
+        "/storage/v1/object/upload/sign/" + encodeURIComponent(storage.bucket) + "/" + encodedPath,
+        storage.baseUrl,
+      );
+      uploadUrl.searchParams.set("token", payload.token);
+    } else if (typeof returnedUrl === "string") {
+      const normalized = returnedUrl.startsWith("/object/")
+        ? "/storage/v1" + returnedUrl
+        : returnedUrl;
+      uploadUrl = new URL(normalized, storage.baseUrl);
+    } else {
+      throw new Error("Storage returned an invalid upload URL.");
+    }
+    if (uploadUrl.origin !== storage.baseUrl ||
+        !uploadUrl.pathname.startsWith("/storage/v1/object/upload/sign/") ||
+        !uploadUrl.searchParams.has("token")) {
       throw new Error("Storage returned an unsafe upload URL.");
     }
     await db.activityLog.create({
