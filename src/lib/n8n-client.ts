@@ -171,3 +171,92 @@ export async function listN8nWorkflows(
 
   return {workflows, hasMore};
 }
+
+
+export type N8nWorkflowDetail = {
+  id: string;
+  name: string;
+  active: boolean;
+  createdAt: string | null;
+  updatedAt: string | null;
+  nodeCount: number;
+  nodes: Array<{name: string; type: string}>;
+  connectionCount: number;
+};
+
+export async function getN8nWorkflowDetail(
+  baseUrl: string,
+  apiKey: string,
+  workflowId: string,
+): Promise<N8nWorkflowDetail> {
+  if (typeof apiKey !== "string" || apiKey.length < 16 || apiKey.length > 512) {
+    throw new Error("Invalid n8n API key.");
+  }
+  if (typeof workflowId !== "string" || !/^[A-Za-z0-9_-]{1,128}$/.test(workflowId)) {
+    throw new Error("Invalid n8n workflow ID.");
+  }
+
+  const normalizedBaseUrl = normalizeN8nBaseUrl(baseUrl);
+  let response: Response;
+  try {
+    response = await fetch(
+      normalizedBaseUrl + "/api/v1/workflows/" + encodeURIComponent(workflowId) + "?excludePinnedData=true",
+      {
+        method: "GET",
+        headers: {Accept: "application/json", "X-N8N-API-KEY": apiKey},
+        cache: "no-store",
+        redirect: "error",
+        signal: AbortSignal.timeout(N8N_API_TIMEOUT_MS),
+      },
+    );
+  } catch {
+    throw new Error("N8N_PROVIDER_UNAVAILABLE");
+  }
+
+  if (response.status === 401 || response.status === 403) throw new Error("N8N_AUTH_FAILED");
+  if (response.status === 404) throw new Error("N8N_WORKFLOW_NOT_FOUND");
+  if (response.status === 429) throw new Error("N8N_PROVIDER_RATE_LIMITED");
+  if (!response.ok) throw new Error("N8N_PROVIDER_UNAVAILABLE");
+
+  let payload: unknown;
+  try {
+    payload = await response.json();
+  } catch {
+    throw new Error("N8N_PROVIDER_UNAVAILABLE");
+  }
+  if (!payload || typeof payload !== "object") throw new Error("N8N_PROVIDER_UNAVAILABLE");
+
+  const workflow = payload as {
+    id?: unknown; name?: unknown; active?: unknown; createdAt?: unknown; updatedAt?: unknown;
+    nodes?: unknown; connections?: unknown;
+  };
+  if (
+    workflow.id !== workflowId || typeof workflow.name !== "string" ||
+    typeof workflow.active !== "boolean" || !Array.isArray(workflow.nodes) ||
+    !workflow.connections || typeof workflow.connections !== "object" || Array.isArray(workflow.connections)
+  ) throw new Error("N8N_PROVIDER_UNAVAILABLE");
+
+  const nodes = workflow.nodes.flatMap((item) => {
+    if (!item || typeof item !== "object") return [];
+    const node = item as {name?: unknown; type?: unknown};
+    if (typeof node.name !== "string" || typeof node.type !== "string") return [];
+    return [{name: node.name.slice(0, 160), type: node.type.slice(0, 200)}];
+  });
+  const connectionMap = workflow.connections as Record<string, unknown>;
+  let connectionCount = 0;
+  for (const outputs of Object.values(connectionMap)) {
+    if (!outputs || typeof outputs !== "object" || Array.isArray(outputs)) continue;
+    for (const channels of Object.values(outputs as Record<string, unknown>)) {
+      if (!Array.isArray(channels)) continue;
+      for (const targets of channels) if (Array.isArray(targets)) connectionCount += targets.length;
+    }
+  }
+  const safeDate = (value: unknown) =>
+    typeof value === "string" && !Number.isNaN(Date.parse(value)) ? value : null;
+
+  return {
+    id: workflowId, name: workflow.name.slice(0, 240), active: workflow.active,
+    createdAt: safeDate(workflow.createdAt), updatedAt: safeDate(workflow.updatedAt),
+    nodeCount: nodes.length, nodes, connectionCount,
+  };
+}
