@@ -1,3 +1,4 @@
+import Link from "next/link";
 import {Plug,ShieldCheck,Workflow,BarChart3,Share2,Mail,MessageSquare,Settings2} from "lucide-react";
 import {requireWorkspaceContext} from "@/lib/workspace";
 import {db} from "@/lib/db";
@@ -12,7 +13,6 @@ import {
   configureN8nIntegration,
   configureResendIntegration,
   disconnectIntegration,
-  setN8nWorkflowState,
 } from "./actions";
 import {N8nWorkflowStateControl} from "@/components/n8n-workflow-state-control";
 import {N8nExecutionRetryControl} from "@/components/n8n-execution-retry-control";
@@ -270,7 +270,7 @@ export default async function IntegrationsPage({searchParams}: {searchParams: Pr
                 active={selectedWorkflow.active}
               />
             )}
-            <a href="/dashboard/integrations#n8n-workflows" className="mt-3 inline-block text-xs font-semibold text-indigo-700 hover:underline">Close workflow details</a>
+            <Link href="/dashboard/integrations#n8n-workflows" className="mt-3 inline-block text-xs font-semibold text-indigo-700 hover:underline">Close workflow details</Link>
           </div>
         )}
       </section>
