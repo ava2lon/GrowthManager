@@ -1,6 +1,6 @@
 "use client";
 
-import {useMemo,useState,useTransition} from "react";
+import {useEffect,useMemo,useState,useTransition} from "react";
 import {useRouter} from "next/navigation";
 import {rescheduleFacebookPost} from "@/app/dashboard/social/actions";
 
@@ -17,7 +17,8 @@ function dayKey(value:Date){return value.toISOString().slice(0,10);}
 function startOfGrid(value:Date){const first=monthStart(value);const offset=(first.getUTCDay()+6)%7;return new Date(Date.UTC(first.getUTCFullYear(),first.getUTCMonth(),1-offset));}
 
 export default function SocialEditorialCalendar({initialMonth,posts}:{initialMonth:string;posts:CalendarPost[]}){
-  const [month,setMonth]=useState(()=>monthStart(new Date(initialMonth+"T00:00:00Z")));
+  const [month,setMonth]=useState(()=>monthStart(new Date(initialMonth+"-01T00:00:00Z")));
+  useEffect(()=>{setMonth(monthStart(new Date(initialMonth+"-01T00:00:00Z")));setWeekOffset(0);},[initialMonth]);
   const [view,setView]=useState<"month"|"week">("month");
   const [weekOffset,setWeekOffset]=useState(0);
   const [busy,startTransition]=useTransition();
@@ -53,7 +54,7 @@ export default function SocialEditorialCalendar({initialMonth,posts}:{initialMon
     if(id)movePost(id,date);
   }
   function shift(direction:number){
-    if(view==="month"){setMonth(current=>addMonths(current,direction));setWeekOffset(0);}
+    if(view==="month"){const next=addMonths(month,direction);router.push("/dashboard/social?month="+next.toISOString().slice(0,7));}
     else setWeekOffset(current=>Math.max(0,Math.min(5,current+direction)));
   }
   const title=view==="month"?month.toLocaleDateString("en-GB",{month:"long",year:"numeric",timeZone:"UTC"}):weekStart.toLocaleDateString("en-GB",{day:"numeric",month:"short",timeZone:"UTC"})+" – "+new Date(weekStart.getTime()+6*86400000).toLocaleDateString("en-GB",{day:"numeric",month:"short",year:"numeric",timeZone:"UTC"});
