@@ -298,8 +298,9 @@ export async function configureN8nIntegration(formData: FormData) {
   }
 
   const {validateN8nConnection, normalizeN8nBaseUrl} = await import("@/lib/n8n-client");
-  const baseUrl = normalizeN8nBaseUrl(baseUrlInput);
+  let baseUrl: string;
   try {
+    baseUrl = normalizeN8nBaseUrl(baseUrlInput);
     await validateN8nConnection(baseUrl, apiKey);
   } catch (error) {
     const message = error instanceof Error ? error.message : "";
