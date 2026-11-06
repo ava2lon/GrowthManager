@@ -38,7 +38,7 @@ async function graph(path: string, params: Record<string, string>) {
   const url = new URL(`https://graph.facebook.com/${version}/${path.replace(/^\//, "")}`);
   for (const [key, value] of Object.entries(params)) url.searchParams.set(key, value);
   const response = await fetch(url, {cache: "no-store", signal: AbortSignal.timeout(12_000)});
-  const body = await response.json().catch(() => null) as {error?: {code?: number}; access_token?: string; data?: Array<{id?: string; name?: string; access_token?: string; instagram_business_account?: {id?: string; username?: string}}> } | null;
+  const body = await response.json().catch(() => null) as {error?: {code?: number}; access_token?: string; data?: Array<{id?: string; name?: string; access_token?: string; instagram_business_account?: {id?: string; username?: string}; permission?: string; status?: string}> } | null;
   if (!response.ok || !body) throw new Error("META_PROVIDER_ERROR");
   return body;
 }
@@ -50,7 +50,7 @@ export async function GET(request: Request) {
   const providerError = url.searchParams.get("error");
   const cookieStore = await cookies();
   const cookieState = cookieStore.get(COOKIE)?.value;
-  const response = providerError ? redirect(request, "authorization_denied") : null;
+  if (providerError) { const denied = redirect(request, "authorization_denied"); denied.cookies.delete(COOKIE); return denied; }
   if (!code || !returnedState || !cookieState || returnedState !== cookieState) {
     const failed = redirect(request, "invalid_state");
     failed.cookies.delete(COOKIE);
@@ -104,6 +104,8 @@ export async function GET(request: Request) {
     });
     if (typeof longToken.access_token !== "string") throw new Error("META_PROVIDER_ERROR");
 
+    const permissions = await graph("me/permissions", {access_token:longToken.access_token});
+    const grantedScopes = (permissions.data ?? []).filter((item) => item.status === "granted" && item.permission).map((item) => item.permission as string);
     const pages = await graph("me/accounts", {
       fields: "id,name,access_token,instagram_business_account{id,username}",
       access_token: longToken.access_token,
@@ -148,12 +150,12 @@ export async function GET(request: Request) {
             id,workspaceId:state.workspaceId,brandId:state.brandId,provider:record.provider,
             providerUserId:record.providerUserId,accountName:record.accountName,
             credentialsEncrypted:encrypted,status:"CONNECTED",
-            scopes:["pages_show_list","pages_read_engagement","pages_manage_posts","instagram_basic","instagram_content_publish","instagram_manage_insights"],
+            scopes:grantedScopes,
             connectedAt:new Date(),lastValidatedAt:new Date(),lastErrorCode:null,metadata:record.metadata,
           },
           update:{
             brandId:state.brandId,accountName:record.accountName,credentialsEncrypted:encrypted,
-            status:"CONNECTED",connectedAt:new Date(),lastValidatedAt:new Date(),lastErrorCode:null,metadata:record.metadata,
+            status:"CONNECTED",scopes:grantedScopes,connectedAt:new Date(),lastValidatedAt:new Date(),lastErrorCode:null,metadata:record.metadata,
           },
         });
       }
