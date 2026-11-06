@@ -1,6 +1,7 @@
 import {requireWorkspaceContext} from "@/lib/workspace";
 import {db} from "@/lib/db";
 import {updateMemberRole, removeWorkspaceMember} from "./actions";
+import {createWorkspaceInvitation, revokeWorkspaceInvitation} from "./invitation-actions";
 
 const roleOptions = ["ADMIN", "MEMBER", "VIEWER"] as const;
 
@@ -12,6 +13,12 @@ export default async function TeamPage() {
     orderBy: [{role: "asc"}, {createdAt: "asc"}],
   });
   const canManage = membership.role === "OWNER" || membership.role === "ADMIN";
+  const invitations = await db.workspaceInvitation.findMany({
+    where: {workspaceId: workspace.id, acceptedAt: null, revokedAt: null, expiresAt: {gt: new Date()}},
+    orderBy: {createdAt: "desc"},
+    select: {id: true, email: true, role: true, expiresAt: true},
+  });
+
 
   return (
     <div className="space-y-7">
@@ -73,10 +80,19 @@ export default async function TeamPage() {
         </div>
       </div>
 
-      <div className="rounded-xl border border-dashed border-slate-300 bg-white p-5">
-        <h2 className="text-sm font-semibold text-slate-800">Inviting new members</h2>
-        <p className="mt-1 text-sm text-slate-500">Email invitations are not enabled yet. The next step is to add invitation records, expiring single-use tokens, and an email delivery integration.</p>
-      </div>
+      {canManage && <section className="rounded-2xl border border-slate-200 bg-white p-5 sm:p-6">
+        <h2 className="text-lg font-semibold text-slate-900">Invite a teammate</h2>
+        <p className="mt-1 text-sm text-slate-500">Invitations expire after seven days and can only be accepted by the invited email address.</p>
+        <form action={createWorkspaceInvitation} className="mt-5 grid gap-3 sm:grid-cols-[minmax(0,1fr)_160px_auto]">
+          <label className="grid gap-1.5 text-xs font-medium text-slate-600">Email address<input required type="email" name="email" maxLength={254} placeholder="teammate@company.com" className="rounded-lg border border-slate-200 px-3 py-2.5 text-sm font-normal outline-none focus:border-indigo-400"/></label>
+          <label className="grid gap-1.5 text-xs font-medium text-slate-600">Initial role<select name="role" defaultValue="MEMBER" className="rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-sm font-normal">{(membership.role === "OWNER" ? ["ADMIN","MEMBER","VIEWER"] : ["MEMBER","VIEWER"]).map(role=><option key={role} value={role}>{role.toLowerCase()}</option>)}</select></label>
+          <button className="self-end rounded-lg bg-indigo-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-indigo-700">Send invitation</button>
+        </form>
+        <div className="mt-6 border-t border-slate-100 pt-5">
+          <h3 className="text-sm font-semibold text-slate-800">Pending invitations ({invitations.length})</h3>
+          {invitations.length === 0 ? <p className="mt-2 text-sm text-slate-400">No pending invitations.</p> : <div className="mt-3 divide-y divide-slate-100">{invitations.map(invite=><div key={invite.id} className="flex flex-wrap items-center justify-between gap-3 py-3"><div><p className="text-sm font-medium text-slate-800">{invite.email}</p><p className="mt-0.5 text-xs text-slate-500">{invite.role.toLowerCase()} · Expires {invite.expiresAt.toLocaleDateString()}</p></div><form action={revokeWorkspaceInvitation}><input type="hidden" name="invitationId" value={invite.id}/><button className="rounded-lg border border-slate-200 px-3 py-2 text-xs font-medium text-slate-600 hover:border-red-200 hover:text-red-600">Revoke</button></form></div>)}</div>}
+        </div>
+      </section>}
     </div>
   );
 }
