@@ -178,6 +178,7 @@ model Integration {
   updatedAt   DateTime  @updatedAt
   workspace   Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
   @@unique([workspaceId, provider])
+  @@index([workspaceId, status, updatedAt])
 }
 
 model Automation {
