@@ -32,17 +32,6 @@ function redirect(request: Request, status: string) {
   return NextResponse.redirect(new URL("/dashboard/social?meta=" + encodeURIComponent(status), request.url));
 }
 
-function clearStateCookie(response: NextResponse) {
-  response.cookies.set(COOKIE, "", {
-    httpOnly: true,
-    secure: process.env.NODE_ENV === "production",
-    sameSite: "lax",
-    path: "/api/integrations/meta",
-    maxAge: 0,
-  });
-  return response;
-}
-
 async function graph(path: string, params: Record<string, string>) {
   const version = process.env.META_GRAPH_API_VERSION;
   if (!version || !/^v\d+\.\d+$/.test(version)) throw new Error("META_NOT_CONFIGURED");
