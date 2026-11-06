@@ -210,7 +210,7 @@ export async function refreshMetaAuthorization(formData: FormData) {
   const account = await db.socialAccount.findFirst({
     where: {id: accountId, workspaceId: context.workspace.id},
     select: {
-      id: true, provider: true, status: true, providerUserId: true,
+      id: true, provider: true, status: true, providerUserId: true, tokenExpiresAt: true,
       credentialsEncrypted: true, metadata: true, accountName: true,
     },
   });
@@ -225,6 +225,11 @@ export async function refreshMetaAuthorization(formData: FormData) {
     throw new Error("Saved credentials could not be decrypted. Reconnect this account.");
   }
   const userToken = credentials.userAccessToken;
+  const now = Date.now();
+  if (!account.tokenExpiresAt || account.tokenExpiresAt.getTime() <= now ||
+      account.tokenExpiresAt.getTime() - now > 14 * 24 * 60 * 60 * 1000) {
+    throw new Error("Authorization refresh is only offered while a tracked Meta token is within 14 days of expiry. Reconnect an expired token.");
+  }
   const appId = process.env.META_APP_ID;
   const appSecret = process.env.META_APP_SECRET;
   const version = process.env.META_GRAPH_API_VERSION;
