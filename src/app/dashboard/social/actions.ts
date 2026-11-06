@@ -341,21 +341,25 @@ async function enforcePublishLimit(workspaceId: string, userId: string) {
 
 export async function createFacebookDraft(formData: FormData) {
   const context = await requireWorkspaceRole("MEMBER");
-  const brandId = String(formData.get("brandId") ?? "").trim();
   const accountId = String(formData.get("accountId") ?? "").trim();
   const body = String(formData.get("body") ?? "").trim();
-  if (!brandId || !accountId || !body || body.length > 63206) {
-    throw new Error("Choose a brand and Facebook Page, and enter post text (maximum 63,206 characters).");
+  if (!accountId || !body || body.length > 63206) {
+    throw new Error("Choose a Facebook Page and enter post text (maximum 63,206 characters).");
   }
-  const [brand, account] = await Promise.all([
-    db.brand.findFirst({where:{id:brandId,workspaceId:context.workspace.id,status:"ACTIVE"},select:{id:true}}),
-    db.socialAccount.findFirst({where:{id:accountId,workspaceId:context.workspace.id,brandId,provider:"FACEBOOK",status:"CONNECTED"},select:{id:true,scopes:true}}),
-  ]);
-  if (!brand || !account) throw new Error("The selected brand or connected Facebook Page is unavailable.");
+  const account = await db.socialAccount.findFirst({
+    where:{id:accountId,workspaceId:context.workspace.id,provider:"FACEBOOK",status:"CONNECTED"},
+    select:{id:true,brandId:true,scopes:true},
+  });
+  if (!account) throw new Error("The selected connected Facebook Page is unavailable.");
+  const brand = await db.brand.findFirst({
+    where:{id:account.brandId,workspaceId:context.workspace.id,status:"ACTIVE"},
+    select:{id:true},
+  });
+  if (!brand) throw new Error("The Facebook Page is not assigned to an active brand.");
   if (!account.scopes.includes("pages_manage_posts")) throw new Error("This Page connection is missing pages_manage_posts. Reconnect and grant the required permission.");
   const post = await db.$transaction(async (tx) => {
     const created = await tx.contentPost.create({
-      data:{workspaceId:context.workspace.id,brandId,body,status:"DRAFT"},
+      data:{workspaceId:context.workspace.id,brandId:brand.id,body,status:"DRAFT"},
       select:{id:true},
     });
     await tx.socialPostTarget.create({
