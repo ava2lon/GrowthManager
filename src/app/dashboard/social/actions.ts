@@ -5,6 +5,7 @@ import {requireWorkspaceRole} from "@/lib/workspace";
 import {db} from "@/lib/db";
 import {consumeRateLimit} from "@/lib/rate-limit";
 import {decryptIntegrationCredentials, encryptIntegrationCredentials} from "@/lib/integration-crypto";
+import {publishFacebookTarget} from "@/lib/social-publishing";
 
 function readMetadata(value: unknown): Record<string, unknown> {
   if (!value || typeof value !== "object" || Array.isArray(value)) return {};
@@ -374,102 +375,57 @@ export async function createFacebookDraft(formData: FormData) {
   return post.id;
 }
 
+
+export async function scheduleFacebookDraft(formData: FormData) {
+  const context = await requireWorkspaceRole("MEMBER");
+  const targetId = String(formData.get("targetId") ?? "").trim();
+  const scheduledAtRaw = String(formData.get("scheduledAt") ?? "").trim();
+  if (!targetId || targetId.length > 128 || !/^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}$/.test(scheduledAtRaw)) {
+    throw new Error("Choose a valid UTC date and time.");
+  }
+  // The form explicitly labels the value UTC, avoiding server-local timezone ambiguity.
+  const scheduledAt = new Date(scheduledAtRaw + ":00Z");
+  if (!Number.isFinite(scheduledAt.getTime()) || scheduledAt.getTime() < Date.now() + 60_000 || scheduledAt.getTime() > Date.now() + 365*24*60*60_000) {
+    throw new Error("Schedule must be at least one minute in the future and within the next year.");
+  }
+  const target = await db.socialPostTarget.findFirst({
+    where:{id:targetId,workspaceId:context.workspace.id,provider:"FACEBOOK",status:"DRAFT"},
+    include:{contentPost:{select:{id:true,brandId:true,status:true}},socialAccount:{select:{id:true,brandId:true,status:true,scopes:true}}},
+  });
+  if (!target || target.contentPost.brandId!==target.socialAccount.brandId || target.socialAccount.status!=="CONNECTED" ||
+      !target.socialAccount.scopes.includes("pages_manage_posts")) {
+    throw new Error("This draft or connected Facebook Page is no longer eligible for scheduling.");
+  }
+  const changed = await db.$transaction(async tx => {
+    const claimed = await tx.socialPostTarget.updateMany({
+      where:{id:target.id,workspaceId:context.workspace.id,status:"DRAFT"},
+      data:{status:"SCHEDULED",errorCode:null},
+    });
+    if (claimed.count!==1) throw new Error("This target has changed. Refresh and try again.");
+    await tx.contentPost.update({where:{id:target.contentPost.id},data:{status:"SCHEDULED",scheduledAt}});
+    await tx.activityLog.create({data:{
+      workspaceId:context.workspace.id,userId:context.userId,action:"social_post.scheduled",
+      entityType:"ContentPost",entityId:target.contentPost.id,metadata:{provider:"FACEBOOK",scheduledAt:scheduledAt.toISOString()},
+    }});
+    return true;
+  });
+  if(changed) revalidatePath("/dashboard/social");
+}
+
 export async function publishFacebookDraft(formData: FormData) {
   const context = await requireWorkspaceRole("MEMBER");
   const targetId = String(formData.get("targetId") ?? "").trim();
   if (!targetId || targetId.length > 128) throw new Error("Invalid publishing target.");
   await enforcePublishLimit(context.workspace.id, context.userId);
-
-  const target = await db.socialPostTarget.findFirst({
-    where:{id:targetId,workspaceId:context.workspace.id,provider:"FACEBOOK",status:"DRAFT"},
-    include:{contentPost:{select:{id:true,workspaceId:true,body:true,brandId:true}},socialAccount:{select:{id:true,workspaceId:true,brandId:true,provider:true,status:true,scopes:true,credentialsEncrypted:true,metadata:true}}},
-  });
-  if (!target || target.contentPost.workspaceId!==context.workspace.id ||
-      target.socialAccount.workspaceId!==context.workspace.id ||
-      target.contentPost.brandId!==target.socialAccount.brandId ||
-      target.socialAccount.status!=="CONNECTED" || !target.socialAccount.credentialsEncrypted) {
-    throw new Error("This draft or connected Page is no longer eligible for publishing.");
-  }
-  if (!target.socialAccount.scopes.includes("pages_manage_posts")) {
-    throw new Error("The connected Page is missing pages_manage_posts. Reconnect it before publishing.");
-  }
-  const metadata = target.socialAccount.metadata && typeof target.socialAccount.metadata==="object" && !Array.isArray(target.socialAccount.metadata)
-    ? target.socialAccount.metadata as Record<string,unknown> : {};
-  if (typeof metadata.pageId!=="string") throw new Error("The Facebook Page identifier is missing. Reconnect the Page.");
-  const version = process.env.META_GRAPH_API_VERSION;
-  if (!version || !/^v\d+\.\d+$/.test(version)) throw new Error("Meta publishing is not configured.");
-
-  let credentials: Record<string,unknown>;
-  try {
-    credentials = decryptIntegrationCredentials(target.socialAccount.credentialsEncrypted,context.workspace.id,target.socialAccount.id);
-  } catch {
-    throw new Error("Saved Page credentials could not be decrypted. Reconnect the Page.");
-  }
-  if (typeof credentials.accessToken!=="string" || !credentials.accessToken) {
-    throw new Error("The Page access token is missing. Reconnect the Page.");
-  }
-
-  const claim = await db.socialPostTarget.updateMany({
-    where:{id:target.id,workspaceId:context.workspace.id,status:"DRAFT"},
-    data:{status:"PUBLISHING",errorCode:null},
-  });
-  if (claim.count!==1) throw new Error("This draft is already being published or has changed. Refresh the page.");
-  const startedAt = Date.now();
-  const previousAttempts = await db.socialPublishAttempt.count({where:{workspaceId:context.workspace.id,targetId:target.id}});
-  const attempt = await db.socialPublishAttempt.create({
-    data:{workspaceId:context.workspace.id,targetId:target.id,attemptNumber:previousAttempts+1,idempotencyKey:randomUUID(),status:"STARTED"},
-    select:{id:true},
-  });
-
-  let providerPostId: string | null = null;
-  let errorCode: string | null = null;
-  let httpStatus: number | null = null;
-  try {
-    const endpoint = new URL("https://graph.facebook.com/"+version+"/"+encodeURIComponent(metadata.pageId)+"/feed");
-    const payload = new URLSearchParams({message:target.contentPost.body,access_token:credentials.accessToken});
-    const response = await fetch(endpoint,{
-      method:"POST",headers:{"Content-Type":"application/x-www-form-urlencoded"},
-      body:payload.toString(),cache:"no-store",redirect:"error",signal:AbortSignal.timeout(20000),
-    });
-    httpStatus=response.status;
-    const result = await response.json().catch(()=>null) as {id?:string;error?:{code?:number;error_subcode?:number;is_transient?:boolean}}|null;
-    if (!response.ok || typeof result?.id!=="string") {
-      const code=result?.error?.code;
-      errorCode=code===190?"META_AUTH_FAILED":code===10||code===200?"META_PERMISSION_DENIED":response.status===429?"META_RATE_LIMITED":"META_PUBLISH_REJECTED";
-    } else {
-      providerPostId=result.id;
-    }
-  } catch {
-    // A timeout or transport failure may happen after Meta accepted the post.
-    // Do not retry automatically: that could create a duplicate Page post.
-    errorCode="PUBLISH_OUTCOME_UNKNOWN";
-  }
-
-  const finishedAt=new Date();
-  await db.$transaction(async (tx)=>{
-    await tx.socialPublishAttempt.update({
-      where:{id:attempt.id},
-      data:{status:providerPostId?"PUBLISHED":errorCode==="PUBLISH_OUTCOME_UNKNOWN"?"UNKNOWN":"FAILED",providerPostId,errorCode,httpStatus,finishedAt,durationMs:Math.max(0,Date.now()-startedAt)},
-    });
-    await tx.socialPostTarget.update({
-      where:{id:target.id},
-      data:{status:providerPostId?"PUBLISHED":errorCode==="PUBLISH_OUTCOME_UNKNOWN"?"UNKNOWN":"FAILED",providerPostId,errorCode,publishedAt:providerPostId?finishedAt:null},
-    });
-    await tx.contentPost.update({
-      where:{id:target.contentPost.id},
-      data:{status:providerPostId?"PUBLISHED":"FAILED",publishedAt:providerPostId?finishedAt:null},
-    });
-    await tx.activityLog.create({
-      data:{workspaceId:context.workspace.id,userId:context.userId,action:providerPostId?"social_post.published":"social_post.publish_failed",entityType:"ContentPost",entityId:target.contentPost.id,metadata:{provider:"FACEBOOK",targetId:target.id,errorCode,httpStatus}},
-    });
-  });
+  const result = await publishFacebookTarget({targetId,workspaceId:context.workspace.id,actorUserId:context.userId,allowedStatuses:["DRAFT"]});
   revalidatePath("/dashboard/social");
-  if (!providerPostId) {
-    throw new Error(errorCode==="PUBLISH_OUTCOME_UNKNOWN"
+  if(result.status!=="PUBLISHED") {
+    throw new Error(result.status==="UNKNOWN"
       ? "Meta's response could not be confirmed. The target is locked to prevent duplicate publishing; verify the Page before any manual retry."
-      : errorCode==="META_AUTH_FAILED"?"Meta rejected the Page token. Reconnect the account."
-      : errorCode==="META_PERMISSION_DENIED"?"Meta denied publishing. Check Page access and app permissions."
-      : errorCode==="META_RATE_LIMITED"?"Meta rate-limited publishing. Try again later after checking the Page."
-      :"Meta rejected the post. Review the Page connection and try a new draft.");
+      : result.status==="SKIPPED"?"This draft is already being processed or is no longer eligible."
+      : result.errorCode==="META_AUTH_FAILED"?"Meta rejected the Page token. Reconnect the account."
+      : result.errorCode==="META_PERMISSION_DENIED"?"Meta denied publishing. Check Page access and app permissions."
+      : result.errorCode==="META_RATE_LIMITED"?"Meta rate-limited publishing. Try again later."
+      :"Meta rejected the post or its connection is not eligible. Review the Page and create a new draft if needed.");
   }
 }
