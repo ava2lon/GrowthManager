@@ -288,7 +288,7 @@ model AutomationAlertDelivery {
   createdAt         DateTime @default(now())
   updatedAt         DateTime @updatedAt
   alertEvent        AutomationAlertEvent @relation(fields: [workspaceId, alertEventId], references: [workspaceId, id], onDelete: Cascade)
-  attempts          AutomationAlertDeliveryAttempt[]
+  attemptRecords    AutomationAlertDeliveryAttempt[]
   integration       Integration @relation(fields: [workspaceId, integrationId], references: [workspaceId, id], onDelete: Cascade)
   @@unique([workspaceId, id])
   @@unique([workspaceId, alertEventId, channel, recipient])
