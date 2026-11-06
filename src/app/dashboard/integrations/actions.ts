@@ -429,3 +429,112 @@ export async function checkN8nIntegrationHealth(formData: FormData) {
   });
   revalidatePath("/dashboard/integrations");
 }
+
+
+export async function setN8nWorkflowState(formData: FormData) {
+  const context = await requireWorkspaceRole("ADMIN");
+  const integrationId = String(formData.get("integrationId") ?? "");
+  const workflowId = String(formData.get("workflowId") ?? "");
+  const desiredActiveInput = String(formData.get("desiredActive") ?? "");
+  const expectedActiveInput = String(formData.get("expectedActive") ?? "");
+
+  if (!integrationId || integrationId.length > 128 ||
+      !/^[A-Za-z0-9_-]{1,128}$/.test(workflowId) ||
+      !["true", "false"].includes(desiredActiveInput) ||
+      !["true", "false"].includes(expectedActiveInput)) {
+    throw new Error("Invalid workflow state request.");
+  }
+  const desiredActive = desiredActiveInput === "true";
+  const expectedActive = expectedActiveInput === "true";
+  if (desiredActive === expectedActive) throw new Error("Workflow state has not changed.");
+
+  const rateLimit = await consumeRateLimit(
+    "n8n-workflow-state:" + context.workspace.id + ":" + context.userId,
+    10,
+    3600,
+  );
+  if (!rateLimit.allowed || (process.env.NODE_ENV === "production" && !rateLimit.configured)) {
+    throw new Error("Workflow control limit reached or connection protection is unavailable.");
+  }
+
+  const integration = await db.integration.findFirst({
+    where: {id: integrationId, workspaceId: context.workspace.id, provider: "n8n", status: "CONNECTED"},
+    select: {id: true, credentialsEncrypted: true},
+  });
+  if (!integration?.credentialsEncrypted) {
+    throw new Error("A connected n8n integration is required.");
+  }
+
+  const {decryptIntegrationCredentials} = await import("@/lib/integration-crypto");
+  const {getN8nWorkflowDetail, listN8nWorkflows, setN8nWorkflowActive} = await import("@/lib/n8n-client");
+  let credentials: Record<string, unknown>;
+  try {
+    credentials = decryptIntegrationCredentials(
+      integration.credentialsEncrypted,
+      context.workspace.id,
+      integration.id,
+    );
+  } catch {
+    throw new Error("Could not decrypt saved n8n credentials. Check the integration encryption key configuration.");
+  }
+  if (typeof credentials.baseUrl !== "string" || typeof credentials.apiKey !== "string") {
+    throw new Error("Saved n8n credentials are incomplete. Reconnect n8n.");
+  }
+
+  try {
+    const inventory = await listN8nWorkflows(credentials.baseUrl, credentials.apiKey);
+    if (!inventory.workflows.some((workflow) => workflow.id === workflowId)) {
+      throw new Error("N8N_WORKFLOW_NOT_FOUND");
+    }
+    const current = await getN8nWorkflowDetail(credentials.baseUrl, credentials.apiKey, workflowId);
+    if (current.active !== expectedActive) {
+      throw new Error("N8N_WORKFLOW_STATE_CONFLICT");
+    }
+
+    await setN8nWorkflowActive(credentials.baseUrl, credentials.apiKey, workflowId, desiredActive);
+    const verified = await getN8nWorkflowDetail(credentials.baseUrl, credentials.apiKey, workflowId);
+    const confirmed = verified.active === desiredActive;
+
+    await db.activityLog.create({
+      data: {
+        workspaceId: context.workspace.id,
+        userId: context.userId,
+        action: confirmed ? "integration.n8n_workflow_state_changed" : "integration.n8n_workflow_state_unconfirmed",
+        entityType: "n8n_workflow",
+        entityId: workflowId,
+        metadata: {
+          integrationId: integration.id,
+          provider: "n8n",
+          previousActive: expectedActive,
+          requestedActive: desiredActive,
+          confirmed,
+        },
+      },
+    });
+
+    if (!confirmed) {
+      throw new Error("n8n accepted the request but the new workflow state could not be confirmed. Refresh before retrying.");
+    }
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "";
+    if (message === "N8N_WORKFLOW_STATE_CONFLICT") {
+      throw new Error("This workflow changed in n8n. Refresh the page before trying again.");
+    }
+    if (message === "N8N_WORKFLOW_NOT_FOUND") {
+      throw new Error("Workflow not found in the connected n8n account.");
+    }
+    if (message === "N8N_AUTH_FAILED") {
+      throw new Error("n8n rejected the API key or its workflow:activate permission. Check API key scopes.");
+    }
+    if (message === "N8N_PROVIDER_RATE_LIMITED") {
+      throw new Error("n8n rate-limited this request. Retry later.");
+    }
+    if (message === "N8N_PROVIDER_UNAVAILABLE") {
+      throw new Error("n8n is unavailable. The workflow state may need to be checked directly in n8n.");
+    }
+    if (message.includes("accepted the request")) throw error;
+    throw new Error("Could not change the n8n workflow state. Check the connection and refresh before retrying.");
+  }
+
+  revalidatePath("/dashboard/integrations");
+}
