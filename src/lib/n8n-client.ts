@@ -260,3 +260,39 @@ export async function getN8nWorkflowDetail(
     nodeCount: nodes.length, nodes, connectionCount,
   };
 }
+
+export async function setN8nWorkflowActive(
+  baseUrl: string,
+  apiKey: string,
+  workflowId: string,
+  active: boolean,
+): Promise<void> {
+  if (typeof apiKey !== "string" || apiKey.length < 16 || apiKey.length > 512) {
+    throw new Error("Invalid n8n API key.");
+  }
+  if (typeof workflowId !== "string" || !/^[A-Za-z0-9_-]{1,128}$/.test(workflowId)) {
+    throw new Error("Invalid n8n workflow ID.");
+  }
+
+  const normalizedBaseUrl = normalizeN8nBaseUrl(baseUrl);
+  let response: Response;
+  try {
+    response = await fetch(
+      normalizedBaseUrl + "/api/v1/workflows/" + encodeURIComponent(workflowId) + (active ? "/activate" : "/deactivate"),
+      {
+        method: "POST",
+        headers: {Accept: "application/json", "X-N8N-API-KEY": apiKey},
+        cache: "no-store",
+        redirect: "error",
+        signal: AbortSignal.timeout(N8N_API_TIMEOUT_MS),
+      },
+    );
+  } catch {
+    throw new Error("N8N_PROVIDER_UNAVAILABLE");
+  }
+
+  if (response.status === 401 || response.status === 403) throw new Error("N8N_AUTH_FAILED");
+  if (response.status === 404) throw new Error("N8N_WORKFLOW_NOT_FOUND");
+  if (response.status === 429) throw new Error("N8N_PROVIDER_RATE_LIMITED");
+  if (!response.ok) throw new Error("N8N_PROVIDER_UNAVAILABLE");
+}
