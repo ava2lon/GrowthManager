@@ -288,7 +288,9 @@ model AutomationAlertDelivery {
   createdAt         DateTime @default(now())
   updatedAt         DateTime @updatedAt
   alertEvent        AutomationAlertEvent @relation(fields: [workspaceId, alertEventId], references: [workspaceId, id], onDelete: Cascade)
+  attempts          AutomationAlertDeliveryAttempt[]
   integration       Integration @relation(fields: [workspaceId, integrationId], references: [workspaceId, id], onDelete: Cascade)
+  @@unique([workspaceId, id])
   @@unique([workspaceId, alertEventId, channel, recipient])
   @@index([status, nextAttemptAt])
   @@index([workspaceId, createdAt])
@@ -306,4 +308,22 @@ model ResendWebhookEvent {
   integration     Integration @relation(fields: [workspaceId, integrationId], references: [workspaceId, id], onDelete: Cascade)
   @@unique([integrationId, providerEventId])
   @@index([workspaceId, receivedAt])
+}
+
+model AutomationAlertDeliveryAttempt {
+  id                String   @id @default(cuid())
+  workspaceId       String
+  deliveryId        String
+  attemptNumber     Int
+  status            String
+  providerMessageId String?
+  errorCode         String?
+  httpStatus        Int?
+  startedAt         DateTime @default(now())
+  finishedAt        DateTime?
+  durationMs        Int?
+  delivery          AutomationAlertDelivery @relation(fields: [workspaceId, deliveryId], references: [workspaceId, id], onDelete: Cascade)
+  @@unique([deliveryId, attemptNumber])
+  @@index([workspaceId, startedAt])
+  @@index([workspaceId, deliveryId, attemptNumber])
 }
