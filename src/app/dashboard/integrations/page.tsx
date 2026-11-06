@@ -12,7 +12,9 @@ import {
   configureN8nIntegration,
   configureResendIntegration,
   disconnectIntegration,
+  setN8nWorkflowState,
 } from "./actions";
+import {N8nWorkflowStateControl} from "@/components/n8n-workflow-state-control";
 
 const categoryIcons = {
   AUTOMATION: Workflow,
@@ -63,6 +65,22 @@ export default async function IntegrationsPage({searchParams}: {searchParams: Pr
         if (typeof credentials.baseUrl === "string" && typeof credentials.apiKey === "string") {
           const result = await listN8nWorkflows(credentials.baseUrl, credentials.apiKey);
           n8nWorkflowState = {kind: "ready", ...result};
+          if (workflowId && /^[A-Za-z0-9_-]{1,128}$/.test(workflowId) && result.workflows.some((workflow) => workflow.id === workflowId)) {
+            try {
+              const detailLimit = await consumeRateLimit(
+                "n8n-workflow-detail:" + context.workspace.id + ":" + context.userId,
+                30,
+                3600,
+              );
+              if (detailLimit.allowed && !(process.env.NODE_ENV === "production" && !detailLimit.configured)) {
+                selectedWorkflow = await getN8nWorkflowDetail(credentials.baseUrl, credentials.apiKey, workflowId);
+              } else {
+                selectedWorkflowUnavailable = true;
+              }
+            } catch {
+              selectedWorkflowUnavailable = true;
+            }
+          }
         } else {
           n8nWorkflowState = {kind: "unavailable"};
         }
@@ -222,6 +240,13 @@ export default async function IntegrationsPage({searchParams}: {searchParams: Pr
                 ))}
               </ul>
             </div>
+            {canManage && n8nIntegration && (
+              <N8nWorkflowStateControl
+                integrationId={n8nIntegration.id}
+                workflowId={selectedWorkflow.id}
+                active={selectedWorkflow.active}
+              />
+            )}
             <a href="/dashboard/integrations#n8n-workflows" className="mt-3 inline-block text-xs font-semibold text-indigo-700 hover:underline">Close workflow details</a>
           </div>
         )}
