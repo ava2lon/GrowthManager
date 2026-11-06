@@ -93,9 +93,11 @@ export async function configureResendIntegration(formData: FormData) {
   const context = await requireWorkspaceRole("ADMIN");
   const integrationId = String(formData.get("integrationId") ?? "");
   const apiKey = String(formData.get("apiKey") ?? "").trim();
+  const fromEmail = String(formData.get("fromEmail") ?? "").trim().toLowerCase();
 
-  if (!integrationId || integrationId.length > 128 || apiKey.length < 20 || apiKey.length > 200) {
-    throw new Error("Enter a valid Resend API key.");
+  if (!integrationId || integrationId.length > 128 || apiKey.length < 20 || apiKey.length > 200 ||
+      !/^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/.test(fromEmail) || fromEmail.length > 254) {
+    throw new Error("Enter a valid Resend API key and sender email address.");
   }
 
   const rateLimit = await consumeRateLimit("resend-integration:" + context.workspace.id + ":" + context.userId, 5, 3600);
@@ -126,9 +128,20 @@ export async function configureResendIntegration(formData: FormData) {
   if (!response.ok) {
     throw new Error("Resend rejected this API key. Check its validity and permissions.");
   }
+  let domainPayload: unknown;
+  try { domainPayload = await response.json(); } catch { throw new Error("Resend returned an invalid domains response."); }
+  const senderDomain = fromEmail.split("@")[1];
+  const domains = domainPayload && typeof domainPayload === "object" && Array.isArray((domainPayload as {data?: unknown}).data)
+    ? (domainPayload as {data: unknown[]}).data
+    : [];
+  const verified = domains.some((item) => item && typeof item === "object" &&
+    typeof (item as {name?: unknown}).name === "string" &&
+    (item as {name: string}).name.toLowerCase() === senderDomain &&
+    (item as {status?: unknown}).status === "verified");
+  if (!verified) throw new Error("The sender domain must be verified in this Resend account before it can be used.");
 
   const {encryptIntegrationCredentials} = await import("@/lib/integration-crypto");
-  const encrypted = encryptIntegrationCredentials({apiKey}, context.workspace.id, integration.id);
+  const encrypted = encryptIntegrationCredentials({apiKey, fromEmail}, context.workspace.id, integration.id);
   await db.$transaction(async (tx) => {
     const changed = await tx.integration.updateMany({
       where: {id: integration.id, workspaceId: context.workspace.id, status: integration.status},
