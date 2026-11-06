@@ -79,3 +79,15 @@ Configure `INTEGRATION_ENCRYPTION_KEY` and a stable `INTEGRATION_ENCRYPTION_KEY_
 The migration `20261106190000_encrypt_integration_credentials` deliberately aborts if any existing integration row contains non-null plaintext credentials. Export and encrypt such values through a controlled migration process before retrying; do not bypass the guard or apply this migration to a database containing unreviewed credentials.
 
 Only workspace ADMIN/OWNER roles can save or read integration credentials; only OWNER can initiate workspace key rotation. All credential reads and writes include the active workspace ID in their database predicates. Never log decrypted credential objects.
+
+
+## Integration connection health
+
+The Resend integration supports API-key validation and manual health checks. The health check decrypts credentials only on the server, calls the fixed Resend domains endpoint with a 10-second timeout, and never returns or logs the API key. Checks are workspace-admin-only and rate-limited through Upstash Redis.
+
+Integration records store:
+- `lastValidatedAt`: timestamp of the most recent successful provider validation.
+- `lastErrorAt`: timestamp of the most recent failed health check.
+- `lastErrorCode`: a sanitized classification such as `AUTH_FAILED`, `PROVIDER_RATE_LIMITED`, or `PROVIDER_UNAVAILABLE`; provider response bodies and credentials are not stored.
+
+The migration `20261106200000_integration_health_metadata` adds these fields and a workspace/status index. Apply it with `npm run db:deploy` only after the GrowthManager database environment variables are configured and the migration target has been verified. Other catalog providers remain setup placeholders until their provider-specific authorization and lifecycle flows are implemented.
