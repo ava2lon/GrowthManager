@@ -1,6 +1,7 @@
 import {requireWorkspaceContext} from "@/lib/workspace";
 import {db} from "@/lib/db";
 import {socialProviders} from "@/lib/integration-providers";
+import {checkSocialAccountHealth, disconnectSocialAccount} from "@/app/dashboard/social/actions";
 
 const capabilityLabels: Record<string,string> = {
   PROFILE_READ:"Profile", PUBLISH_TEXT:"Text publishing", PUBLISH_MEDIA:"Media publishing",
@@ -13,7 +14,7 @@ export default async function SocialPage() {
     db.socialAccount.findMany({
       where:{workspaceId:workspace.id},
       orderBy:[{updatedAt:"desc"},{accountName:"asc"}],
-      select:{id:true,provider:true,accountName:true,status:true,brandId:true,connectedAt:true,lastValidatedAt:true,lastErrorCode:true,scopes:true},
+      select:{id:true,provider:true,accountName:true,status:true,brandId:true,connectedAt:true,lastValidatedAt:true,lastErrorCode:true,scopes:true,tokenExpiresAt:true},
     }),
     db.brand.findMany({where:{workspaceId:workspace.id,status:"ACTIVE"},orderBy:{name:"asc"},select:{id:true,name:true}}),
   ]);
@@ -37,7 +38,7 @@ export default async function SocialPage() {
       <section className="rounded-2xl border border-slate-200 bg-white p-5 sm:p-6">
         <div className="flex items-center justify-between gap-3"><div><h2 className="font-semibold text-slate-900">Connected accounts</h2><p className="mt-1 text-sm text-slate-500">Account inventory scoped to {workspace.name}.</p></div><span className="rounded-full bg-slate-100 px-3 py-1 text-xs text-slate-600">{accounts.length} total</span></div>
         {accounts.length===0 ? <div className="mt-5 rounded-xl border border-dashed border-slate-300 bg-slate-50 px-5 py-10 text-center"><p className="text-sm font-semibold text-slate-800">No social accounts connected</p><p className="mt-1 text-sm text-slate-500">Choose a provider from the catalog after its OAuth application is configured.</p></div> : (
-          <div className="mt-4 divide-y divide-slate-100">{accounts.map((account)=><div key={account.id} className="flex flex-col gap-2 py-4 sm:flex-row sm:items-center sm:justify-between"><div><p className="text-sm font-semibold text-slate-900">{account.accountName}</p><p className="mt-1 text-xs text-slate-500">{account.provider} · {brandNames.get(account.brandId)??"Brand unavailable"} · {account.scopes.length} granted scopes</p>{account.lastErrorCode&&<p className="mt-1 text-xs text-rose-700">{account.lastErrorCode.replaceAll("_"," ").toLowerCase()}</p>}</div><span className={"w-fit rounded-full px-3 py-1 text-xs font-semibold "+(account.status==="CONNECTED"?"bg-emerald-50 text-emerald-700":account.status==="ERROR"?"bg-rose-50 text-rose-700":"bg-slate-100 text-slate-600")}>{account.status.replaceAll("_"," ")}</span></div>)}</div>
+          <div className="mt-4 divide-y divide-slate-100">{accounts.map((account)=><div key={account.id} className="flex flex-col gap-3 py-4 sm:flex-row sm:items-center sm:justify-between"><div className="min-w-0"><p className="text-sm font-semibold text-slate-900">{account.accountName}</p><p className="mt-1 text-xs text-slate-500">{account.provider} · {brandNames.get(account.brandId)??"Brand unavailable"} · {account.scopes.length} granted scopes</p><p className="mt-1 text-xs text-slate-400">{account.lastValidatedAt ? "Last checked " + account.lastValidatedAt.toLocaleString() : "Not yet health-checked"}{account.tokenExpiresAt ? " · Token expiry " + account.tokenExpiresAt.toLocaleDateString() : ""}</p>{account.lastErrorCode&&<p className="mt-1 text-xs text-rose-700">{account.lastErrorCode.replaceAll("_"," ").toLowerCase()}</p>}</div><div className="flex flex-wrap items-center gap-2"><span className={"w-fit rounded-full px-3 py-1 text-xs font-semibold "+(account.status==="CONNECTED"?"bg-emerald-50 text-emerald-700":account.status==="ERROR"?"bg-rose-50 text-rose-700":"bg-slate-100 text-slate-600")}>{account.status.replaceAll("_"," ")}</span>{account.status!=="DISCONNECTED"&&<><form action={checkSocialAccountHealth}><input type="hidden" name="accountId" value={account.id}/><button type="submit" className="rounded-lg border border-slate-200 px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50">Check health</button></form><form action={disconnectSocialAccount}><input type="hidden" name="accountId" value={account.id}/><button type="submit" className="rounded-lg border border-rose-200 px-3 py-2 text-xs font-semibold text-rose-700 hover:bg-rose-50">Disconnect</button></form></>}</div></div>)}</div>
         )}
       </section>
 
