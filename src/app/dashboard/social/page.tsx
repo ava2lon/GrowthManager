@@ -1,7 +1,7 @@
 import {requireWorkspaceContext} from "@/lib/workspace";
 import {db} from "@/lib/db";
 import {socialProviders} from "@/lib/integration-providers";
-import {checkSocialAccountHealth, disconnectSocialAccount, refreshMetaAuthorization, createFacebookDraft, publishFacebookDraft} from "@/app/dashboard/social/actions";
+import {checkSocialAccountHealth, disconnectSocialAccount, refreshMetaAuthorization, createFacebookDraft, publishFacebookDraft, scheduleFacebookDraft} from "@/app/dashboard/social/actions";
 
 const capabilityLabels: Record<string,string> = {
   PROFILE_READ:"Profile", PUBLISH_TEXT:"Text publishing", PUBLISH_MEDIA:"Media publishing",
@@ -21,7 +21,7 @@ export default async function SocialPage() {
   const drafts = await db.contentPost.findMany({
       where:{workspaceId:workspace.id,publishTargets:{some:{provider:"FACEBOOK"}}},
       orderBy:{createdAt:"desc"},take:25,
-      select:{id:true,body:true,status:true,createdAt:true,publishTargets:{select:{id:true,status:true,errorCode:true,socialAccount:{select:{accountName:true}}}}},
+      select:{id:true,body:true,status:true,scheduledAt:true,createdAt:true,publishTargets:{select:{id:true,status:true,errorCode:true,socialAccount:{select:{accountName:true}}}}},
     });
   const facebookAccounts=accounts.filter((account)=>account.provider==="FACEBOOK"&&account.status==="CONNECTED");
   const brandNames = new Map(brands.map((brand)=>[brand.id,brand.name]));
@@ -49,15 +49,18 @@ export default async function SocialPage() {
       </section>
 
       <section className="rounded-2xl border border-slate-200 bg-white p-5 sm:p-6">
-        <div><h2 className="font-semibold text-slate-900">Facebook Page composer</h2><p className="mt-1 text-sm text-slate-500">Create a durable text draft, then explicitly publish it to one connected Facebook Page.</p></div>
+        <div><h2 className="font-semibold text-slate-900">Facebook Page composer</h2><p className="mt-1 text-sm text-slate-500">Create a text draft, publish immediately, or schedule it for a UTC date and time.</p></div>
         {facebookAccounts.length&&brands.length ? <form action={createFacebookDraft} className="mt-4 grid gap-3">
           <label className="grid gap-1 text-xs font-medium text-slate-600">Facebook Page<select name="accountId" required className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm">{facebookAccounts.map((account)=><option key={account.id} value={account.id}>{account.accountName} · {brandNames.get(account.brandId)??"Brand unavailable"}</option>)}</select></label>
           <label className="grid gap-1 text-xs font-medium text-slate-600">Post text<textarea name="body" required maxLength={63206} rows={4} placeholder="Write your Facebook Page post…" className="rounded-lg border border-slate-300 px-3 py-2 text-sm"/></label>
-          <p className="text-xs text-slate-500">Phase 1 supports text-only Facebook Page posts. Image/video publishing and Instagram publishing are not enabled in this slice.</p>
+          <p className="text-xs text-slate-500">Text-only Facebook Page posts are supported in this phase. Image/video and Instagram publishing remain staged.</p>
           <button type="submit" className="w-fit rounded-xl bg-indigo-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-indigo-700">Save draft</button>
         </form> : <p className="mt-3 text-sm text-slate-500">Connect a Facebook Page with publishing permission and assign it to an active brand to use the composer.</p>}
-        <div className="mt-6 border-t border-slate-100 pt-4"><h3 className="text-sm font-semibold text-slate-900">Recent publishing activity</h3>
-          {drafts.length===0 ? <p className="mt-3 text-sm text-slate-500">No Facebook drafts or publishing activity yet.</p> : <div className="mt-3 divide-y divide-slate-100">{drafts.map((post)=><div key={post.id} className="py-3"><p className="whitespace-pre-wrap text-sm text-slate-800">{post.body}</p><div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-slate-500">{post.publishTargets.map((target)=><span key={target.id} className="rounded-full bg-slate-100 px-2 py-1">{target.socialAccount.accountName}: {target.status}{target.errorCode?" · "+target.errorCode:""}</span>)}</div>{post.targets.some((target)=>target.status==="DRAFT")&&<div className="mt-2 flex flex-wrap gap-2">{post.targets.filter((target)=>target.status==="DRAFT").map((target)=><form key={target.id} action={publishFacebookDraft}><input type="hidden" name="targetId" value={target.id}/><button type="submit" className="rounded-lg border border-indigo-200 px-3 py-2 text-xs font-semibold text-indigo-700 hover:bg-indigo-50">Publish to {target.socialAccount.accountName}</button></form>)}</div>}<p className="mt-2 text-[11px] text-slate-400">{post.createdAt.toLocaleString()}</p></div>)}</div>}
+        <div className="mt-6 border-t border-slate-100 pt-4"><h3 className="text-sm font-semibold text-slate-900">Publishing calendar and activity</h3>
+          {drafts.length===0 ? <p className="mt-3 text-sm text-slate-500">No Facebook drafts or publishing activity yet.</p> : <div className="mt-3 divide-y divide-slate-100">{drafts.map((post)=><div key={post.id} className="py-3"><p className="whitespace-pre-wrap text-sm text-slate-800">{post.body}</p><div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-slate-500">{post.publishTargets.map((target)=><span key={target.id} className="rounded-full bg-slate-100 px-2 py-1">{target.socialAccount.accountName}: {target.status}{target.errorCode?" · "+target.errorCode:""}</span>)}</div>{post.publishTargets.some((target)=>target.status==="DRAFT")&&<div className="mt-2 flex flex-wrap gap-2">{post.publishTargets.filter((target)=>target.status==="DRAFT").map((target)=><div key={target.id} className="flex flex-wrap items-center gap-2">
+<form action={publishFacebookDraft}><input type="hidden" name="targetId" value={target.id}/><button type="submit" className="rounded-lg border border-indigo-200 px-3 py-2 text-xs font-semibold text-indigo-700 hover:bg-indigo-50">Publish now</button></form>
+<form action={scheduleFacebookDraft} className="flex flex-wrap items-center gap-2"><input type="hidden" name="targetId" value={target.id}/><label className="text-xs text-slate-500">Schedule (UTC)<input required type="datetime-local" name="scheduledAt" className="ml-2 rounded-lg border border-slate-300 px-2 py-1.5 text-xs"/></label><button type="submit" className="rounded-lg border border-slate-200 px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50">Schedule</button></form>
+</div>)}</div>}<p className="mt-2 text-[11px] text-slate-400">{post.status==="SCHEDULED"&&post.scheduledAt?"Scheduled for "+post.scheduledAt.toLocaleString("en-GB",{timeZone:"UTC"})+" UTC · ":"Created "}{post.createdAt.toLocaleString()}</p></div>)}</div>}
         </div>
       </section>
 
