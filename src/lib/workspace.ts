@@ -1,9 +1,11 @@
 import "server-only";
 import type {WorkspaceRole} from "@prisma/client";
+import {cookies} from "next/headers";
 import {notFound, redirect} from "next/navigation";
 import {auth} from "@/auth";
 import {db} from "@/lib/db";
 
+const ACTIVE_WORKSPACE_COOKIE = "gm_active_workspace";
 const roleRank: Record<WorkspaceRole, number> = {
   OWNER: 4,
   ADMIN: 3,
@@ -14,28 +16,45 @@ const roleRank: Record<WorkspaceRole, number> = {
 export async function requireWorkspaceContext() {
   const session = await auth();
   const userId = session?.user?.id;
-
   if (!userId) redirect("/sign-in");
 
-  // Until workspace switching is implemented, use the oldest membership
-  // consistently across the dashboard and all workspace-scoped pages.
-  const membership = await db.workspaceMembership.findFirst({
+  const cookieStore = await cookies();
+  const requestedWorkspaceId = cookieStore.get(ACTIVE_WORKSPACE_COOKIE)?.value;
+
+  // The cookie is only a selection hint. Membership is always revalidated
+  // against the database; a forged or stale workspace ID grants no access.
+  const membership = requestedWorkspaceId
+    ? await db.workspaceMembership.findUnique({
+        where: {userId_workspaceId: {userId, workspaceId: requestedWorkspaceId}},
+        include: {workspace: true},
+      })
+    : null;
+
+  const resolvedMembership = membership ?? await db.workspaceMembership.findFirst({
     where: {userId},
     include: {workspace: true},
     orderBy: [{createdAt: "asc"}, {id: "asc"}],
   });
 
-  if (!membership) redirect("/");
-
-  return {session, userId, membership, workspace: membership.workspace};
+  if (!resolvedMembership) redirect("/");
+  return {
+    session,
+    userId,
+    membership: resolvedMembership,
+    workspace: resolvedMembership.workspace,
+  };
 }
 
 export async function requireWorkspaceRole(minimumRole: WorkspaceRole) {
   const context = await requireWorkspaceContext();
-
-  if (roleRank[context.membership.role] < roleRank[minimumRole]) {
-    notFound();
-  }
-
+  if (roleRank[context.membership.role] < roleRank[minimumRole]) notFound();
   return context;
+}
+
+export async function getUserWorkspaces(userId: string) {
+  return db.workspaceMembership.findMany({
+    where: {userId},
+    include: {workspace: {select: {id: true, name: true, slug: true}}},
+    orderBy: [{createdAt: "asc"}, {id: "asc"}],
+  });
 }
