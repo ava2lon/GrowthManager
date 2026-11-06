@@ -261,6 +261,97 @@ export async function getN8nWorkflowDetail(
   };
 }
 
+
+
+export type N8nExecutionStatus = "error" | "success" | "waiting";
+export type N8nExecutionSummary = {
+  id: string;
+  workflowId: string;
+  status: string;
+  mode: string;
+  startedAt: string | null;
+  stoppedAt: string | null;
+  waitTill: string | null;
+  retryOf: string | null;
+  retrySuccessId: string | null;
+};
+
+export async function listN8nExecutions(
+  baseUrl: string,
+  apiKey: string,
+  options: {status?: N8nExecutionStatus; workflowId?: string} = {},
+): Promise<{executions: N8nExecutionSummary[]; hasMore: boolean}> {
+  if (typeof apiKey !== "string" || apiKey.length < 16 || apiKey.length > 512) throw new Error("Invalid n8n API key.");
+  if (options.status && !["error", "success", "waiting"].includes(options.status)) throw new Error("Invalid n8n execution status.");
+  if (options.workflowId && !/^[A-Za-z0-9_-]{1,128}$/.test(options.workflowId)) throw new Error("Invalid n8n workflow ID.");
+
+  const normalizedBaseUrl = normalizeN8nBaseUrl(baseUrl);
+  const executions: N8nExecutionSummary[] = [];
+  const seenCursors = new Set<string>();
+  let cursor: string | undefined;
+  let hasMore = false;
+
+  for (let page = 0; page < 3; page += 1) {
+    const url = new URL(normalizedBaseUrl + "/api/v1/executions");
+    url.searchParams.set("limit", "50");
+    url.searchParams.set("includeData", "false");
+    if (options.status) url.searchParams.set("status", options.status);
+    if (options.workflowId) url.searchParams.set("workflowId", options.workflowId);
+    if (cursor) url.searchParams.set("cursor", cursor);
+
+    let response: Response;
+    try {
+      response = await fetch(url, {
+        method: "GET",
+        headers: {Accept: "application/json", "X-N8N-API-KEY": apiKey},
+        cache: "no-store",
+        redirect: "error",
+        signal: AbortSignal.timeout(N8N_API_TIMEOUT_MS),
+      });
+    } catch {
+      throw new Error("N8N_PROVIDER_UNAVAILABLE");
+    }
+    if (response.status === 401 || response.status === 403) throw new Error("N8N_AUTH_FAILED");
+    if (response.status === 429) throw new Error("N8N_PROVIDER_RATE_LIMITED");
+    if (!response.ok) throw new Error("N8N_PROVIDER_UNAVAILABLE");
+
+    let payload: unknown;
+    try { payload = await response.json(); } catch { throw new Error("N8N_PROVIDER_UNAVAILABLE"); }
+    if (!payload || typeof payload !== "object" || !Array.isArray((payload as {data?: unknown}).data)) {
+      throw new Error("N8N_PROVIDER_UNAVAILABLE");
+    }
+
+    for (const item of (payload as {data: unknown[]}).data) {
+      if (!item || typeof item !== "object") continue;
+      const execution = item as Record<string, unknown>;
+      if (typeof execution.id !== "string" || typeof execution.workflowId !== "string") continue;
+      const safeDate = (value: unknown) => typeof value === "string" && !Number.isNaN(Date.parse(value)) ? value : null;
+      const safeId = (value: unknown) => typeof value === "string" && value.length <= 128 ? value : null;
+      executions.push({
+        id: execution.id.slice(0, 128),
+        workflowId: execution.workflowId.slice(0, 128),
+        status: typeof execution.status === "string" ? execution.status.slice(0, 40) : "unknown",
+        mode: typeof execution.mode === "string" ? execution.mode.slice(0, 40) : "unknown",
+        startedAt: safeDate(execution.startedAt),
+        stoppedAt: safeDate(execution.stoppedAt),
+        waitTill: safeDate(execution.waitTill),
+        retryOf: safeId(execution.retryOf),
+        retrySuccessId: safeId(execution.retrySuccessId),
+      });
+    }
+
+    const nextCursor = (payload as {nextCursor?: unknown}).nextCursor;
+    if (typeof nextCursor !== "string" || !nextCursor || nextCursor.length > 2048 || seenCursors.has(nextCursor)) {
+      hasMore = false;
+      break;
+    }
+    seenCursors.add(nextCursor);
+    cursor = nextCursor;
+    hasMore = page === 2;
+  }
+  return {executions, hasMore};
+}
+
 export async function setN8nWorkflowActive(
   baseUrl: string,
   apiKey: string,
