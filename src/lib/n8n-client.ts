@@ -369,7 +369,7 @@ export async function retryN8nExecution(
     throw new Error("Invalid n8n API key.");
   }
   // n8n execution IDs are numeric path identifiers; reject all other input.
-  if (typeof executionId !== "string" || !/^\\d{1,20}$/.test(executionId)) {
+  if (typeof executionId !== "string" || !/^\d{1,20}$/.test(executionId)) {
     throw new Error("Invalid n8n execution ID.");
   }
 
@@ -439,7 +439,7 @@ export async function retryN8nExecution(
   const retried = retryPayload as Record<string, unknown>;
   const retryId = typeof retried.id === "number" || typeof retried.id === "string" ? String(retried.id) : "";
   const retryOf = typeof retried.retryOf === "number" || typeof retried.retryOf === "string" ? String(retried.retryOf) : "";
-  if (!/^\\d{1,20}$/.test(retryId) || retryOf !== executionId ||
+  if (!/^\d{1,20}$/.test(retryId) || retryOf !== executionId ||
       String(retried.workflowId ?? "") !== current.workflowId) {
     throw new Error("N8N_RETRY_OUTCOME_UNKNOWN");
   }
