@@ -70,7 +70,7 @@ export async function disconnectIntegration(formData: FormData) {
 
     const changed = await tx.integration.updateMany({
       where: {id: current.id, workspaceId: context.workspace.id, status: current.status},
-      data: {status: "DISCONNECTED", credentialsEncrypted: null},
+      data: {status: "DISCONNECTED", credentialsEncrypted: null, lastErrorAt: null, lastErrorCode: null},
     });
     if (changed.count !== 1) throw new Error("Integration changed concurrently. Refresh and retry.");
 
@@ -170,7 +170,7 @@ export async function checkResendIntegrationHealth(formData: FormData) {
   });
   if (!integration) throw new Error("Resend integration not found in the active workspace.");
 
-  const recordFailure = async (code: "MISSING_CREDENTIALS" | "AUTH_FAILED" | "PROVIDER_UNAVAILABLE") => {
+  const recordFailure = async (code: "MISSING_CREDENTIALS" | "AUTH_FAILED" | "PROVIDER_UNAVAILABLE" | "PROVIDER_RATE_LIMITED" | "CREDENTIAL_DECRYPTION_FAILED") => {
     await db.$transaction(async (tx) => {
       const changed = await tx.integration.updateMany({
         where: {
@@ -216,6 +216,7 @@ export async function checkResendIntegrationHealth(formData: FormData) {
     apiKey = credentials.apiKey;
   } catch (error) {
     if (error instanceof Error && error.message.includes("Saved Resend credentials")) throw error;
+    await recordFailure("CREDENTIAL_DECRYPTION_FAILED");
     throw new Error("Could not decrypt saved credentials. Check the integration encryption key configuration.");
   }
 
@@ -234,10 +235,17 @@ export async function checkResendIntegrationHealth(formData: FormData) {
   }
 
   if (!response.ok) {
-    await recordFailure(response.status === 401 || response.status === 403 ? "AUTH_FAILED" : "PROVIDER_UNAVAILABLE");
-    throw new Error(response.status === 401 || response.status === 403
+    const errorCode = response.status === 401 || response.status === 403
+      ? "AUTH_FAILED"
+      : response.status === 429
+        ? "PROVIDER_RATE_LIMITED"
+        : "PROVIDER_UNAVAILABLE";
+    await recordFailure(errorCode);
+    throw new Error(errorCode === "AUTH_FAILED"
       ? "Resend rejected the saved API key. Reconnect with a valid key."
-      : "Resend returned an unsuccessful response. Retry the health check later.");
+      : errorCode === "PROVIDER_RATE_LIMITED"
+        ? "Resend rate-limited the health check. Retry later."
+        : "Resend returned an unsuccessful response. Retry the health check later.");
   }
 
   await db.$transaction(async (tx) => {
