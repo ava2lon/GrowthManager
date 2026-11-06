@@ -4,6 +4,7 @@ import {revalidatePath} from "next/cache";
 import {requireWorkspaceRole} from "@/lib/workspace";
 import {db} from "@/lib/db";
 import {getIntegrationProvider} from "@/lib/integration-providers";
+import {consumeRateLimit} from "@/lib/rate-limit";
 
 export async function addIntegration(formData: FormData) {
   const context = await requireWorkspaceRole("ADMIN");
@@ -92,6 +93,11 @@ export async function configureResendIntegration(formData: FormData) {
 
   if (!integrationId || integrationId.length > 128 || apiKey.length < 20 || apiKey.length > 200) {
     throw new Error("Enter a valid Resend API key.");
+  }
+
+  const rateLimit = await consumeRateLimit("resend-integration:" + context.workspace.id + ":" + context.userId, 5, 3600);
+  if (!rateLimit.allowed || (process.env.NODE_ENV === "production" && !rateLimit.configured)) {
+    throw new Error("Too many attempts or connection protection is unavailable. Try again later.");
   }
 
   const integration = await db.integration.findFirst({
