@@ -492,8 +492,13 @@ export async function setN8nWorkflowState(formData: FormData) {
     }
 
     await setN8nWorkflowActive(credentials.baseUrl, credentials.apiKey, workflowId, desiredActive);
-    const verified = await getN8nWorkflowDetail(credentials.baseUrl, credentials.apiKey, workflowId);
-    const confirmed = verified.active === desiredActive;
+    let confirmed = false;
+    try {
+      const verified = await getN8nWorkflowDetail(credentials.baseUrl, credentials.apiKey, workflowId);
+      confirmed = verified.active === desiredActive;
+    } catch {
+      confirmed = false;
+    }
 
     await db.activityLog.create({
       data: {
@@ -513,7 +518,7 @@ export async function setN8nWorkflowState(formData: FormData) {
     });
 
     if (!confirmed) {
-      throw new Error("n8n accepted the request but the new workflow state could not be confirmed. Refresh before retrying.");
+      throw new Error("N8N_WORKFLOW_STATE_UNCONFIRMED");
     }
   } catch (error) {
     const message = error instanceof Error ? error.message : "";
@@ -532,7 +537,9 @@ export async function setN8nWorkflowState(formData: FormData) {
     if (message === "N8N_PROVIDER_UNAVAILABLE") {
       throw new Error("n8n is unavailable. The workflow state may need to be checked directly in n8n.");
     }
-    if (message.includes("accepted the request")) throw error;
+    if (message === "N8N_WORKFLOW_STATE_UNCONFIRMED") {
+      throw new Error("The state-change request was sent and audited, but n8n did not confirm the resulting state. Check n8n directly before retrying.");
+    }
     throw new Error("Could not change the n8n workflow state. Check the connection and refresh before retrying.");
   }
 
