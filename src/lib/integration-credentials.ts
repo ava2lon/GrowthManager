@@ -49,3 +49,56 @@ export async function readIntegrationCredentials(integrationId: string) {
     integrationId,
   );
 }
+
+/**
+ * Re-encrypts credentials in bounded batches after the current key changes.
+ * Keep the previous key configured until this completes successfully.
+ */
+export async function rotateWorkspaceIntegrationCredentials() {
+  const {workspace} = await requireWorkspaceRole("OWNER");
+  let lastId: string | undefined;
+  let rotated = 0;
+
+  while (true) {
+    const batch = await db.integration.findMany({
+      where: {
+        workspaceId: workspace.id,
+        credentialsEncrypted: {not: null},
+        ...(lastId ? {id: {gt: lastId}} : {}),
+      },
+      orderBy: {id: "asc"},
+      take: 100,
+      select: {id: true, credentialsEncrypted: true},
+    });
+
+    if (batch.length === 0) break;
+
+    for (const integration of batch) {
+      if (!integration.credentialsEncrypted) continue;
+      const credentials = decryptIntegrationCredentials(
+        integration.credentialsEncrypted,
+        workspace.id,
+        integration.id,
+      );
+      const replacement = encryptIntegrationCredentials(
+        credentials,
+        workspace.id,
+        integration.id,
+      );
+      const result = await db.integration.updateMany({
+        where: {
+          id: integration.id,
+          workspaceId: workspace.id,
+          credentialsEncrypted: integration.credentialsEncrypted,
+        },
+        data: {credentialsEncrypted: replacement},
+      });
+      rotated += result.count;
+    }
+
+    lastId = batch[batch.length - 1].id;
+    if (batch.length < 100) break;
+  }
+
+  return {rotated};
+}
