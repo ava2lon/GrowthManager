@@ -131,6 +131,9 @@ export async function dispatchAutomationAlertEmails(limit = 20): Promise<{
     let failureCode: string | null = null;
     let retryable = false;
     let messageId: string | null = null;
+    let attemptRecordId: string | null = null;
+    const attemptStartedAt = new Date();
+    let attemptHttpStatus: number | null = null;
     try {
       const [integration, event] = await Promise.all([
         db.integration.findFirst({
@@ -166,6 +169,10 @@ export async function dispatchAutomationAlertEmails(limit = 20): Promise<{
             "<p>Review the Automation Health page in GrowthManager for details.</p>",
           ].join("");
           let response: Response;
+          attemptRecordId = (await db.automationAlertDeliveryAttempt.create({
+            data: {workspaceId: delivery.workspaceId, deliveryId: delivery.id, attemptNumber: attempt, status: "STARTED"},
+            select: {id: true},
+          })).id;
           try {
             response = await fetch("https://api.resend.com/emails", {
               method: "POST",
@@ -192,6 +199,7 @@ export async function dispatchAutomationAlertEmails(limit = 20): Promise<{
           }
 
           if (response) {
+            attemptHttpStatus = response.status;
             if (!response.ok) {
               failureCode = response.status === 401 || response.status === 403
                 ? "RESEND_AUTH_FAILED"
@@ -216,6 +224,14 @@ export async function dispatchAutomationAlertEmails(limit = 20): Promise<{
     } catch {
       failureCode = "DELIVERY_PROCESSING_ERROR";
       retryable = true;
+    }
+
+    const attemptOutcome = messageId ? "SENT" : retryable && attempt < 3 ? "RETRY" : "FAILED";
+    if (attemptRecordId) {
+      await db.automationAlertDeliveryAttempt.updateMany({
+        where: {id: attemptRecordId, workspaceId: delivery.workspaceId, deliveryId: delivery.id},
+        data: {status: attemptOutcome, providerMessageId: messageId, errorCode: failureCode, httpStatus: attemptHttpStatus, finishedAt: new Date(), durationMs: Math.max(0, Date.now() - attemptStartedAt.getTime())},
+      });
     }
 
     if (messageId) {
