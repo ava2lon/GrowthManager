@@ -8,6 +8,7 @@ import {processYouTubeUploadTarget} from "@/lib/youtube-upload";
 import {publishPinterestTarget} from "@/lib/pinterest-publishing";
 import {refreshPinterestAccountAnalytics} from "@/lib/pinterest-analytics";
 import {refreshPinterestPinAnalytics} from "@/lib/pinterest-pin-analytics";
+import {refreshMetaAnalytics} from "@/lib/meta-analytics";
 
 export const runtime="nodejs";
 export const dynamic="force-dynamic";
@@ -192,6 +193,16 @@ export async function GET(request:Request){
       });
     }
   }
+
+
+  // Meta: collect one account and one published media object per worker invocation.
+  const metaDue=await db.socialAccount.findFirst({where:{provider:{in:["FACEBOOK","INSTAGRAM"]},status:"CONNECTED",credentialsEncrypted:{not:null},metaAnalyticsSnapshots:{none:{subjectType:"ACCOUNT",reportDate:analyticsDay}}},select:{id:true,workspaceId:true},orderBy:{updatedAt:"asc"}});
+  let metaAccountsRefreshed=0,metaAccountsFailed=0;
+  if(metaDue){try{await refreshMetaAnalytics({workspaceId:metaDue.workspaceId,accountId:metaDue.id,asOf:now});metaAccountsRefreshed++;}catch(error){metaAccountsFailed++;const code=error instanceof Error&&/^[A-Z0-9_]{1,100}$/.test(error.message)?error.message:"META_ANALYTICS_REFRESH_FAILED";await db.metaAnalyticsSnapshot.upsert({where:{workspaceId_socialAccountId_subjectType_subjectId_reportDate:{workspaceId:metaDue.workspaceId,socialAccountId:metaDue.id,subjectType:"ACCOUNT",subjectId:metaDue.id,reportDate:analyticsDay}},create:{workspaceId:metaDue.workspaceId,socialAccountId:metaDue.id,subjectType:"ACCOUNT",subjectId:metaDue.id,reportDate:analyticsDay,startDate:new Date(analyticsDay.getTime()-27*86400000),endDate:analyticsDay,metrics:{status:"FAILED",errorCode:code},rawResponse:{},fetchedAt:now},update:{metrics:{status:"FAILED",errorCode:code},rawResponse:{},fetchedAt:now}});}}
+  const metaMediaSnapshots=await db.metaAnalyticsSnapshot.findMany({where:{workspaceId:{not:""},subjectType:"MEDIA",reportDate:analyticsDay},select:{subjectId:true}});
+  const metaMedia=await db.socialPostTarget.findFirst({where:{provider:{in:["FACEBOOK","INSTAGRAM"]},status:"PUBLISHED",providerPostId:{not:null},id:{notIn:metaMediaSnapshots.map(x=>x.subjectId)},socialAccount:{status:"CONNECTED",credentialsEncrypted:{not:null}}},select:{id:true,workspaceId:true,socialAccountId:true,publishedAt:true},orderBy:{publishedAt:"asc"}});
+  let metaMediaRefreshed=0,metaMediaFailed=0;
+  if(metaMedia){try{await refreshMetaAnalytics({workspaceId:metaMedia.workspaceId,accountId:metaMedia.socialAccountId,targetId:metaMedia.id,asOf:now});metaMediaRefreshed++;}catch(error){metaMediaFailed++;const code=error instanceof Error&&/^[A-Z0-9_]{1,100}$/.test(error.message)?error.message:"META_MEDIA_ANALYTICS_REFRESH_FAILED";await db.metaAnalyticsSnapshot.upsert({where:{workspaceId_socialAccountId_subjectType_subjectId_reportDate:{workspaceId:metaMedia.workspaceId,socialAccountId:metaMedia.socialAccountId,subjectType:"MEDIA",subjectId:metaMedia.id,reportDate:analyticsDay}},create:{workspaceId:metaMedia.workspaceId,socialAccountId:metaMedia.socialAccountId,subjectType:"MEDIA",subjectId:metaMedia.id,reportDate:analyticsDay,startDate:metaMedia.publishedAt??analyticsDay,endDate:analyticsDay,metrics:{status:"FAILED",errorCode:code},rawResponse:{},fetchedAt:now},update:{metrics:{status:"FAILED",errorCode:code},rawResponse:{},fetchedAt:now}});}}
 
   const due=await db.socialPostTarget.findMany({
     where:{provider:{in:["FACEBOOK","INSTAGRAM"]},status:"SCHEDULED",contentPost:{scheduledAt:{lte:now}}},
