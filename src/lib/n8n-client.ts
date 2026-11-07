@@ -487,3 +487,81 @@ export async function setN8nWorkflowActive(
   if (response.status === 429) throw new Error("N8N_PROVIDER_RATE_LIMITED");
   if (!response.ok) throw new Error("N8N_PROVIDER_UNAVAILABLE");
 }
+
+
+export type N8nWorkflowCreateResult = {id: string; name: string; active: boolean};
+
+export async function createN8nWorkflow(
+  baseUrl: string,
+  apiKey: string,
+  input: {name: string; notes: string},
+): Promise<N8nWorkflowCreateResult> {
+  if (typeof apiKey !== "string" || apiKey.length < 16 || apiKey.length > 512) {
+    throw new Error("Invalid n8n API key.");
+  }
+  if (typeof input.name !== "string" || !input.name.trim() || input.name.length > 240 ||
+      typeof input.notes !== "string" || input.notes.length > 4000) {
+    throw new Error("Invalid n8n workflow definition.");
+  }
+
+  const normalizedBaseUrl = normalizeN8nBaseUrl(baseUrl);
+  const workflow = {
+    name: input.name.trim(),
+    nodes: [
+      {
+        id: "growthmanager-manual-trigger",
+        name: "Start workflow manually",
+        type: "n8n-nodes-base.manualTrigger",
+        typeVersion: 1,
+        position: [260, 300],
+        parameters: {},
+      },
+      {
+        id: "growthmanager-setup-notes",
+        name: "GrowthManager implementation notes",
+        type: "n8n-nodes-base.stickyNote",
+        typeVersion: 1,
+        position: [480, 220],
+        parameters: {content: input.notes, height: 420, width: 520, color: 5},
+      },
+    ],
+    connections: {},
+    settings: {executionOrder: "v1"},
+  };
+
+  let response: Response;
+  try {
+    response = await fetch(normalizedBaseUrl + "/api/v1/workflows", {
+      method: "POST",
+      headers: {
+        Accept: "application/json",
+        "Content-Type": "application/json",
+        "X-N8N-API-KEY": apiKey,
+      },
+      body: JSON.stringify(workflow),
+      cache: "no-store",
+      redirect: "error",
+      signal: AbortSignal.timeout(N8N_API_TIMEOUT_MS),
+    });
+  } catch {
+    throw new Error("N8N_WORKFLOW_CREATE_OUTCOME_UNKNOWN");
+  }
+
+  if (response.status === 401 || response.status === 403) throw new Error("N8N_AUTH_FAILED");
+  if (response.status === 404) throw new Error("N8N_WORKFLOW_CREATE_UNAVAILABLE");
+  if (response.status === 429) throw new Error("N8N_PROVIDER_RATE_LIMITED");
+  if (response.status >= 500) throw new Error("N8N_WORKFLOW_CREATE_OUTCOME_UNKNOWN");
+  if (!response.ok) throw new Error("N8N_WORKFLOW_CREATE_REJECTED");
+
+  let payload: unknown;
+  try { payload = await response.json(); } catch {
+    throw new Error("N8N_WORKFLOW_CREATE_OUTCOME_UNKNOWN");
+  }
+  if (!payload || typeof payload !== "object") throw new Error("N8N_WORKFLOW_CREATE_OUTCOME_UNKNOWN");
+  const created = payload as {id?: unknown; name?: unknown; active?: unknown};
+  const id = typeof created.id === "string" || typeof created.id === "number" ? String(created.id) : "";
+  if (!/^[A-Za-z0-9_-]{1,128}$/.test(id) || typeof created.name !== "string") {
+    throw new Error("N8N_WORKFLOW_CREATE_OUTCOME_UNKNOWN");
+  }
+  return {id, name: created.name.slice(0, 240), active: created.active === true};
+}
