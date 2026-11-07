@@ -6,6 +6,7 @@ import {startInstagramReelTarget,processInstagramReelTarget} from "@/lib/instagr
 import {processTikTokInboxTarget} from "@/lib/tiktok-upload";
 import {processYouTubeUploadTarget} from "@/lib/youtube-upload";
 import {publishPinterestTarget} from "@/lib/pinterest-publishing";
+import {refreshPinterestAccountAnalytics} from "@/lib/pinterest-analytics";
 
 export const runtime="nodejs";
 export const dynamic="force-dynamic";
@@ -142,6 +143,32 @@ export async function GET(request:Request){
     }catch{pinterestUnknown++;}
   }
 
+  // Collect at most one account-level Pinterest analytics report per worker run.
+  // A failed report is also snapshotted for the UTC day to prevent a tight retry loop.
+  const analyticsDay=new Date(now.toISOString().slice(0,10)+"T00:00:00.000Z");
+  const pinterestAnalyticsDue=await db.socialAccount.findMany({
+    where:{provider:"PINTEREST",status:"CONNECTED",scopes:{has:"user_accounts:read"},pinterestAnalyticsSnapshots:{none:{reportDate:analyticsDay}}},
+    select:{id:true,workspaceId:true},
+    orderBy:{updatedAt:"asc"},
+    take:1,
+  });
+  let pinterestAnalyticsRefreshed=0,pinterestAnalyticsFailed=0;
+  for(const account of pinterestAnalyticsDue){
+    try{
+      await refreshPinterestAccountAnalytics({workspaceId:account.workspaceId,accountId:account.id});
+      pinterestAnalyticsRefreshed++;
+    }catch(error){
+      pinterestAnalyticsFailed++;
+      const endDate=analyticsDay,startDate=new Date(analyticsDay.getTime()-89*86400000);
+      const code=error instanceof Error&&/^[A-Z0-9_]{1,100}$/.test(error.message)?error.message:"PINTEREST_ANALYTICS_REFRESH_FAILED";
+      await db.pinterestAnalyticsSnapshot.upsert({
+        where:{workspaceId_socialAccountId_reportDate:{workspaceId:account.workspaceId,socialAccountId:account.id,reportDate:analyticsDay}},
+        create:{workspaceId:account.workspaceId,socialAccountId:account.id,reportDate:analyticsDay,startDate,endDate,metrics:{status:"FAILED",errorCode:code},rawResponse:{},fetchedAt:now},
+        update:{startDate,endDate,metrics:{status:"FAILED",errorCode:code},rawResponse:{},fetchedAt:now},
+      });
+    }
+  }
+
   const due=await db.socialPostTarget.findMany({
     where:{provider:{in:["FACEBOOK","INSTAGRAM"]},status:"SCHEDULED",contentPost:{scheduledAt:{lte:now}}},
     select:{id:true,workspaceId:true,provider:true},
@@ -168,5 +195,5 @@ export async function GET(request:Request){
       failed++;
     }
   }
-  return NextResponse.json({due:due.length,published,failed,unknown,skipped,recoveredUnknown,pinterest:{checked:pinterestDue.length,published:pinterestPublished,failed:pinterestFailed,unknown:pinterestUnknown,skipped:pinterestSkipped},reels:{checked:processing.length,published:reelsPublished,failed:reelsFailed,processing:reelsProcessing,unknown:reelsUnknown},tiktok:{checked:tiktokProcessing.length,uploaded:tiktokUploaded,published:tiktokPublished,failed:tiktokFailed},youtube:{checked:youtubeProcessing.length,published:youtubePublished,scheduled:youtubeScheduled,failed:youtubeFailed,processing:youtubeProcessingCount,recoveredInitializations:recoveredYouTubeStarts}});
+  return NextResponse.json({due:due.length,published,failed,unknown,skipped,recoveredUnknown,pinterest:{checked:pinterestDue.length,published:pinterestPublished,failed:pinterestFailed,unknown:pinterestUnknown,skipped:pinterestSkipped,analyticsChecked:pinterestAnalyticsDue.length,analyticsRefreshed:pinterestAnalyticsRefreshed,analyticsFailed:pinterestAnalyticsFailed},reels:{checked:processing.length,published:reelsPublished,failed:reelsFailed,processing:reelsProcessing,unknown:reelsUnknown},tiktok:{checked:tiktokProcessing.length,uploaded:tiktokUploaded,published:tiktokPublished,failed:tiktokFailed},youtube:{checked:youtubeProcessing.length,published:youtubePublished,scheduled:youtubeScheduled,failed:youtubeFailed,processing:youtubeProcessingCount,recoveredInitializations:recoveredYouTubeStarts}});
 }
