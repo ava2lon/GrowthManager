@@ -35,6 +35,31 @@ export default async function AnalyticsPage(){
     }),
     db.socialAccount.findMany({where:{workspaceId:workspace.id,status:"CONNECTED"},select:{provider:true}}),
   ]);
+  const recentContent=await db.contentPost.findMany({
+    where:{workspaceId:workspace.id,publishTargets:{some:{workspaceId:workspace.id,status:"PUBLISHED",publishedAt:{gte:since}}}},
+    orderBy:{updatedAt:"desc"},take:100,
+    select:{id:true,title:true,body:true,publishedAt:true,mediaAssets:{select:{mediaAsset:{select:{mimeType:true}}}},publishTargets:{where:{workspaceId:workspace.id,status:"PUBLISHED",publishedAt:{gte:since}},select:{provider:true,publishedAt:true}}},
+  });
+  const formatCounts={text:0,image:0,video:0,mixed:0};
+  const hashtagCounts=new Map<string,number>();
+  const providerDistribution=new Map<string,number>();
+  for(const post of recentContent){
+    const mimeTypes=post.mediaAssets.map(item=>item.mediaAsset.mimeType);
+    const hasImage=mimeTypes.some(type=>type.startsWith("image/"));
+    const hasVideo=mimeTypes.some(type=>type.startsWith("video/"));
+    if(hasImage&&hasVideo)formatCounts.mixed++;
+    else if(hasVideo)formatCounts.video++;
+    else if(hasImage)formatCounts.image++;
+    else formatCounts.text++;
+    for(const target of post.publishTargets)providerDistribution.set(target.provider,(providerDistribution.get(target.provider)??0)+1);
+    for(const match of post.body.matchAll(/(^|\\s)#([\\p{L}\\p{N}_]{2,50})/gu)){
+      const tag=match[2].toLowerCase();
+      hashtagCounts.set(tag,(hashtagCounts.get(tag)??0)+1);
+    }
+  }
+  const topHashtags=[...hashtagCounts.entries()].sort((a,b)=>b[1]-a[1]).slice(0,8);
+  const formatRows=[{label:"Text only",count:formatCounts.text},{label:"Image",count:formatCounts.image},{label:"Video",count:formatCounts.video},{label:"Mixed media",count:formatCounts.mixed}];
+  const maxFormatCount=Math.max(1,...formatRows.map(row=>row.count));
   const pinterestTargetIds=publishedTargets.filter(item=>item.provider==="PINTEREST").map(item=>item.id);
   const pinterestSnapshots=pinterestTargetIds.length?await db.pinterestPinAnalyticsSnapshot.findMany({
     where:{workspaceId:workspace.id,targetId:{in:pinterestTargetIds},fetchedAt:{gte:since}},
@@ -141,6 +166,15 @@ export default async function AnalyticsPage(){
         <tbody className="divide-y divide-slate-100">{rows.map(row=><tr key={row.label}><td className="py-3 pr-4 font-medium text-slate-800">{row.label}</td><td className="py-3 pr-4">{row.connected?"Connected":"Not connected"}</td><td className="py-3 pr-4 tabular-nums">{number(row.published)}</td><td className="py-3 pr-4 tabular-nums">{number(row.measured)}</td><td className="py-3">{row.published?Math.round(row.measured/row.published*100)+"%":"—"}</td></tr>)}</tbody>
       </table></div>
       <p className="mt-4 text-xs leading-5 text-slate-500">The report is limited to the latest 2,000 published targets in the selected 90-day window and the latest 100 failed or uncertain targets updated in the last 30 days. Provider metrics remain in their native analytics sections because impressions, views, engagements, and reporting windows are not directly interchangeable. Analytics availability depends on granted scopes, provider access, and successful collection.</p>
+    </section>
+    <section className="rounded-2xl border border-slate-200 bg-white p-5 sm:p-6">
+      <div><h2 className="font-semibold text-slate-900">Content intelligence</h2><p className="mt-1 text-sm text-slate-500">Patterns from the latest 100 content posts with at least one published target in the last 90 days. Format is inferred from attached Media Library MIME types.</p></div>
+      <div className="mt-5 grid gap-5 lg:grid-cols-2">
+        <div><h3 className="text-sm font-semibold text-slate-800">Published content formats</h3><div className="mt-3 space-y-3">{formatRows.map(row=><div key={row.label}><div className="mb-1 flex justify-between text-sm"><span className="text-slate-600">{row.label}</span><span className="font-semibold tabular-nums text-slate-900">{number(row.count)}</span></div><div className="h-2 overflow-hidden rounded-full bg-slate-100"><div className="h-full rounded-full bg-indigo-600" style={{width:(row.count/maxFormatCount*100)+"%"}}/></div></div>)}</div><p className="mt-3 text-xs text-slate-500">Posts without attached media are classified as text only. Mixed means both image and video assets are attached.</p></div>
+        <div><h3 className="text-sm font-semibold text-slate-800">Publishing distribution</h3>{providerDistribution.size?<div className="mt-3 space-y-2">{[...providerDistribution.entries()].sort((a,b)=>b[1]-a[1]).map(([provider,count])=><div key={provider} className="flex items-center justify-between rounded-lg bg-slate-50 px-3 py-2 text-sm"><span className="text-slate-600">{provider}</span><span className="font-semibold tabular-nums text-slate-900">{number(count)} targets</span></div>)}</div>:<p className="mt-3 text-sm text-slate-500">No published target distribution is available yet.</p>}</div>
+      </div>
+      <div className="mt-6 border-t border-slate-100 pt-5"><h3 className="text-sm font-semibold text-slate-800">Frequently used hashtags</h3>{topHashtags.length?<div className="mt-3 flex flex-wrap gap-2">{topHashtags.map(([tag,count])=><span key={tag} className="rounded-full bg-slate-100 px-3 py-1.5 text-xs text-slate-700">#{tag} <strong className="ml-1">{count}</strong></span>)}</div>:<p className="mt-2 text-sm text-slate-500">No hashtags found in the sampled published posts.</p>}</div>
+      <p className="mt-4 text-xs leading-5 text-slate-500">Counts describe content volume and publishing distribution only. They do not establish which format or hashtag performs best. Posts may be omitted beyond the 100-post sample, and a multi-platform post contributes one target per published destination.</p>
     </section>
     <section className="rounded-2xl border border-indigo-100 bg-indigo-50/50 p-5">
       <h2 className="font-semibold text-slate-900">Provider-level reports</h2>
