@@ -291,6 +291,16 @@ export async function checkTikTokAccountHealth(formData: FormData) {
     }
   }
 
+  // Refresh may rotate and persist the encrypted token envelope. Re-read it
+  // before the compare-and-swap so this health check never overwrites a rotation.
+  const latestAccount = await db.socialAccount.findFirst({
+    where: {id: account.id, workspaceId: context.workspace.id, provider: "TIKTOK", status: "CONNECTED"},
+    select: {credentialsEncrypted: true},
+  });
+  if (!latestAccount?.credentialsEncrypted) {
+    throw new Error("TikTok account changed during the health check. Refresh and retry.");
+  }
+
   // Only definitive authorization, account, or scope failures change connection state.
   const definitive = failureCode !== null && failureCode !== "TIKTOK_PROVIDER_RATE_LIMITED" &&
     failureCode !== "TIKTOK_PROVIDER_ERROR" && failureCode !== "TIKTOK_PROVIDER_UNAVAILABLE" &&
@@ -302,7 +312,7 @@ export async function checkTikTokAccountHealth(formData: FormData) {
         workspaceId: context.workspace.id,
         provider: "TIKTOK",
         status: "CONNECTED",
-        credentialsEncrypted: account.credentialsEncrypted,
+        credentialsEncrypted: latestAccount.credentialsEncrypted,
       },
       data: failureCode
         ? {
