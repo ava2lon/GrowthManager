@@ -264,6 +264,7 @@ export async function checkTikTokAccountHealth(formData: FormData) {
       data?: {user?: {open_id?: string; display_name?: string}};
       error?: {code?: string};
     } | null;
+    const user = payload?.data?.user;
     if (response.status === 401 || response.status === 403 ||
         ["invalid_token", "access_token_invalid", "scope_not_authorized"].includes(payload?.error?.code ?? "")) {
       failureCode = "TIKTOK_AUTH_FAILED";
@@ -271,10 +272,10 @@ export async function checkTikTokAccountHealth(formData: FormData) {
       failureCode = "TIKTOK_PROVIDER_RATE_LIMITED";
     } else if (!response.ok || !payload || (payload.error?.code && payload.error.code !== "ok")) {
       failureCode = "TIKTOK_PROVIDER_ERROR";
-    } else if (payload.data?.user?.open_id !== account.providerUserId) {
+    } else if (!user?.open_id || user.open_id !== account.providerUserId) {
       failureCode = "TIKTOK_ACCOUNT_MISMATCH";
-    } else if (typeof payload.data.user.display_name === "string" && payload.data.user.display_name.trim()) {
-      displayName = payload.data.user.display_name.trim().slice(0, 255);
+    } else if (typeof user.display_name === "string" && user.display_name.trim()) {
+      displayName = user.display_name.trim().slice(0, 255);
     }
   } catch (error) {
     const code = error instanceof Error ? error.message : "";
