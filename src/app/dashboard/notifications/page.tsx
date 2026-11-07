@@ -66,6 +66,14 @@ export default async function NotificationsPage({searchParams}:{searchParams:Pro
           </div>
         </div>
         <div className="rounded-xl border border-slate-100 p-4">
+          <h3 className="text-sm font-semibold text-slate-800">Social incident alerts</h3>
+          <p className="mt-1 text-xs text-slate-500">Control account-health, OAuth-expiry and publishing-incident notifications. Email alerts are opt-in.</p>
+          <div className="mt-3 grid gap-3 sm:grid-cols-2">
+            <label className="flex items-center gap-3 rounded-lg border border-slate-100 p-3 text-sm text-slate-700"><input type="checkbox" name="inAppSocialIncidents" defaultChecked={preferences?.inAppSocialIncidents ?? true} className="h-4 w-4 rounded border-slate-300"/> In-app social incident alerts</label>
+            <label className="flex items-center gap-3 rounded-lg border border-slate-100 p-3 text-sm text-slate-700"><input type="checkbox" name="emailSocialIncidents" defaultChecked={preferences?.emailSocialIncidents ?? false} className="h-4 w-4 rounded border-slate-300"/> Email social incident alerts</label>
+          </div>
+        </div>
+        <div className="rounded-xl border border-slate-100 p-4">
           <label className="flex items-center gap-3 text-sm font-medium text-slate-700"><input type="checkbox" name="digestEnabled" defaultChecked={preferences?.digestEnabled ?? false} className="h-4 w-4 rounded border-slate-300"/> Replace immediate review emails with a digest</label>
           <p className="mt-1 text-xs text-slate-500">When enabled, review emails are grouped into a scheduled summary. In-app notifications remain immediate.</p>
           <div className="mt-3 grid gap-3 sm:grid-cols-2">
