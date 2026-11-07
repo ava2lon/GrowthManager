@@ -1027,7 +1027,7 @@ export async function createYouTubeDraft(formData: FormData) {
   if (!accountId || accountId.length > 128 || !mediaAssetId || mediaAssetId.length > 128 ||
       !title || title.length > 100 || description.length > 5000 ||
       !["private", "unlisted", "public"].includes(privacyStatus) ||
-      !/^\\d{1,3}$/.test(categoryId) || tags.length > 20 || tags.some(tag => tag.length > 30)) {
+      !/^\d{1,3}$/.test(categoryId) || tags.length > 20 || tags.some(tag => tag.length > 30)) {
     throw new Error("Check the YouTube title, description, category, tags, privacy, account and video.");
   }
   const account = await db.socialAccount.findFirst({
