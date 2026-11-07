@@ -1572,7 +1572,7 @@ export async function updateXDraft(formData:FormData){
  if(!contentPostId||contentPostId.length>128||!body||body.length>280)throw new Error("Provide a valid X draft and post text up to 280 characters.");
  let scheduledAt:Date|null=null;
  if(rawSchedule){
-  if(!/^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}$/.test(rawSchedule))throw new Error("Choose a valid schedule date and time in UTC.");
+  if(!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(rawSchedule))throw new Error("Choose a valid schedule date and time in UTC.");
   scheduledAt=new Date(rawSchedule+"Z");
   if(!Number.isFinite(scheduledAt.getTime())||scheduledAt.getTime()<Date.now()+15*60_000||scheduledAt.getTime()>Date.now()+365*24*60*60_000)throw new Error("Schedule must be 15 minutes to 1 year in the future (UTC).");
  }
