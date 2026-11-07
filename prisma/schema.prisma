@@ -56,6 +56,8 @@ enum WorkspaceNotificationType {
   CONTENT_REVIEW_ASSIGNED
   CONTENT_REVIEW_COMPLETED
   CONTENT_CHANGES_REQUESTED
+  SOCIAL_INCIDENT
+  SOCIAL_INCIDENT_RESOLVED
 }
 
 enum MediaAssetStatus {
@@ -106,6 +108,7 @@ model Workspace {
   contentReviewEmailDeliveries ContentReviewEmailDelivery[]
   contentReviewEmailDigests ContentReviewEmailDigest[]
   notificationPreferences WorkspaceNotificationPreference[]
+  incidents WorkspaceIncident[]
 }
 
 model WorkspaceInvitation {
@@ -180,6 +183,7 @@ model SocialAccount {
   tikTokAnalyticsSnapshots TikTokAnalyticsSnapshot[]
   youTubeAnalyticsSnapshots YouTubeAnalyticsSnapshot[]
   xAnalyticsSnapshots XAnalyticsSnapshot[]
+  incidents WorkspaceIncident[]
   @@unique([workspaceId, provider, providerUserId])
   @@unique([workspaceId, id])
   @@index([workspaceId, brandId, provider])
@@ -280,6 +284,7 @@ model SocialPostTarget {
   contentPost    ContentPost @relation(fields: [workspaceId, contentPostId], references: [workspaceId, id], onDelete: Cascade)
   socialAccount  SocialAccount @relation(fields: [workspaceId, socialAccountId], references: [workspaceId, id], onDelete: Cascade)
   attempts       SocialPublishAttempt[]
+  incidents WorkspaceIncident[]
   pinterestAnalyticsSnapshots PinterestPinAnalyticsSnapshot[]
   metaAnalyticsSnapshots MetaAnalyticsSnapshot[]
   linkedinAnalyticsSnapshots LinkedInAnalyticsSnapshot[]
@@ -794,4 +799,35 @@ model ContentReviewEmailDigest {
   recipient         User @relation(fields: [recipientUserId], references: [id], onDelete: Cascade)
   @@index([status, nextAttemptAt])
   @@index([workspaceId, recipientUserId, createdAt])
+}
+
+
+model WorkspaceIncident {
+  id                 String   @id @default(cuid())
+  workspaceId        String
+  sourceType         String
+  sourceId           String
+  socialAccountId    String?
+  socialPostTargetId String?
+  category           String
+  severity           String
+  status             String   @default("OPEN")
+  dedupeKey          String
+  message            String   @db.Text
+  errorCode          String?
+  occurrenceCount   Int      @default(1)
+  firstSeenAt        DateTime @default(now())
+  lastSeenAt         DateTime @default(now())
+  resolvedAt         DateTime?
+  resolutionMessage  String?  @db.Text
+  metadata           Json?
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+  workspace          Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  socialAccount      SocialAccount? @relation(fields: [workspaceId, socialAccountId], references: [workspaceId, id], onDelete: Cascade)
+  socialPostTarget   SocialPostTarget? @relation(fields: [workspaceId, socialPostTargetId], references: [workspaceId, id], onDelete: Cascade)
+  @@unique([workspaceId, dedupeKey])
+  @@index([workspaceId, status, severity, lastSeenAt])
+  @@index([workspaceId, sourceType, sourceId])
+  @@index([status, lastSeenAt])
 }
