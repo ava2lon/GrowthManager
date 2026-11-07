@@ -29,8 +29,8 @@ function readMetadata(value: unknown): Record<string, unknown> {
   return value as Record<string, unknown>;
 }
 
-async function auditManualAnalyticsRefresh(workspaceId:string,userId:string,accountId:string,provider:string,outcome:"SUCCESS"|"FAILED",errorCode?:string){
- await db.activityLog.create({data:{workspaceId,userId,action:outcome==="SUCCESS"?"social.analytics_manual_refresh":"social.analytics_manual_refresh_failed",entityType:"SocialAccount",entityId:accountId,metadata:{provider,outcome,...(errorCode?{errorCode}:{})}}});
+async function auditManualAnalyticsRefresh(workspaceId:string,userId:string,entityId:string,provider:string,outcome:"SUCCESS"|"FAILED",errorCode?:string,entityType:"SocialAccount"|"SocialPostTarget"="SocialAccount"){
+ await db.activityLog.create({data:{workspaceId,userId,action:outcome==="SUCCESS"?"social.analytics_manual_refresh":"social.analytics_manual_refresh_failed",entityType,entityId,metadata:{provider,outcome,...(errorCode?{errorCode}:{})}}});
 }
 function analyticsErrorCode(error:unknown){
  const message=error instanceof Error?error.message:"";
@@ -1546,7 +1546,7 @@ export async function refreshTikTokAnalyticsAction(formData:FormData){
  if((!accountId&&!targetId)||accountId.length>128||targetId.length>128)throw new Error("Invalid TikTok analytics target.");
  await enforceSocialRateLimit(context.workspace.id,context.userId,"tiktok-analytics");
  try{if(targetId)await refreshTikTokVideoAnalytics({workspaceId:context.workspace.id,targetId});
- else await refreshTikTokAccountAnalytics({workspaceId:context.workspace.id,accountId});await auditManualAnalyticsRefresh(context.workspace.id,context.userId,accountId,"TIKTOK","SUCCESS");}catch(error){await auditManualAnalyticsRefresh(context.workspace.id,context.userId,accountId,"TIKTOK","FAILED",analyticsErrorCode(error));throw error;}
+ else await refreshTikTokAccountAnalytics({workspaceId:context.workspace.id,accountId});await auditManualAnalyticsRefresh(context.workspace.id,context.userId,accountId||targetId,"TIKTOK","SUCCESS",undefined,accountId?"SocialAccount":"SocialPostTarget");}catch(error){await auditManualAnalyticsRefresh(context.workspace.id,context.userId,accountId||targetId,"TIKTOK","FAILED",analyticsErrorCode(error),accountId?"SocialAccount":"SocialPostTarget");throw error;}
  revalidatePath("/dashboard/social");
  redirect("/dashboard/social?tiktokAnalytics=refreshed");
 }
@@ -1559,7 +1559,7 @@ export async function refreshYouTubeAnalyticsAction(formData:FormData){
  if((!accountId&&!targetId)||accountId.length>128||targetId.length>128)throw new Error("Invalid YouTube analytics target.");
  await enforceSocialRateLimit(context.workspace.id,context.userId,"youtube-analytics");
  try{if(targetId)await refreshYouTubeVideoAnalytics({workspaceId:context.workspace.id,targetId});
- else await refreshYouTubeChannelAnalytics({workspaceId:context.workspace.id,accountId});await auditManualAnalyticsRefresh(context.workspace.id,context.userId,accountId,"YOUTUBE","SUCCESS");}catch(error){await auditManualAnalyticsRefresh(context.workspace.id,context.userId,accountId,"YOUTUBE","FAILED",analyticsErrorCode(error));throw error;}
+ else await refreshYouTubeChannelAnalytics({workspaceId:context.workspace.id,accountId});await auditManualAnalyticsRefresh(context.workspace.id,context.userId,accountId||targetId,"YOUTUBE","SUCCESS",undefined,accountId?"SocialAccount":"SocialPostTarget");}catch(error){await auditManualAnalyticsRefresh(context.workspace.id,context.userId,accountId||targetId,"YOUTUBE","FAILED",analyticsErrorCode(error),accountId?"SocialAccount":"SocialPostTarget");throw error;}
  revalidatePath("/dashboard/social");
  redirect("/dashboard/social?youtubeAnalytics=refreshed");
 }
