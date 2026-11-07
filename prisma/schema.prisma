@@ -723,3 +723,15 @@ model ContentReviewEmailDelivery {
   @@index([workspaceId, createdAt])
   @@index([providerMessageId])
 }
+
+
+model ContentReviewEmailWebhookEvent {
+  id              String                    @id @default(cuid())
+  deliveryId      String
+  providerEventId String                    @unique
+  eventType       String
+  occurredAt      DateTime
+  receivedAt      DateTime                  @default(now())
+  delivery        ContentReviewEmailDelivery @relation(fields: [deliveryId], references: [id], onDelete: Cascade)
+  @@index([deliveryId, occurredAt])
+}
