@@ -754,3 +754,35 @@ export async function publishInstagramDraft(formData: FormData) {
       :"Instagram rejected the media or caption. Check the JPEG assets and account eligibility.");
   }
 }
+
+export async function createTikTokDraft(formData:FormData){
+  const context=await requireWorkspaceRole("MEMBER");
+  const accountId=String(formData.get("accountId")??"").trim();
+  const mediaAssetId=String(formData.get("mediaAssetId")??"").trim();
+  const body=String(formData.get("body")??"").trim();
+  if(!accountId||accountId.length>128||!mediaAssetId||mediaAssetId.length>128||!body||body.length>2200)
+    throw new Error("Select one TikTok account, one video, and enter a caption up to 2,200 characters.");
+  const account=await db.socialAccount.findFirst({
+    where:{id:accountId,workspaceId:context.workspace.id,provider:"TIKTOK",status:"CONNECTED"},
+    select:{id:true,brandId:true,scopes:true},
+  });
+  if(!account||!account.scopes.includes("video.upload"))throw new Error("Select a connected TikTok account with video.upload permission.");
+  const brand=await db.brand.findFirst({where:{id:account.brandId,workspaceId:context.workspace.id,status:"ACTIVE"},select:{id:true}});
+  if(!brand)throw new Error("The TikTok account must belong to an active brand.");
+  const asset=await db.mediaAsset.findFirst({
+    where:{id:mediaAssetId,workspaceId:context.workspace.id,status:"READY",mimeType:{in:["video/mp4","video/quicktime","video/webm"]},OR:[{brandId:brand.id},{brandId:null}]},
+    select:{id:true,sizeBytes:true,durationMs:true,width:true,height:true},
+  });
+  if(!asset||Number(asset.sizeBytes)>100*1024*1024||!asset.durationMs||asset.durationMs<3000||asset.durationMs>900000||
+    !asset.width||!asset.height||asset.width>1920||asset.height>1920)
+    throw new Error("Select one ready video within TikTok's supported size, duration, and dimensions policy.");
+  const post=await db.$transaction(async tx=>{
+    const created=await tx.contentPost.create({data:{workspaceId:context.workspace.id,brandId:brand.id,body,status:"DRAFT"},select:{id:true}});
+    await tx.socialPostTarget.create({data:{workspaceId:context.workspace.id,contentPostId:created.id,socialAccountId:account.id,provider:"TIKTOK",status:"DRAFT"}});
+    await tx.contentPostMedia.create({data:{workspaceId:context.workspace.id,contentPostId:created.id,mediaAssetId:asset.id,position:0}});
+    await tx.activityLog.create({data:{workspaceId:context.workspace.id,userId:context.userId,action:"social_post.draft_created",entityType:"ContentPost",entityId:created.id,metadata:{provider:"TIKTOK",format:"INBOX_VIDEO",mediaAssetCount:1}}});
+    return created;
+  });
+  revalidatePath("/dashboard/social");
+  return post.id;
+}
