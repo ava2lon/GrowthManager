@@ -241,6 +241,7 @@ export async function deleteXPublishedTarget(input:{targetId:string;workspaceId:
  if(target.socialAccount.status!=="CONNECTED"||!target.socialAccount.scopes.includes("tweet.write"))throw new Error("Reconnect X with tweet.write permission before deleting this post.");
  const {token}=await freshToken(input.workspaceId,target.socialAccount.id,false);
  const markDeleteUnknown=async()=>{
+  try{
   await db.$transaction(async tx=>{
    await tx.socialPostTarget.updateMany({where:{id:target.id,workspaceId:input.workspaceId,provider:"X",status:"PUBLISHED",providerPostId:target.providerPostId},data:{status:"DELETE_UNKNOWN",errorCode:"X_DELETE_OUTCOME_UNKNOWN"}});
    await tx.activityLog.create({data:{workspaceId:input.workspaceId,userId:input.actorUserId,action:"social_post.delete_outcome_unknown",entityType:"ContentPost",entityId:target.contentPostId,metadata:{provider:"X",targetId:target.id,providerPostId:target.providerPostId,requiresManualVerification:true}}});
@@ -259,5 +260,9 @@ export async function deleteXPublishedTarget(input:{targetId:string;workspaceId:
   const changed=await tx.socialPostTarget.updateMany({where:{id:target.id,workspaceId:input.workspaceId,provider:"X",status:"PUBLISHED",providerPostId:target.providerPostId},data:{status:"DELETED",errorCode:null,nextCheckAt:null}});
   if(changed.count!==1)throw new Error("X target changed while deletion was in progress. Verify its status before retrying.");
   await tx.activityLog.create({data:{workspaceId:input.workspaceId,userId:input.actorUserId,action:"social_post.deleted",entityType:"ContentPost",entityId:target.contentPostId,metadata:{provider:"X",targetId:target.id,providerPostId:target.providerPostId}}});
- });
+ })
+ }catch{
+  await markDeleteUnknown();
+  throw new Error("X_DELETE_LOCAL_RECONCILIATION_REQUIRED: X confirmed deletion but GrowthManager could not finalize its local record. Verify the post on X; do not retry.");
+ };
 }
