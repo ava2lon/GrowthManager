@@ -125,7 +125,7 @@ export async function POST(request: Request) {
         data:{workspaceId:context.workspace.id,brandId:brand.id,title:(String(post.title)+" ["+platform+"]").slice(0,240),body,status:"DRAFT"},
         select:{id:true,title:true,createdAt:true}
       });
-      drafts.push({...draft,platform,format:post.format,hook:post.hook,cta:post.cta});
+      drafts.push({...draft,platform,format:post.format,hook:post.hook,cta:post.cta,copy:post.copy,hashtags});
     }
     await tx.activityLog.create({
       data:{
