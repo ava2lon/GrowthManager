@@ -24,7 +24,7 @@ export default async function SocialPage({searchParams}:{searchParams:Promise<{m
       select:{id:true,provider:true,accountName:true,status:true,brandId:true,connectedAt:true,lastValidatedAt:true,lastErrorCode:true,scopes:true,tokenExpiresAt:true},
     }),
     db.brand.findMany({where:{workspaceId:workspace.id,status:"ACTIVE"},orderBy:{name:"asc"},select:{id:true,name:true}}),
-    db.contentPost.findMany({where:{workspaceId:workspace.id,status:"SCHEDULED",scheduledAt:{gte:gridStart,lt:gridEnd},publishTargets:{some:{provider:"FACEBOOK",status:"SCHEDULED"}}},orderBy:{scheduledAt:"asc"},select:{id:true,body:true,scheduledAt:true,publishTargets:{where:{provider:"FACEBOOK",status:"SCHEDULED"},select:{id:true,socialAccount:{select:{accountName:true}}}}}}),
+    db.contentPost.findMany({where:{workspaceId:workspace.id,status:"SCHEDULED",scheduledAt:{gte:gridStart,lt:gridEnd},publishTargets:{some:{provider:{in:["FACEBOOK","INSTAGRAM"]},status:"SCHEDULED"}}},orderBy:{scheduledAt:"asc"},select:{id:true,body:true,scheduledAt:true,publishTargets:{where:{provider:{in:["FACEBOOK","INSTAGRAM"]},status:"SCHEDULED"},select:{id:true,socialAccount:{select:{accountName:true}}}}}}),
     db.mediaAsset.findMany({where:{workspaceId:workspace.id,status:"READY",mimeType:{in:["image/jpeg","image/png"]},OR:[{brandId:null},{brandId:{in:brands.map((brand)=>brand.id)}}]},orderBy:{createdAt:"desc"},take:100,select:{id:true,brandId:true,originalFilename:true,mimeType:true,sizeBytes:true}}),
   ]);
   const drafts = await db.contentPost.findMany({
