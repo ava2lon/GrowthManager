@@ -5,6 +5,8 @@ import {requireWorkspaceRole} from "@/lib/workspace";
 import {db} from "@/lib/db";
 import {getIntegrationProvider} from "@/lib/integration-providers";
 import {consumeRateLimit} from "@/lib/rate-limit";
+import {decryptIntegrationCredentials} from "@/lib/integration-crypto";
+import {listN8nExecutions} from "@/lib/n8n-client";
 
 export async function addIntegration(formData: FormData) {
   const context = await requireWorkspaceRole("ADMIN");
@@ -687,3 +689,82 @@ export async function setN8nWorkflowState(formData: FormData) {
 
   revalidatePath("/dashboard/integrations");
 }
+
+export async function syncN8nExecutionHistory(formData: FormData) {
+  const context = await requireWorkspaceRole("ADMIN");
+  const integrationId = String(formData.get("integrationId") ?? "");
+  if (!integrationId || integrationId.length > 128) throw new Error("Invalid n8n integration.");
+
+  const limit = await consumeRateLimit("n8n-execution-sync:" + context.workspace.id + ":" + context.userId, 5, 3600);
+  if (!limit.allowed || (process.env.NODE_ENV === "production" && !limit.configured)) {
+    throw new Error("Execution sync limit reached or request protection is unavailable.");
+  }
+
+  const integration = await db.integration.findFirst({
+    where: {id: integrationId, workspaceId: context.workspace.id, provider: "n8n", status: "CONNECTED"},
+    select: {id: true, credentialsEncrypted: true},
+  });
+  if (!integration?.credentialsEncrypted) throw new Error("A connected n8n integration is required.");
+
+  let credentials: Record<string, unknown>;
+  try {
+    credentials = decryptIntegrationCredentials(integration.credentialsEncrypted, context.workspace.id, integration.id);
+  } catch {
+    throw new Error("Could not decrypt n8n credentials.");
+  }
+  if (typeof credentials.baseUrl !== "string" || typeof credentials.apiKey !== "string") {
+    throw new Error("Saved n8n credentials are incomplete.");
+  }
+
+  const result = await listN8nExecutions(credentials.baseUrl, credentials.apiKey);
+  const now = new Date();
+  const operations = result.executions.map((execution) => db.n8nExecutionSnapshot.upsert({
+    where: {
+      workspaceId_integrationId_executionId: {
+        workspaceId: context.workspace.id,
+        integrationId: integration.id,
+        executionId: execution.id,
+      },
+    },
+    create: {
+      workspaceId: context.workspace.id,
+      integrationId: integration.id,
+      executionId: execution.id,
+      workflowId: execution.workflowId,
+      status: execution.status,
+      mode: execution.mode,
+      startedAt: execution.startedAt ? new Date(execution.startedAt) : null,
+      stoppedAt: execution.stoppedAt ? new Date(execution.stoppedAt) : null,
+      waitTill: execution.waitTill ? new Date(execution.waitTill) : null,
+      retryOf: execution.retryOf,
+      retrySuccessId: execution.retrySuccessId,
+      syncedAt: now,
+    },
+    update: {
+      workflowId: execution.workflowId,
+      status: execution.status,
+      mode: execution.mode,
+      startedAt: execution.startedAt ? new Date(execution.startedAt) : null,
+      stoppedAt: execution.stoppedAt ? new Date(execution.stoppedAt) : null,
+      waitTill: execution.waitTill ? new Date(execution.waitTill) : null,
+      retryOf: execution.retryOf,
+      retrySuccessId: execution.retrySuccessId,
+      syncedAt: now,
+    },
+  }));
+
+  if (operations.length) await db.$transaction(operations);
+  await db.activityLog.create({
+    data: {
+      workspaceId: context.workspace.id,
+      userId: context.userId,
+      action: "integration.n8n_execution_history_synced",
+      entityType: "integration",
+      entityId: integration.id,
+      metadata: {upsertedCount: operations.length, hasMore: result.hasMore},
+    },
+  });
+  revalidatePath("/dashboard/integrations");
+  revalidatePath("/dashboard/automations");
+}
+
