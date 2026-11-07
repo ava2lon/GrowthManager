@@ -159,13 +159,13 @@ async function waitForInstagramContainer(containerId:string,version:string,acces
   const endpoint=new URL("https://graph.facebook.com/"+version+"/"+encodeURIComponent(containerId));
   endpoint.searchParams.set("fields","status_code,status");
   endpoint.searchParams.set("access_token",accessToken);
-  const deadline=Date.now()+30000;
+  const deadline=Date.now()+12000;
   while(Date.now()<deadline){
     const result=await graphGet(endpoint);
     const status=result.status_code;
     if(status==="FINISHED")return;
     if(status==="ERROR"||status==="EXPIRED")throw new Error("INSTAGRAM_CONTAINER_PROCESSING_FAILED");
-    await new Promise(resolve=>setTimeout(resolve,2000));
+    await new Promise(resolve=>setTimeout(resolve,1000));
   }
   throw new Error("INSTAGRAM_CONTAINER_TIMEOUT");
 }
@@ -223,13 +223,13 @@ export async function publishInstagramTarget(input:{targetId:string;workspaceId:
       const container=await graphPost(new URL("https://graph.facebook.com/"+version+"/"+accountId+"/media"),payload);
       creationId=container.id;httpStatus=container.httpStatus;
     }else{
-      const childIds:string[]=[];
-      for(const url of signedUrls){
+      const children=await Promise.all(signedUrls.map(url=>{
         const payload=new URLSearchParams({image_url:url,is_carousel_item:"true",access_token:token});
-        const child=await graphPost(new URL("https://graph.facebook.com/"+version+"/"+accountId+"/media"),payload);
-        childIds.push(child.id);httpStatus=child.httpStatus;
-      }
-      for(const childId of childIds)await waitForInstagramContainer(childId,version,token);
+        return graphPost(new URL("https://graph.facebook.com/"+version+"/"+accountId+"/media"),payload);
+      }));
+      const childIds=children.map(child=>child.id);
+      httpStatus=children[children.length-1]?.httpStatus??httpStatus;
+      await Promise.all(childIds.map(childId=>waitForInstagramContainer(childId,version,token)));
       const payload=new URLSearchParams({media_type:"CAROUSEL",children:childIds.join(","),caption:target.contentPost.body,access_token:token});
       const container=await graphPost(new URL("https://graph.facebook.com/"+version+"/"+accountId+"/media"),payload);
       creationId=container.id;httpStatus=container.httpStatus;
@@ -241,7 +241,7 @@ export async function publishInstagramTarget(input:{targetId:string;workspaceId:
   }catch(error){
     const code=error instanceof Error?error.message:"PUBLISH_OUTCOME_UNKNOWN";
     const known=["META_AUTH_FAILED","META_PERMISSION_DENIED","META_RATE_LIMITED","META_PUBLISH_REJECTED",
-      "MEDIA_STORAGE_CONFIGURATION_MISMATCH","MEDIA_SIGNING_FAILED","INSTAGRAM_CONTAINER_PROCESSING_FAILED",
+      "MEDIA_STORAGE_CONFIGURATION_MISMATCH","MEDIA_SIGNING_FAILED","INSTAGRAM_CONTAINER_PROCESSING_FAILED","INSTAGRAM_CONTAINER_TIMEOUT",
       "INSTAGRAM_IMAGE_COUNT_INVALID","INSTAGRAM_UNSUPPORTED_MEDIA_TYPE"];
     errorCode=known.includes(code)?code:"PUBLISH_OUTCOME_UNKNOWN";
     if(error&&typeof error==="object"&&"httpStatus" in error&&typeof error.httpStatus==="number")httpStatus=error.httpStatus;
