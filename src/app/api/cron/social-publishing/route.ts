@@ -110,7 +110,7 @@ export async function GET(request:Request){
       {status:"PUBLISHING",uploadSessionEncrypted:{not:null}},
       {status:"PROCESSING",providerPostId:{not:null}},
     ],AND:[{OR:[{nextCheckAt:null},{nextCheckAt:{lte:now}}]}]},
-    select:{id:true,workspaceId:true},orderBy:{nextCheckAt:"asc"},take:10,
+    select:{id:true,workspaceId:true},orderBy:{nextCheckAt:"asc"},take:1,
   });
   let youtubePublished=0,youtubeFailed=0,youtubeProcessingCount=0;
   for(const target of youtubeProcessing){
