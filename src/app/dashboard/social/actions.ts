@@ -1015,6 +1015,63 @@ export async function publishInstagramDraft(formData: FormData) {
   }
 }
 
+const RETRYABLE_YOUTUBE_UPLOAD_ERRORS = new Set([
+  "YOUTUBE_UPLOAD_INITIALIZATION_INTERRUPTED",
+  "YOUTUBE_UPLOAD_SESSION_INIT_FAILED",
+  "YOUTUBE_UPLOAD_SESSION_MISSING",
+  "YOUTUBE_UPLOAD_SESSION_EXPIRED",
+  "YOUTUBE_UPLOAD_STATUS_FAILED",
+  "YOUTUBE_UPLOAD_RANGE_INVALID",
+  "MEDIA_RANGE_DOWNLOAD_FAILED",
+  "MEDIA_RANGE_MISMATCH",
+  "MEDIA_RANGE_SIZE_MISMATCH",
+  "YOUTUBE_CHUNK_UPLOAD_FAILED",
+  "YOUTUBE_REFRESH_UNAVAILABLE",
+  "YOUTUBE_PROVIDER_UNAVAILABLE",
+  "YOUTUBE_AUTH_FAILED",
+]);
+
+export async function retryYouTubeUpload(formData: FormData) {
+  const context = await requireWorkspaceRole("MEMBER");
+  const targetId = String(formData.get("targetId") ?? "").trim();
+  if (!targetId || targetId.length > 128) throw new Error("Invalid YouTube publishing target.");
+  const target = await db.socialPostTarget.findFirst({
+    where: {id: targetId, workspaceId: context.workspace.id, provider: "YOUTUBE", status: "FAILED"},
+    select: {
+      id: true, contentPostId: true, errorCode: true,
+      socialAccount: {select: {id: true, status: true, scopes: true}},
+    },
+  });
+  if (!target || !target.errorCode || !RETRYABLE_YOUTUBE_UPLOAD_ERRORS.has(target.errorCode)) {
+    throw new Error("This YouTube failure is not eligible for automatic retry. Review the error and create a new draft if needed.");
+  }
+  if (target.socialAccount.status !== "CONNECTED" ||
+      !target.socialAccount.scopes.includes("https://www.googleapis.com/auth/youtube.upload")) {
+    throw new Error("Reconnect the YouTube channel and verify its upload permission before retrying.");
+  }
+  await db.$transaction(async tx => {
+    const changed = await tx.socialPostTarget.updateMany({
+      where: {id: target.id, workspaceId: context.workspace.id, provider: "YOUTUBE",
+        status: "FAILED", errorCode: target.errorCode},
+      data: {status: "DRAFT", errorCode: null, uploadSessionEncrypted: null,
+        uploadOffset: null, uploadTotalBytes: null, nextCheckAt: null, providerPostId: null,
+        processingStartedAt: null},
+    });
+    if (changed.count !== 1) throw new Error("YouTube target changed. Refresh and retry.");
+    await tx.contentPost.updateMany({
+      where: {id: target.contentPostId, workspaceId: context.workspace.id, status: "FAILED"},
+      data: {status: "DRAFT"},
+    });
+    await tx.activityLog.create({
+      data: {workspaceId: context.workspace.id, userId: context.userId,
+        action: "social_post.youtube_upload_retry_queued",
+        entityType: "SocialPostTarget", entityId: target.id,
+        metadata: {provider: "YOUTUBE", previousErrorCode: target.errorCode}},
+    });
+  });
+  revalidatePath("/dashboard/social");
+}
+
 export async function createYouTubeDraft(formData: FormData) {
   const context = await requireWorkspaceRole("MEMBER");
   const accountId = String(formData.get("accountId") ?? "").trim();
