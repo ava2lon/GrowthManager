@@ -153,6 +153,7 @@ model SocialAccount {
   pinterestAnalyticsSnapshots PinterestAnalyticsSnapshot[]
   metaAnalyticsSnapshots MetaAnalyticsSnapshot[]
   linkedinAnalyticsSnapshots LinkedInAnalyticsSnapshot[]
+  tikTokAnalyticsSnapshots TikTokAnalyticsSnapshot[]
   @@unique([workspaceId, provider, providerUserId])
   @@unique([workspaceId, id])
   @@index([workspaceId, brandId, provider])
@@ -202,6 +203,7 @@ model SocialPostTarget {
   pinterestAnalyticsSnapshots PinterestPinAnalyticsSnapshot[]
   metaAnalyticsSnapshots MetaAnalyticsSnapshot[]
   linkedinAnalyticsSnapshots LinkedInAnalyticsSnapshot[]
+  tikTokAnalyticsSnapshots TikTokAnalyticsSnapshot[]
   @@unique([workspaceId, id])
   @@unique([contentPostId, socialAccountId])
   @@index([workspaceId, status, createdAt])
@@ -524,4 +526,26 @@ model LinkedInAnalyticsSnapshot {
   @@index([workspaceId, reportDate], map: "linkedin_analytics_workspace_date_idx")
   @@index([workspaceId, socialAccountId, subjectType, fetchedAt], map: "linkedin_analytics_account_type_fetched_idx")
   @@index([targetId], map: "linkedin_analytics_target_idx")
+}
+
+
+model TikTokAnalyticsSnapshot {
+  id String @id @default(cuid())
+  workspaceId String
+  socialAccountId String
+  subjectType String
+  subjectId String
+  targetId String?
+  reportDate DateTime @db.Date
+  startDate DateTime @db.Date
+  endDate DateTime @db.Date
+  metrics Json
+  rawResponse Json
+  fetchedAt DateTime @default(now())
+  socialAccount SocialAccount @relation(fields: [workspaceId, socialAccountId], references: [workspaceId, id], onDelete: Cascade)
+  target SocialPostTarget? @relation(fields: [workspaceId, targetId], references: [workspaceId, id], onDelete: Cascade)
+  @@unique([workspaceId, socialAccountId, subjectType, subjectId, reportDate], map: "tiktok_analytics_subject_report_uq")
+  @@index([workspaceId, reportDate], map: "tiktok_analytics_workspace_date_idx")
+  @@index([workspaceId, socialAccountId, subjectType, fetchedAt], map: "tiktok_analytics_account_type_fetched_idx")
+  @@index([targetId], map: "tiktok_analytics_target_idx")
 }
