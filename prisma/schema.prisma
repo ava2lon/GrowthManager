@@ -307,9 +307,33 @@ model Integration {
   automationAlertEvents AutomationAlertEvent[]
   automationAlertDeliveries AutomationAlertDelivery[]
   resendWebhookEvents ResendWebhookEvent[]
+  n8nExecutionSnapshots N8nExecutionSnapshot[]
   @@unique([workspaceId, provider])
   @@unique([workspaceId, id])
   @@index([workspaceId, status, updatedAt])
+}
+
+model N8nExecutionSnapshot {
+  id            String      @id @default(cuid())
+  workspaceId   String
+  integrationId String
+  executionId   String
+  workflowId    String
+  status        String
+  mode          String
+  startedAt     DateTime?
+  stoppedAt     DateTime?
+  waitTill      DateTime?
+  retryOf       String?
+  retrySuccessId String?
+  syncedAt      DateTime    @default(now())
+  createdAt     DateTime    @default(now())
+  updatedAt     DateTime    @updatedAt
+  integration   Integration @relation(fields: [workspaceId, integrationId], references: [workspaceId, id], onDelete: Cascade)
+  @@unique([workspaceId, integrationId, executionId])
+  @@index([workspaceId, startedAt])
+  @@index([workspaceId, integrationId, status, startedAt])
+  @@index([workspaceId, workflowId, startedAt])
 }
 
 model Automation {
