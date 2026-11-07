@@ -3,7 +3,7 @@ import {NextResponse} from "next/server";
 import {db} from "@/lib/db";
 import {decryptIntegrationCredentials} from "@/lib/integration-crypto";
 import {listN8nExecutions} from "@/lib/n8n-client";
-import {dispatchAutomationAlertEmails, enqueueAutomationAlertEscalations, recordAutomationAlert} from "@/lib/automation-alert-notifications";
+import {dispatchAutomationAlertEmails, enqueueAutomationAlertEscalations, recordAutomationAlert, resolveAutomationAlerts} from "@/lib/automation-alert-notifications";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -80,6 +80,7 @@ export async function GET(request: Request) {
       ];
       const cooldownBucket = Math.floor(now.getTime() / (policy.cooldownMinutes * 60_000));
 
+      await resolveAutomationAlerts({workspaceId: policy.workspaceId, integrationId: integration.id, activeAlertTypes: triggers});
       for (const alertType of triggers) {
         const dedupeKey = [integration.id, alertType, cooldownBucket].join(":");
         const message = alertType === "FAILURE_COUNT"
