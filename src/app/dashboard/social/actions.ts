@@ -8,6 +8,7 @@ import {decryptIntegrationCredentials, encryptIntegrationCredentials} from "@/li
 import {publishFacebookTarget,publishInstagramTarget} from "@/lib/social-publishing";
 import {startInstagramReelTarget} from "@/lib/instagram-reels";
 import {getFreshTikTokCredentials} from "@/lib/tiktok-auth";
+import {getFreshYouTubeCredentials} from "@/lib/youtube-auth";
 
 function readMetadata(value: unknown): Record<string, unknown> {
   if (!value || typeof value !== "object" || Array.isArray(value)) return {};
@@ -229,6 +230,113 @@ export async function checkSocialAccountHealth(formData: FormData) {
         : failureCode === "PROVIDER_UNAVAILABLE"
           ? "Meta could not be reached. The failed health check was recorded."
           : "Meta could not validate this account. Reconnect or review its permissions.");
+  }
+}
+
+export async function checkYouTubeAccountHealth(formData: FormData) {
+  const context = await requireWorkspaceRole("ADMIN");
+  const accountId = String(formData.get("accountId") ?? "").trim();
+  if (!accountId || accountId.length > 128) throw new Error("Invalid social account.");
+  await enforceSocialRateLimit(context.workspace.id, context.userId, "health");
+
+  const account = await db.socialAccount.findFirst({
+    where: {id: accountId, workspaceId: context.workspace.id, provider: "YOUTUBE", status: "CONNECTED"},
+    select: {id: true, providerUserId: true, accountName: true, credentialsEncrypted: true, scopes: true},
+  });
+  if (!account?.credentialsEncrypted || !account.providerUserId) {
+    throw new Error("A connected YouTube channel with saved credentials is required. Reconnect this channel.");
+  }
+
+  let failureCode: string | null = null;
+  let displayName = account.accountName;
+  try {
+    const credentials = await getFreshYouTubeCredentials({workspaceId: context.workspace.id, accountId: account.id});
+    const endpoint = new URL("https://www.googleapis.com/youtube/v3/channels");
+    endpoint.searchParams.set("part", "snippet");
+    endpoint.searchParams.set("id", account.providerUserId);
+    const response = await fetch(endpoint, {
+      headers: {Authorization: "Bearer " + credentials.accessToken},
+      cache: "no-store", redirect: "error", signal: AbortSignal.timeout(10000),
+    });
+    const payload = await response.json().catch(() => null) as {
+      items?: Array<{id?: string; snippet?: {title?: string}}>;
+      error?: {code?: number; errors?: Array<{reason?: string}>};
+    } | null;
+    const reason = payload?.error?.errors?.[0]?.reason;
+    if (response.status === 401 || reason === "authError" || reason === "youtubeSignupRequired") {
+      failureCode = "YOUTUBE_AUTH_FAILED";
+    } else if (response.status === 403 && reason === "insufficientPermissions") {
+      failureCode = "YOUTUBE_UPLOAD_SCOPE_MISSING";
+    } else if (response.status === 429 || reason === "rateLimitExceeded" || reason === "quotaExceeded") {
+      failureCode = "YOUTUBE_PROVIDER_RATE_LIMITED";
+    } else if (!response.ok || !payload) {
+      failureCode = "YOUTUBE_PROVIDER_ERROR";
+    } else {
+      const channel = payload.items?.find((item) => item.id === account.providerUserId);
+      if (!channel) failureCode = "YOUTUBE_CHANNEL_MISMATCH";
+      else if (typeof channel.snippet?.title === "string" && channel.snippet.title.trim()) {
+        displayName = channel.snippet.title.trim().slice(0, 255);
+      }
+    }
+  } catch (error) {
+    const code = error instanceof Error ? error.message : "";
+    if (code === "YOUTUBE_REAUTHORIZATION_REQUIRED" || code === "YOUTUBE_REFRESH_REJECTED") {
+      failureCode = "YOUTUBE_REAUTHORIZATION_REQUIRED";
+    } else if (code === "YOUTUBE_UPLOAD_SCOPE_MISSING") {
+      failureCode = "YOUTUBE_UPLOAD_SCOPE_MISSING";
+    } else if (code === "YOUTUBE_CREDENTIAL_DECRYPTION_FAILED") {
+      failureCode = "YOUTUBE_CREDENTIAL_DECRYPTION_FAILED";
+    } else if (code === "YOUTUBE_NOT_CONFIGURED") {
+      failureCode = "YOUTUBE_NOT_CONFIGURED";
+    } else {
+      failureCode = "YOUTUBE_PROVIDER_UNAVAILABLE";
+    }
+  }
+
+  const latest = await db.socialAccount.findFirst({
+    where: {id: account.id, workspaceId: context.workspace.id, provider: "YOUTUBE", status: "CONNECTED"},
+    select: {credentialsEncrypted: true, scopes: true},
+  });
+  if (!latest?.credentialsEncrypted) throw new Error("YouTube channel changed during the health check. Refresh and retry.");
+  const definitive = failureCode !== null && ![
+    "YOUTUBE_PROVIDER_RATE_LIMITED", "YOUTUBE_PROVIDER_ERROR",
+    "YOUTUBE_PROVIDER_UNAVAILABLE", "YOUTUBE_NOT_CONFIGURED",
+  ].includes(failureCode);
+  await db.$transaction(async (tx) => {
+    const changed = await tx.socialAccount.updateMany({
+      where: {
+        id: account.id, workspaceId: context.workspace.id, provider: "YOUTUBE",
+        status: "CONNECTED", credentialsEncrypted: latest.credentialsEncrypted,
+      },
+      data: failureCode
+        ? {...(definitive ? {status: "ERROR" as const} : {}), lastValidatedAt: new Date(), lastErrorCode: failureCode}
+        : {accountName: displayName, status: "CONNECTED", scopes: latest.scopes, lastValidatedAt: new Date(), lastErrorCode: null},
+    });
+    if (changed.count !== 1) throw new Error("YouTube channel changed concurrently. Refresh and retry.");
+    await tx.activityLog.create({
+      data: {
+        workspaceId: context.workspace.id, userId: context.userId,
+        action: failureCode ? "social_account.health_check_failed" : "social_account.health_check_succeeded",
+        entityType: "SocialAccount", entityId: account.id,
+        metadata: {provider: "YOUTUBE", errorCode: failureCode, authorizationStateChanged: definitive},
+      },
+    });
+  });
+  revalidatePath("/dashboard/social");
+  if (failureCode) {
+    throw new Error(
+      failureCode === "YOUTUBE_REAUTHORIZATION_REQUIRED" || failureCode === "YOUTUBE_AUTH_FAILED"
+        ? "YouTube authorization is no longer valid. Reconnect this channel."
+        : failureCode === "YOUTUBE_UPLOAD_SCOPE_MISSING"
+          ? "The YouTube upload permission is missing. Reconnect and approve the required scope."
+          : failureCode === "YOUTUBE_CHANNEL_MISMATCH"
+            ? "Google returned a different channel identity. Reconnect and verify the selected channel."
+            : failureCode === "YOUTUBE_CREDENTIAL_DECRYPTION_FAILED"
+              ? "Saved YouTube credentials could not be decrypted. Check the encryption key configuration."
+              : failureCode === "YOUTUBE_PROVIDER_RATE_LIMITED"
+                ? "YouTube rate-limited this health check or the project quota is exhausted. Retry later or review Google Cloud quota."
+                : "YouTube could not validate the channel. Retry the health check."
+    );
   }
 }
 
