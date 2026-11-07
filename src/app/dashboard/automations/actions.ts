@@ -447,7 +447,7 @@ export async function provisionAutomationBlueprint(formData: FormData) {
   } catch {
     verified = false;
   }
-  const finalDefinition = {...linkedDefinition, provisioningStatus: verified ? "VERIFIED_INACTIVE" : "CREATED_UNVERIFIED", n8nWorkflowActive: false};
+  const finalDefinition = {...linkedDefinition, provisioningStatus: verified ? "VERIFIED_INACTIVE" : "CREATED_UNVERIFIED", n8nWorkflowActive: created.active};
   await db.automation.updateMany({
     where: {id: blueprint.id, workspaceId: context.workspace.id, enabled: false},
     data: {definition: finalDefinition},
