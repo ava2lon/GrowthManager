@@ -74,7 +74,7 @@ async function uploadXMedia(token:string,asset:{id:string;bucket:string;objectPa
   mediaId=data.data.id;segmentIndex=0;
   await db.socialPostTarget.update({where:{id:targetId},data:{uploadMetadata:{xMedia:{mediaId,mediaAssetId:asset.id,phase:"UPLOADING",segmentIndex}}}});
  }
- const chunkSize=5*1024*1024,totalChunks=Math.ceil(bytes.length/chunkSize);
+ const chunkSize=5*1024*1024,totalChunks=Math.ceil(bytes.length/chunkSize),startSegment=segmentIndex;
  for(let index=segmentIndex;index<totalChunks;index++){
   const chunk=bytes.subarray(index*chunkSize,Math.min(bytes.length,(index+1)*chunkSize));
   const form=new FormData();form.set("segment_index",String(index));form.set("media",new Blob([new Uint8Array(chunk)],{type:asset.mimeType}),"chunk");
@@ -84,6 +84,7 @@ async function uploadXMedia(token:string,asset:{id:string;bucket:string;objectPa
   if(!append.ok)throw new Error(append.status===401?"X_REAUTHORIZATION_REQUIRED":append.status===403?"X_PERMISSION_DENIED":append.status===429?"X_RATE_LIMITED":append.status>=500?"X_MEDIA_APPEND_UNCERTAIN":"X_MEDIA_APPEND_REJECTED");
   segmentIndex=index+1;
   await db.socialPostTarget.update({where:{id:targetId},data:{uploadMetadata:{xMedia:{mediaId,mediaAssetId:asset.id,phase:"UPLOADING",segmentIndex}}}});
+  if(index-startSegment>=1&&segmentIndex<totalChunks)return {mediaId,mediaAssetId:asset.id,phase:"UPLOADING",segmentIndex};
  }
  let finalize:Response;
  try{finalize=await fetch("https://api.x.com/2/media/upload/"+encodeURIComponent(mediaId)+"/finalize",{method:"POST",headers:{Authorization:"Bearer "+token},cache:"no-store",redirect:"error",signal:AbortSignal.timeout(15000)})}
@@ -156,6 +157,10 @@ export async function publishXTarget(input:{targetId:string;workspaceId:string;a
    }else{
     mediaState=await uploadXMedia(token,asset,target.id);
    }
+   if(mediaState.phase==="UPLOADING"){
+    await db.socialPostTarget.update({where:{id:target.id},data:{uploadMetadata:{...existing,xMedia:mediaState},nextCheckAt:new Date(Date.now()+5000),errorCode:null}});
+    return {status:"PROCESSING"};
+   }
    if(mediaState.state==="failed")return failClaimed("X_MEDIA_PROCESSING_FAILED");
    if(mediaState.phase==="PROCESSING"||(mediaState.state&&mediaState.state!=="succeeded")){
     await db.socialPostTarget.update({where:{id:target.id},data:{uploadMetadata:{...existing,xMedia:mediaState},nextCheckAt:new Date(Date.now()+Math.min(60,Math.max(5,mediaState.checkAfterSecs??10))*1000)}});
@@ -165,7 +170,7 @@ export async function publishXTarget(input:{targetId:string;workspaceId:string;a
   }
  }catch(error){
   const code=error instanceof Error?error.message:"X_MEDIA_UPLOAD_FAILED";
-  if(code==="X_MEDIA_UPLOAD_UNCERTAIN"||code==="X_MEDIA_STATUS_UNAVAILABLE"){
+  if(code.endsWith("_UNCERTAIN")||code==="X_MEDIA_STATUS_UNAVAILABLE"){
    await db.socialPostTarget.update({where:{id:target.id},data:{errorCode:code,nextCheckAt:new Date(Date.now()+60000)}});
    return {status:"PROCESSING",errorCode:code};
   }
