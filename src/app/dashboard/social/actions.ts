@@ -768,6 +768,7 @@ export async function createInstagramReelDraft(formData:FormData){
   const context=await requireWorkspaceRole("MEMBER");
   const accountIds=[...new Set(formData.getAll("accountIds").map(v=>String(v).trim()).filter(Boolean))];
   const mediaAssetId=String(formData.get("mediaAssetId")??"").trim();
+  const altText=String(formData.get("altText")??"").trim();
  const altText=String(formData.get("altText")??"").trim();
   const body=String(formData.get("body")??"").trim();
   if(accountIds.length<1||accountIds.length>10||accountIds.some(id=>id.length>128)||!mediaAssetId||mediaAssetId.length>128||!body||body.length>2200)
