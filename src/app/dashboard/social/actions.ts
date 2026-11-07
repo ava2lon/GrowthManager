@@ -1084,7 +1084,7 @@ export async function createYouTubeDraft(formData: FormData) {
   const publishAtInput = String(formData.get("publishAt") ?? "").trim();
   const categoryId = String(formData.get("categoryId") ?? "22").trim();
   const tags = String(formData.get("tags") ?? "").split(",").map(value => value.trim()).filter(Boolean);
-  const validSchedule = !publishAtInput || (/^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d{1,3})?(?:Z|[+-]\\d{2}:\\d{2})$/.test(publishAtInput) && Number.isFinite(Date.parse(publishAtInput)) && Date.parse(publishAtInput) >= Date.now() + 15 * 60_000 && privacyStatus === "private");
+  const validSchedule = !publishAtInput || (publishAtInput.includes("T") && (publishAtInput.endsWith("Z") || /[+-][0-9]{2}:[0-9]{2}$/.test(publishAtInput)) && Number.isFinite(Date.parse(publishAtInput)) && Date.parse(publishAtInput) >= Date.now() + 15 * 60_000 && privacyStatus === "private");
   if (!accountId || accountId.length > 128 || !mediaAssetId || mediaAssetId.length > 128 ||
       !title || title.length > 100 || description.length > 5000 ||
       !["private", "unlisted", "public"].includes(privacyStatus) || !validSchedule ||
