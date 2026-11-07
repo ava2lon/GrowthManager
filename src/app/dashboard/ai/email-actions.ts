@@ -1,5 +1,6 @@
 "use server";
 
+import {randomUUID} from "node:crypto";
 import {revalidatePath} from "next/cache";
 import {requireWorkspaceRole} from "@/lib/workspace";
 import {db} from "@/lib/db";
@@ -49,7 +50,7 @@ export async function retryContentReviewEmail(deliveryId: string) {
         workspaceId: context.workspace.id,
         assignmentId: delivery.assignmentId,
         eventType: delivery.eventType,
-        eventKey: delivery.eventKey + ":MANUAL_RETRY:" + retryAt.getTime(),
+        eventKey: delivery.eventKey + ":MANUAL_RETRY:" + randomUUID(),
         recipientEmail: delivery.recipientEmail,
         recipientName: delivery.recipientName,
       },
