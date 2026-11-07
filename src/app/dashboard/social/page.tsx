@@ -214,12 +214,14 @@ export default async function SocialPage({searchParams}:{searchParams:Promise<{m
     const snapshot=latestOpsByAccount.get(account.id);
     const metrics=snapshot?.metrics&&typeof snapshot.metrics==="object"&&!Array.isArray(snapshot.metrics)?snapshot.metrics as Record<string,unknown>:{};
     const isFailed=metrics.status==="FAILED"||Boolean(metrics.errorCode);
-    const requiredScopes:Record<string,string[]>={TIKTOK:["video.list"],YOUTUBE:["https://www.googleapis.com/auth/yt-analytics.readonly"],X:["tweet.read","users.read"],PINTEREST:["pins:read"],LINKEDIN:[]};
+    const requiredScopes:Record<string,string[]>={FACEBOOK:["pages_read_engagement","read_insights"],INSTAGRAM:["instagram_basic","instagram_manage_insights"],TIKTOK:["video.list"],YOUTUBE:["https://www.googleapis.com/auth/yt-analytics.readonly"],X:["tweet.read","users.read"],PINTEREST:["user_accounts:read"],LINKEDIN:["rw_organization_admin"]};
     const missingScopes=(requiredScopes[account.provider]??[]).filter(scope=>!account.scopes.includes(scope));
+    const optionalScopes=account.provider==="TIKTOK"&&!account.scopes.includes("user.info.stats")?["user.info.stats"]:[];
     const linkedinMeta=account.metadata&&typeof account.metadata==="object"&&!Array.isArray(account.metadata)?account.metadata as Record<string,unknown>:{};
-    const linkedinAnalyticsEligible=account.provider!=="LINKEDIN"||(linkedinMeta.accountType==="ORGANIZATION"&&account.scopes.includes("rw_organization_admin"));
+    const linkedinAnalyticsEligible=account.provider!=="LINKEDIN"||(linkedinMeta.accountType==="ORGANIZATION"&&typeof linkedinMeta.organizationUrn==="string"&&account.scopes.includes("rw_organization_admin"));
     const eligible=account.status==="CONNECTED"&&missingScopes.length===0&&linkedinAnalyticsEligible;
-    return {id:account.id,provider:account.provider,accountName:account.accountName,status:account.status,latestFetchedAt:snapshot?.fetchedAt??null,errorCode:isFailed&&typeof metrics.errorCode==="string"?metrics.errorCode:null,coverage90d:coverageByAccount.get(account.id)??0,missingScopes,eligible,reauthorizationRequired:account.status==="ERROR"||Boolean(account.tokenExpiresAt&&account.tokenExpiresAt<=new Date())};
+    const nextEligibleAt=snapshot?new Date(Date.UTC(snapshot.reportDate.getUTCFullYear(),snapshot.reportDate.getUTCMonth(),snapshot.reportDate.getUTCDate()+1)):null;
+    return {id:account.id,provider:account.provider,accountName:account.accountName,status:account.status,latestFetchedAt:snapshot?.fetchedAt??null,errorCode:isFailed&&typeof metrics.errorCode==="string"?metrics.errorCode:null,coverage90d:coverageByAccount.get(account.id)??0,missingScopes,optionalScopes,eligible,nextEligibleAt,reauthorizationRequired:account.status==="ERROR"||Boolean(account.tokenExpiresAt&&account.tokenExpiresAt<=new Date())};
   });
   const healthAccounts=accounts.map(account=>({id:account.id,provider:account.provider,accountName:account.accountName,status:account.status,connectedAt:account.connectedAt,lastValidatedAt:account.lastValidatedAt,lastErrorCode:account.lastErrorCode,tokenExpiresAt:account.tokenExpiresAt,scopes:account.scopes}));
 
