@@ -497,7 +497,7 @@ model MetaAnalyticsSnapshot {
   rawResponse Json
   fetchedAt DateTime @default(now())
   socialAccount SocialAccount @relation(fields: [workspaceId, socialAccountId], references: [workspaceId, id], onDelete: Cascade)
-  target SocialPostTarget? @relation(fields: [targetId], references: [id], onDelete: Cascade)
+  target SocialPostTarget? @relation(fields: [workspaceId, targetId], references: [workspaceId, id], onDelete: Cascade)
   @@unique([workspaceId, socialAccountId, subjectType, subjectId, reportDate], map: "meta_analytics_subject_report_uq")
   @@index([workspaceId, reportDate], map: "meta_analytics_workspace_date_idx")
   @@index([workspaceId, socialAccountId, subjectType, fetchedAt], map: "meta_analytics_account_type_fetched_idx")
