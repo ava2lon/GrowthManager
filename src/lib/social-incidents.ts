@@ -78,6 +78,30 @@ export async function synchronizeSocialIncidents():Promise<{created:number;reope
     if(account.tokenExpiresAt&&account.tokenExpiresAt<=now)signals.push({...base,category:"TOKEN_EXPIRED",severity:"CRITICAL",dedupeKey:"social-account:"+account.id+":TOKEN_EXPIRED",message:account.accountName+" ("+account.provider+") authorization has expired.",errorCode:"TOKEN_EXPIRED"});
     else if(account.tokenExpiresAt&&account.tokenExpiresAt<=expiryWarning)signals.push({...base,category:"TOKEN_EXPIRING",severity:"WARNING",dedupeKey:"social-account:"+account.id+":TOKEN_EXPIRING",message:account.accountName+" ("+account.provider+") authorization expires within 14 days.",errorCode:"TOKEN_EXPIRING"});
   }
+  const analyticsSince=new Date(now.getTime()-90*86400000);
+  const [metaAnalytics,linkedInAnalytics,tikTokAnalytics,youTubeAnalytics,pinterestAnalytics,xAnalytics]=await Promise.all([
+    db.metaAnalyticsSnapshot.findMany({where:{subjectType:"ACCOUNT",fetchedAt:{gte:analyticsSince}},orderBy:{fetchedAt:"desc"},distinct:["socialAccountId"],take:2000,select:{workspaceId:true,socialAccountId:true,reportDate:true,fetchedAt:true,metrics:true}}),
+    db.linkedInAnalyticsSnapshot.findMany({where:{subjectType:"ACCOUNT",fetchedAt:{gte:analyticsSince}},orderBy:{fetchedAt:"desc"},distinct:["socialAccountId"],take:2000,select:{workspaceId:true,socialAccountId:true,reportDate:true,fetchedAt:true,metrics:true}}),
+    db.tikTokAnalyticsSnapshot.findMany({where:{subjectType:"ACCOUNT",fetchedAt:{gte:analyticsSince}},orderBy:{fetchedAt:"desc"},distinct:["socialAccountId"],take:2000,select:{workspaceId:true,socialAccountId:true,reportDate:true,fetchedAt:true,metrics:true}}),
+    db.youTubeAnalyticsSnapshot.findMany({where:{subjectType:"CHANNEL",fetchedAt:{gte:analyticsSince}},orderBy:{fetchedAt:"desc"},distinct:["socialAccountId"],take:2000,select:{workspaceId:true,socialAccountId:true,reportDate:true,fetchedAt:true,metrics:true}}),
+    db.pinterestAnalyticsSnapshot.findMany({where:{fetchedAt:{gte:analyticsSince}},orderBy:{fetchedAt:"desc"},distinct:["socialAccountId"],take:2000,select:{workspaceId:true,socialAccountId:true,reportDate:true,fetchedAt:true,metrics:true}}),
+    db.xAnalyticsSnapshot.findMany({where:{subjectType:"ACCOUNT",fetchedAt:{gte:analyticsSince}},orderBy:{fetchedAt:"desc"},distinct:["socialAccountId"],take:2000,select:{workspaceId:true,socialAccountId:true,reportDate:true,fetchedAt:true,metrics:true}}),
+  ]);
+  const accountsById=new Map(accounts.map(account=>[account.id,account]));
+  for(const snapshot of [...metaAnalytics,...linkedInAnalytics,...tikTokAnalytics,...youTubeAnalytics,...pinterestAnalytics,...xAnalytics]){
+    const account=accountsById.get(snapshot.socialAccountId);
+    if(!account||account.status==="DISCONNECTED")continue;
+    const metrics=snapshot.metrics&&typeof snapshot.metrics==="object"&&!Array.isArray(snapshot.metrics)?snapshot.metrics as Record<string,unknown>:{};
+    if(metrics.status!=="FAILED"&&!metrics.errorCode)continue;
+    const errorCode=safeCode(typeof metrics.errorCode==="string"?metrics.errorCode:null,"ANALYTICS_COLLECTION_FAILED");
+    signals.push({
+      workspaceId:account.workspaceId,sourceType:"SOCIAL_ACCOUNT",sourceId:account.id,socialAccountId:account.id,
+      category:"ANALYTICS_COLLECTION_FAILED",severity:"WARNING",
+      dedupeKey:"social-account:"+account.id+":ANALYTICS_COLLECTION_FAILED",
+      message:account.accountName+" ("+account.provider+") analytics collection failed. Review the Social Analytics Operations panel.",
+      errorCode,metadata:{provider:account.provider,reportDate:snapshot.reportDate.toISOString(),fetchedAt:snapshot.fetchedAt.toISOString()},
+    });
+  }
   for(const target of targets){
     if(target.status!=="FAILED"&&target.status!=="UNKNOWN")continue;
     const category=target.status==="UNKNOWN"?"PUBLISH_OUTCOME_UNKNOWN":"PUBLISH_FAILED";
