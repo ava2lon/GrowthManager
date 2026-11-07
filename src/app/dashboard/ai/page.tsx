@@ -28,8 +28,11 @@ export default async function AiPage() {
     db.contentPost.findMany({
       where: {workspaceId: workspace.id, status: {in: ["DRAFT", "APPROVED"]}, publishTargets: {none: {}}},
       orderBy: {updatedAt: "desc"}, take: 20,
-      select: {id:true,title:true,body:true,status:true,createdAt:true,brand:{select:{name:true}},revisions:{orderBy:{version:"desc"},take:5,select:{id:true,version:true,title:true,body:true,createdAt:true}}},
+      select: {id:true,title:true,body:true,status:true,createdAt:true,brand:{select:{name:true}},revisions:{orderBy:{version:"desc"},take:5,select:{id:true,version:true,title:true,body:true,createdAt:true}},reviewAssignments:{orderBy:{updatedAt:"desc"},select:{id:true,status:true,feedback:true,reviewer:{select:{id:true,name:true,email:true}}}}},
     }),
+    db.workspaceMembership.findMany({where:{workspaceId:workspace.id,role:{not:"VIEWER"}},select:{userId:true,user:{select:{name:true,email:true}}},orderBy:{createdAt:"asc"},take:100}),
+    db.contentReviewAssignment.findMany({where:{workspaceId:workspace.id,reviewerUserId:membership.userId,status:"PENDING",contentPost:{status:"DRAFT"}},orderBy:{createdAt:"asc"},take:30,select:{id:true,createdAt:true,contentPost:{select:{id:true,title:true,body:true,brand:{select:{name:true}}}},assignedBy:{select:{name:true,email:true}}}}),
+    db.workspaceNotification.findMany({where:{workspaceId:workspace.id,userId:membership.userId},orderBy:{createdAt:"desc"},take:10,select:{id:true,type:true,title:true,message:true,href:true,readAt:true,createdAt:true}}),
   ]);
 
   return (
