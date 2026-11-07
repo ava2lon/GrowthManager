@@ -22,7 +22,7 @@ export function ContentStrategist({workspaceName, brands, accounts, campaigns}: 
   const [offer, setOffer] = useState("");
   const [tone, setTone] = useState("Clear, useful, confident");
   const [platforms, setPlatforms] = useState<string[]>([]);
-  const [copied, setCopied] = useState(false);
+  const [copied, setCopied] = useState(false);\n  const [generating, setGenerating] = useState(false);\n  const [generationError, setGenerationError] = useState("");\n  const [generated, setGenerated] = useState<Record<string, unknown> | null>(null);\n  const [savedDraft, setSavedDraft] = useState<{id: string; title: string | null} | null>(null);
 
   const brand = brands.find(item => item.id === brandId);
   const campaign = campaigns.find(item => item.id === campaignId);
@@ -75,6 +75,29 @@ export function ContentStrategist({workspaceName, brands, accounts, campaigns}: 
     await navigator.clipboard.writeText(prompt);
     setCopied(true);
     window.setTimeout(() => setCopied(false), 1800);
+  }
+
+  async function generateStrategy() {
+    if (!brand || !objective.trim() || generating) return;
+    setGenerating(true);
+    setGenerationError("");
+    setGenerated(null);
+    setSavedDraft(null);
+    try {
+      const response = await fetch("/api/ai/content-strategy", {
+        method: "POST",
+        headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({brandId, campaignId, objective, audience, offer, tone, platforms}),
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(typeof data.error === "string" ? data.error : "Strategy generation failed.");
+      setGenerated(data.generation);
+      setSavedDraft(data.draft);
+    } catch (error) {
+      setGenerationError(error instanceof Error ? error.message : "Strategy generation failed.");
+    } finally {
+      setGenerating(false);
+    }
   }
 
   function togglePlatform(provider: string) {
@@ -136,7 +159,11 @@ export function ContentStrategist({workspaceName, brands, accounts, campaigns}: 
           <p className="mt-2 text-sm leading-6 text-slate-500">The brief uses workspace data only for the selected brand and campaign. Review the inputs before sharing this prompt with an AI provider.</p>
           {brand ? <pre className="mt-4 flex-1 whitespace-pre-wrap break-words rounded-xl bg-slate-950 p-4 text-xs leading-5 text-slate-100">{prompt}</pre> : <div className="mt-5 rounded-xl border border-dashed border-slate-300 p-8 text-center text-sm text-slate-500">Create an active brand to start a strategy brief.</div>}
           <button type="button" onClick={copyPrompt} disabled={!prompt} className="mt-4 inline-flex items-center justify-center gap-2 rounded-xl bg-indigo-600 px-4 py-3 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-40"><Copy size={16}/>{copied ? "Copied" : "Copy strategy prompt"}</button>
-          <p className="mt-3 text-xs text-slate-400">Nothing is saved, published, or sent to an external service by this tool.</p>
+          <button type="button" onClick={generateStrategy} disabled={!brand || !objective.trim() || generating} className="mt-3 inline-flex items-center justify-center gap-2 rounded-xl border border-indigo-200 bg-indigo-50 px-4 py-3 text-sm font-semibold text-indigo-700 disabled:cursor-not-allowed disabled:opacity-40"><Sparkles size={16}/>{generating ? "Generating strategy…" : "Generate and save draft"}</button>
+          {generationError && <p role="alert" className="mt-3 rounded-lg bg-rose-50 p-3 text-sm text-rose-700">{generationError}</p>}
+          {savedDraft && <p className="mt-3 rounded-lg bg-emerald-50 p-3 text-sm text-emerald-800">Saved as a content draft: <span className="font-semibold">{savedDraft.title}</span> (ID: {savedDraft.id}). It has not been published or scheduled.</p>}
+          {generated && <div className="mt-4 rounded-xl border border-slate-200 p-4"><h3 className="font-semibold">Generated strategy</h3><pre className="mt-3 max-h-[420px] overflow-auto whitespace-pre-wrap break-words text-xs leading-5 text-slate-700">{JSON.stringify(generated, null, 2)}</pre></div>}
+          <p className="mt-3 text-xs text-slate-400">Generation is sent to the configured AI provider and saved as a DRAFT. No publishing or scheduling occurs.</p>
         </section>
       </div>
     </div>
