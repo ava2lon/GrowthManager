@@ -25,7 +25,7 @@ export async function GET(request:Request){
   const tokenRes=await fetch("https://api.x.com/2/oauth2/token",{method:"POST",headers:{Authorization:"Basic "+basic,"Content-Type":"application/x-www-form-urlencoded"},body:new URLSearchParams({grant_type:"authorization_code",code,redirect_uri:redirectUri,code_verifier:s.verifier}),cache:"no-store",redirect:"error",signal:AbortSignal.timeout(15000)});
   const token=await tokenRes.json().catch(()=>null) as {access_token?:string;refresh_token?:string;expires_in?:number;scope?:string}|null;
   if(!tokenRes.ok||!token?.access_token||!token.refresh_token||!Number.isFinite(token.expires_in))throw new Error("X_TOKEN_EXCHANGE_FAILED");
-  const scopes=(token.scope??"").split(" ").filter(Boolean);if(!["tweet.read","users.read","offline.access",...(s.publish?["tweet.write"]:[])].every(x=>scopes.includes(x)))throw new Error("X_REQUIRED_SCOPE_MISSING");
+  const scopes=(token.scope??"").split(" ").filter(Boolean);if(!["tweet.read","users.read","offline.access",...(s.publish?["tweet.write","media.write"]:[])].every(x=>scopes.includes(x)))throw new Error("X_REQUIRED_SCOPE_MISSING");
   const meRes=await fetch("https://api.x.com/2/users/me?user.fields=profile_image_url,public_metrics,description,created_at",{headers:{Authorization:"Bearer "+token.access_token},cache:"no-store",redirect:"error",signal:AbortSignal.timeout(12000)});
   const me=await meRes.json().catch(()=>null) as {data?:{id?:string;name?:string;username?:string;profile_image_url?:string;public_metrics?:Record<string,unknown>}}|null;
   if(!meRes.ok||!me?.data?.id||!me.data.username)throw new Error("X_IDENTITY_LOOKUP_FAILED");
