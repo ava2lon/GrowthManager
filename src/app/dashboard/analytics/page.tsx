@@ -1,6 +1,7 @@
 import Link from "next/link";
 import {requireWorkspaceContext} from "@/lib/workspace";
 import {db} from "@/lib/db";
+import AnalyticsExport from "./analytics-export";
 
 const providers = [
   {key:"FACEBOOK",label:"Facebook"},
@@ -12,16 +13,20 @@ const providers = [
   {key:"X",label:"X"},
 ] as const;
 
-export default async function AnalyticsPage(){
+export default async function AnalyticsPage({searchParams}:{searchParams:Promise<{days?:string}>}){
+  const params=await searchParams;
+  const allowedWindows=[7,30,90,365] as const;
+  const parsedDays=Number(params.days);
+  const days=(allowedWindows as readonly number[]).includes(parsedDays)?parsedDays:90;
   const {workspace}=await requireWorkspaceContext();
   const now=new Date();
-  const since=new Date(now.getTime()-90*24*60*60*1000);
+  const since=new Date(now.getTime()-days*24*60*60*1000);
   const recentSince=new Date(now.getTime()-30*24*60*60*1000);
   const [publishedTargets,meta,tiktok,youtube,linkedin,x,failedTargets,connectedAccounts]=await Promise.all([
     db.socialPostTarget.findMany({
       where:{workspaceId:workspace.id,status:"PUBLISHED",publishedAt:{gte:since},provider:{in:providers.map(item=>item.key)}},
       orderBy:{publishedAt:"desc"},take:2000,
-      select:{id:true,provider:true,publishedAt:true},
+      select:{id:true,provider:true,publishedAt:true,contentPost:{select:{title:true,body:true}}},
     }),
     db.metaAnalyticsSnapshot.findMany({where:{workspaceId:workspace.id,subjectType:"MEDIA",targetId:{not:null},fetchedAt:{gte:since}},distinct:["targetId"],select:{targetId:true}}),
     db.tikTokAnalyticsSnapshot.findMany({where:{workspaceId:workspace.id,subjectType:"VIDEO",targetId:{not:null},fetchedAt:{gte:since}},distinct:["targetId"],select:{targetId:true}}),
@@ -79,6 +84,7 @@ export default async function AnalyticsPage(){
     const measured=measuredByProvider[provider.key];
     return {key:provider.key,label:provider.label,published:targets.length,measured:targets.filter(item=>measured.has(item.id)).length,connected:connectedAccounts.some(account=>account.provider===provider.key)};
   });
+  const exportRows=publishedTargets.map(target=>({provider:target.provider,title:target.contentPost.title||target.contentPost.body.slice(0,180).replace(/\\s+/g," "),publishedAt:target.publishedAt?.toISOString()??"",analyticsSnapshotAvailable:measuredByProvider[target.provider]?.has(target.id)??false}));
   const totalPublished=publishedTargets.length;
   const totalMeasured=rows.reduce((sum,row)=>sum+row.measured,0);
   const latestPublished=publishedTargets.find(item=>item.publishedAt)?.publishedAt??null;
@@ -142,9 +148,10 @@ export default async function AnalyticsPage(){
       <p className="text-xs font-semibold uppercase tracking-widest text-indigo-600">Growth intelligence</p>
       <h1 className="mt-2 text-3xl font-bold tracking-tight text-slate-950">Analytics</h1>
       <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-500">A workspace-level view of published social content, analytics collection coverage, and operational recommendations based on observed activity.</p>
+      <div className="mt-4 flex flex-wrap items-center gap-2"><span className="text-xs font-medium text-slate-500">Reporting window</span>{allowedWindows.map(window=><Link key={window} href={"/dashboard/analytics?days="+window} aria-current={days===window?"page":undefined} className={"rounded-lg border px-3 py-1.5 text-xs font-semibold "+(days===window?"border-indigo-600 bg-indigo-50 text-indigo-700":"border-slate-200 bg-white text-slate-600 hover:bg-slate-50")}>{window} days</Link>)}<span className="ml-auto"><AnalyticsExport rows={exportRows}/></span></div>
     </header>
     <section className="grid gap-3 sm:grid-cols-3">
-      <div className="rounded-2xl border border-slate-200 bg-white p-5"><p className="text-xs text-slate-500">Published targets · 90 days</p><p className="mt-2 text-2xl font-semibold text-slate-950">{number(totalPublished)}</p></div>
+      <div className="rounded-2xl border border-slate-200 bg-white p-5"><p className="text-xs text-slate-500">Published targets · {days} days</p><p className="mt-2 text-2xl font-semibold text-slate-950">{number(totalPublished)}</p></div>
       <div className="rounded-2xl border border-slate-200 bg-white p-5"><p className="text-xs text-slate-500">Targets with analytics snapshots</p><p className="mt-2 text-2xl font-semibold text-slate-950">{number(totalMeasured)}</p></div>
       <div className="rounded-2xl border border-slate-200 bg-white p-5"><p className="text-xs text-slate-500">Latest published target</p><p className="mt-2 text-sm font-semibold text-slate-950">{latestPublished?latestPublished.toLocaleString():"No published targets in this period"}</p></div>
     </section>
@@ -160,15 +167,15 @@ export default async function AnalyticsPage(){
       </div>
     </section>
     <section className="rounded-2xl border border-slate-200 bg-white p-5 sm:p-6">
-      <div className="flex flex-wrap items-start justify-between gap-3"><div><h2 className="font-semibold text-slate-900">Channel measurement coverage</h2><p className="mt-1 text-sm text-slate-500">Coverage means at least one provider analytics snapshot exists for a published target in this 90-day window. It does not indicate metric completeness or freshness.</p></div><Link href="/dashboard/social" className="text-sm font-semibold text-indigo-700 hover:text-indigo-900">Open social analytics →</Link></div>
+      <div className="flex flex-wrap items-start justify-between gap-3"><div><h2 className="font-semibold text-slate-900">Channel measurement coverage</h2><p className="mt-1 text-sm text-slate-500">Coverage means at least one provider analytics snapshot exists for a published target in this {days}-day window. It does not indicate metric completeness or freshness.</p></div><Link href="/dashboard/social" className="text-sm font-semibold text-indigo-700 hover:text-indigo-900">Open social analytics →</Link></div>
       <div className="mt-5 overflow-x-auto"><table className="w-full min-w-[520px] text-left text-sm">
         <thead className="border-b border-slate-100 text-xs text-slate-500"><tr><th className="pb-3 pr-4 font-medium">Channel</th><th className="pb-3 pr-4 font-medium">Connection</th><th className="pb-3 pr-4 font-medium">Published targets</th><th className="pb-3 pr-4 font-medium">Measured targets</th><th className="pb-3 font-medium">Coverage</th></tr></thead>
         <tbody className="divide-y divide-slate-100">{rows.map(row=><tr key={row.label}><td className="py-3 pr-4 font-medium text-slate-800">{row.label}</td><td className="py-3 pr-4">{row.connected?"Connected":"Not connected"}</td><td className="py-3 pr-4 tabular-nums">{number(row.published)}</td><td className="py-3 pr-4 tabular-nums">{number(row.measured)}</td><td className="py-3">{row.published?Math.round(row.measured/row.published*100)+"%":"—"}</td></tr>)}</tbody>
       </table></div>
-      <p className="mt-4 text-xs leading-5 text-slate-500">The report is limited to the latest 2,000 published targets in the selected 90-day window and the latest 100 failed or uncertain targets updated in the last 30 days. Provider metrics remain in their native analytics sections because impressions, views, engagements, and reporting windows are not directly interchangeable. Analytics availability depends on granted scopes, provider access, and successful collection.</p>
+      <p className="mt-4 text-xs leading-5 text-slate-500">The report is limited to the latest 2,000 published targets in the selected {days}-day window and the latest 100 failed or uncertain targets updated in the last 30 days. Provider metrics remain in their native analytics sections because impressions, views, engagements, and reporting windows are not directly interchangeable. Analytics availability depends on granted scopes, provider access, and successful collection.</p>
     </section>
     <section className="rounded-2xl border border-slate-200 bg-white p-5 sm:p-6">
-      <div><h2 className="font-semibold text-slate-900">Content intelligence</h2><p className="mt-1 text-sm text-slate-500">Patterns from the latest 100 content posts with at least one published target in the last 90 days. Format is inferred from attached Media Library MIME types.</p></div>
+      <div><h2 className="font-semibold text-slate-900">Content intelligence</h2><p className="mt-1 text-sm text-slate-500">Patterns from the latest 100 content posts with at least one published target in the selected {days}-day window. Format is inferred from attached Media Library MIME types.</p></div>
       <div className="mt-5 grid gap-5 lg:grid-cols-2">
         <div><h3 className="text-sm font-semibold text-slate-800">Published content formats</h3><div className="mt-3 space-y-3">{formatRows.map(row=><div key={row.label}><div className="mb-1 flex justify-between text-sm"><span className="text-slate-600">{row.label}</span><span className="font-semibold tabular-nums text-slate-900">{number(row.count)}</span></div><div className="h-2 overflow-hidden rounded-full bg-slate-100"><div className="h-full rounded-full bg-indigo-600" style={{width:(row.count/maxFormatCount*100)+"%"}}/></div></div>)}</div><p className="mt-3 text-xs text-slate-500">Posts without attached media are classified as text only. Mixed means both image and video assets are attached.</p></div>
         <div><h3 className="text-sm font-semibold text-slate-800">Publishing distribution</h3>{providerDistribution.size?<div className="mt-3 space-y-2">{[...providerDistribution.entries()].sort((a,b)=>b[1]-a[1]).map(([provider,count])=><div key={provider} className="flex items-center justify-between rounded-lg bg-slate-50 px-3 py-2 text-sm"><span className="text-slate-600">{provider}</span><span className="font-semibold tabular-nums text-slate-900">{number(count)} targets</span></div>)}</div>:<p className="mt-3 text-sm text-slate-500">No published target distribution is available yet.</p>}</div>
