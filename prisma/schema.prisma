@@ -33,6 +33,7 @@ enum SocialProvider {
 }
 enum PostStatus {
   DRAFT
+  APPROVED
   SCHEDULED
   PUBLISHING
   PUBLISHED
@@ -176,8 +177,24 @@ model ContentPost {
   brand       Brand      @relation(fields: [workspaceId, brandId], references: [workspaceId, id], onDelete: Cascade)
   publishTargets SocialPostTarget[]
   mediaAssets ContentPostMedia[]
+  revisions ContentPostRevision[]
   @@unique([workspaceId, id])
   @@index([workspaceId, brandId, status, scheduledAt])
+}
+
+model ContentPostRevision {
+  id            String      @id @default(cuid())
+  workspaceId   String
+  contentPostId String
+  title         String?
+  body          String
+  version       Int
+  changeReason  String?
+  createdById   String?
+  createdAt     DateTime    @default(now())
+  contentPost   ContentPost @relation(fields: [workspaceId, contentPostId], references: [workspaceId, id], onDelete: Cascade)
+  @@unique([contentPostId, version])
+  @@index([workspaceId, contentPostId, createdAt])
 }
 
 model SocialPostTarget {
