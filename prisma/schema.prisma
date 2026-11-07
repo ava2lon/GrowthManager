@@ -80,6 +80,7 @@ model User {
   createdContentReviews ContentReviewAssignment[] @relation("ContentReviewAssigner")
   workspaceNotifications WorkspaceNotification[]
   notificationPreferences WorkspaceNotificationPreference[]
+  contentReviewEmailDeliveries ContentReviewEmailDelivery[]
 }
 
 model Workspace {
@@ -511,7 +512,6 @@ model AutomationAlertDelivery {
   lastProviderEventAt DateTime?
   lastErrorCode     String?
   sentAt            DateTime?
-  lastProviderEventAt DateTime?
   createdAt         DateTime @default(now())
   updatedAt         DateTime @updatedAt
   alertEvent        AutomationAlertEvent @relation(fields: [workspaceId, alertEventId], references: [workspaceId, id], onDelete: Cascade)
@@ -709,6 +709,7 @@ model ContentReviewEmailDelivery {
   eventType         WorkspaceNotificationType
   eventKey          String                    @unique
   recipientEmail    String
+  recipientUserId   String?
   recipientName     String?
   status            String                    @default("PENDING")
   attempts          Int                       @default(0)
@@ -721,6 +722,7 @@ model ContentReviewEmailDelivery {
   updatedAt         DateTime                  @updatedAt
   workspace         Workspace                 @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
   assignment        ContentReviewAssignment   @relation(fields: [workspaceId, assignmentId], references: [workspaceId, id], onDelete: Cascade)
+  recipient         User?                     @relation(fields: [recipientUserId], references: [id], onDelete: SetNull)
   webhookEvents     ContentReviewEmailWebhookEvent[]
   @@unique([workspaceId, id])
   @@index([status, nextAttemptAt])
@@ -749,6 +751,10 @@ model WorkspaceNotificationPreference {
   emailReviewAssigned      Boolean   @default(true)
   inAppReviewDecisions      Boolean   @default(true)
   emailReviewDecisions     Boolean   @default(true)
+  timezone                 String    @default("UTC")
+  quietHoursEnabled        Boolean   @default(false)
+  quietHoursStart          String    @default("22:00")
+  quietHoursEnd            String    @default("08:00")
   createdAt                DateTime  @default(now())
   updatedAt                DateTime  @updatedAt
   workspace                Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
