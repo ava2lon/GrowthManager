@@ -50,6 +50,7 @@ export async function getFreshYouTubeCredentials(input: {workspaceId: string; ac
   } | null;
   if (!response.ok || !refreshed || typeof refreshed.access_token !== "string") {
     if (refreshed?.error === "invalid_grant") throw new Error("YOUTUBE_REAUTHORIZATION_REQUIRED");
+    if (response.status === 429 || response.status >= 500) throw new Error("YOUTUBE_REFRESH_UNAVAILABLE");
     const latest = await db.socialAccount.findFirst({
       where: {id: account.id, workspaceId: input.workspaceId, provider: "YOUTUBE", status: "CONNECTED"},
       select: {credentialsEncrypted: true, tokenExpiresAt: true},
