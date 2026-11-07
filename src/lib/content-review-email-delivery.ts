@@ -45,6 +45,7 @@ export async function dispatchContentReviewEmails(batchSize = 10): Promise<Deliv
 
   const now = new Date();
   const staleLock = new Date(now.getTime() - LOCK_TTL_MS);
+  const batchLimit = Math.max(1, Math.min(batchSize, 25));
   const candidates = await db.contentReviewEmailDelivery.findMany({
     where: {
       status: {in: ["PENDING", "RETRY", "PROCESSING"]},
@@ -52,13 +53,14 @@ export async function dispatchContentReviewEmails(batchSize = 10): Promise<Deliv
       OR: [{lockedAt: null}, {lockedAt: {lte: staleLock}}],
     },
     orderBy: {createdAt: "asc"},
-    take: Math.max(1, Math.min(batchSize, 25)),
+    take: 200,
     select: {id: true, workspaceId: true, assignmentId: true, eventType: true, recipientUserId: true, recipientEmail: true, recipientName: true, attempts: true, createdAt: true, assignment: {select: {reviewerUserId: true, assignedById: true}}},
   });
 
   const result: DeliveryResult = {claimed: 0, sent: 0, retried: 0, failed: 0, deferred: 0};
 
   for (const item of candidates) {
+    if (result.claimed >= batchLimit) break;
     const recipientUserId = item.recipientUserId || (item.eventType === "CONTENT_REVIEW_ASSIGNED"
       ? item.assignment.reviewerUserId
       : item.assignment.assignedById);
@@ -268,7 +270,7 @@ function digestPeriodKey(date: string, frequency: string): string {
   return "WEEKLY:" + monday.toISOString().slice(0, 10);
 }
 
-function digestDue(now: Date, timezone: string, frequency: string, sendTime: string): {periodKey: string} | null {
+export function digestDue(now: Date, timezone: string, frequency: string, sendTime: string): {periodKey: string} | null {
   const clock = digestClock(now, timezone);
   const match = /^(\\d{2}):(\\d{2})$/.exec(sendTime);
   if (!match) return null;
@@ -277,12 +279,6 @@ function digestDue(now: Date, timezone: string, frequency: string, sendTime: str
   if (frequency === "WEEKLY" && clock.weekday !== "Mon") return null;
   return {periodKey: digestPeriodKey(clock.date, frequency)};
 }
-
-type DigestEvent = {
-  id: string;
-  eventType: string;
-  assignment: {feedback: string | null; contentPost: {title: string | null}; reviewer: {name: string | null}};
-};
 
 export async function dispatchContentReviewEmailDigests(batchSize = 10) {
   const now = new Date();
@@ -411,7 +407,14 @@ export async function dispatchContentReviewEmailDigests(batchSize = 10) {
           where: {id: digest.id, status: "PROCESSING", lockedAt: claimedAt},
           data: {status: retry ? "RETRY" : "FAILED", nextAttemptAt: retry ? new Date(Date.now() + Math.min(30 * 60_000, 60_000 * 2 ** (attempt - 1))) : now, lockedAt: null, lastErrorCode: response.status === 429 ? "RESEND_RATE_LIMITED" : response.status >= 500 ? "RESEND_PROVIDER_ERROR" : "RESEND_REQUEST_REJECTED"},
         });
-        if (retry) retried += 1; else failed += 1;
+        if (retry) retried += 1;
+        else {
+          await db.contentReviewEmailDelivery.updateMany({
+            where: {workspaceId: digest.workspaceId, id: {in: digest.deliveryIds}, status: "DIGEST_QUEUED"},
+            data: {status: "FAILED", lastErrorCode: "DIGEST_DELIVERY_FAILED"},
+          });
+          failed += 1;
+        }
         continue;
       }
       const payload: unknown = await response.json().catch(() => null);
@@ -434,7 +437,14 @@ export async function dispatchContentReviewEmailDigests(batchSize = 10) {
         where: {id: digest.id, status: "PROCESSING", lockedAt: claimedAt},
         data: {status: retry ? "RETRY" : "FAILED", nextAttemptAt: retry ? new Date(Date.now() + Math.min(30 * 60_000, 60_000 * 2 ** (attempt - 1))) : now, lockedAt: null, lastErrorCode: "DIGEST_DELIVERY_ERROR"},
       });
-      if (retry) retried += 1; else failed += 1;
+      if (retry) retried += 1;
+      else {
+        await db.contentReviewEmailDelivery.updateMany({
+          where: {workspaceId: digest.workspaceId, id: {in: digest.deliveryIds}, status: "DIGEST_QUEUED"},
+          data: {status: "FAILED", lastErrorCode: "DIGEST_DELIVERY_FAILED"},
+        });
+        failed += 1;
+      }
     }
   }
 
