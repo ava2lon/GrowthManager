@@ -62,6 +62,18 @@ export default async function SocialPage({searchParams}:{searchParams:Promise<{m
 
       <section className="rounded-2xl border border-slate-200 bg-white p-5 sm:p-6">
         <div>
+          <h2 className="font-semibold text-slate-900">Connect YouTube</h2>
+          <p className="mt-1 text-sm text-slate-500">Connect a YouTube channel to prepare secure video publishing workflows. This phase establishes OAuth and channel identity; upload and scheduling are the next implementation stage.</p>
+        </div>
+        <div className="mt-4 flex flex-wrap gap-2">
+          {brands.map((brand) => <a key={brand.id} href={"/api/integrations/youtube/connect?brandId="+encodeURIComponent(brand.id)} className="rounded-xl border border-slate-200 px-4 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50">Connect YouTube · {brand.name}</a>)}
+          {brands.length===0&&<p className="text-sm text-slate-500">Create an active brand before connecting a YouTube channel.</p>}
+        </div>
+        <p className="mt-3 text-xs text-slate-500">Requires YOUTUBE_CLIENT_ID, YOUTUBE_CLIENT_SECRET, and a registered HTTPS YOUTUBE_REDIRECT_URI. Requested scopes: youtube.upload and youtube.readonly. Enable YouTube Data API v3 in the associated Google Cloud project.</p>
+      </section>
+
+      <section className="rounded-2xl border border-slate-200 bg-white p-5 sm:p-6">
+        <div>
           <h2 className="font-semibold text-slate-900">Connect TikTok</h2>
           <p className="mt-1 text-sm text-slate-500">Connect a TikTok creator account. GrowthManager will prepare video drafts for the creator’s TikTok inbox; the creator completes editing and publishing inside TikTok.</p>
         </div>
