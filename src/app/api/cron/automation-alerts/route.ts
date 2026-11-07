@@ -3,7 +3,7 @@ import {NextResponse} from "next/server";
 import {db} from "@/lib/db";
 import {decryptIntegrationCredentials} from "@/lib/integration-crypto";
 import {listN8nExecutions} from "@/lib/n8n-client";
-import {dispatchAutomationAlertEmails, recordAutomationAlert} from "@/lib/automation-alert-notifications";
+import {dispatchAutomationAlertEmails, enqueueAutomationAlertEscalations, recordAutomationAlert} from "@/lib/automation-alert-notifications";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -121,9 +121,13 @@ export async function GET(request: Request) {
     }
   }
 
+  let escalations = {eventsChecked: 0, deliveriesQueued: 0};
   let emailDelivery: {claimed: number; sent: number; retried: number; failed: number} = {claimed: 0, sent: 0, retried: 0, failed: 0};
-  try { emailDelivery = await dispatchAutomationAlertEmails(3); } catch { failedWorkspaces += 1; }
-  const result = {policies: policies.length, evaluated, skipped, alertsTriggered, failedWorkspaces, emailDelivery};
+  try {
+    escalations = await enqueueAutomationAlertEscalations();
+    emailDelivery = await dispatchAutomationAlertEmails(5);
+  } catch { failedWorkspaces += 1; }
+  const result = {policies: policies.length, evaluated, skipped, alertsTriggered, failedWorkspaces, escalations, emailDelivery};
   if (failedWorkspaces) {
     return NextResponse.json(result, {status: 500});
   }
