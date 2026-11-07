@@ -1627,3 +1627,22 @@ export async function deletePublishedPost(formData:FormData){
  catch(error){revalidatePath("/dashboard/social");throw error;}
  revalidatePath("/dashboard/social");
 }
+
+export async function cancelYouTubeSchedule(formData:FormData){
+ const context=await requireWorkspaceRole("MEMBER");
+ const targetId=String(formData.get("targetId")??"").trim();
+ if(!targetId||targetId.length>128)throw new Error("Invalid YouTube publishing target.");
+ await enforceSocialRateLimit(context.workspace.id,context.userId,"publish");
+ await db.$transaction(async tx=>{
+  const target=await tx.socialPostTarget.findFirst({where:{id:targetId,workspaceId:context.workspace.id,provider:"YOUTUBE",status:"SCHEDULED"},select:{id:true,contentPostId:true,uploadMetadata:true}});
+  if(!target)throw new Error("This YouTube schedule is already processing or unavailable.");
+  const metadata=readMetadata(target.uploadMetadata);
+  const {publishAt:_publishAt,...remainingMetadata}=metadata;
+  const changed=await tx.socialPostTarget.updateMany({where:{id:target.id,workspaceId:context.workspace.id,provider:"YOUTUBE",status:"SCHEDULED"},data:{status:"DRAFT",uploadMetadata:remainingMetadata,errorCode:null,nextCheckAt:null}});
+  if(changed.count!==1)throw new Error("This YouTube upload started. Refresh to see its latest status.");
+  const remaining=await tx.socialPostTarget.count({where:{workspaceId:context.workspace.id,contentPostId:target.contentPostId,status:"SCHEDULED"}});
+  await tx.contentPost.updateMany({where:{id:target.contentPostId,workspaceId:context.workspace.id,status:"SCHEDULED"},data:{status:remaining>0?"SCHEDULED":"DRAFT",scheduledAt:remaining>0?undefined:null}});
+  await tx.activityLog.create({data:{workspaceId:context.workspace.id,userId:context.userId,action:"social_post.schedule_cancelled",entityType:"ContentPost",entityId:target.contentPostId,metadata:{provider:"YOUTUBE",targetId:target.id}}});
+ });
+ revalidatePath("/dashboard/social");
+}
