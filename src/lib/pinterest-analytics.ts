@@ -14,10 +14,6 @@ function normalizeMetrics(input:Record<string,unknown>|undefined):MetricValues{
  const result:MetricValues={};
  if(!input)return result;
  for(const name of METRIC_TYPES){const value=finiteMetric(input[name]);if(value!==null)result[name]=value}
- for(let index=0;index<METRIC_TYPES.length;index++){
-  const name=METRIC_TYPES[index],key="key_"+index;
-  if(result[name]===undefined){const value=finiteMetric(input[key]);if(value!==null)result[name]=value}
- }
  return result;
 }
 export async function refreshPinterestAccountAnalytics(input:{workspaceId:string;accountId:string;asOf?:Date}){
