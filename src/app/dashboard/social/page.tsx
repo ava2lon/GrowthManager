@@ -73,7 +73,7 @@ export default async function SocialPage({searchParams}:{searchParams:Promise<{m
     db.mediaAsset.findMany({where:{workspaceId:workspace.id,status:"READY",mimeType:{in:["image/jpeg","image/png","video/mp4","video/quicktime"]},OR:[{brandId:null},{brandId:{in:brands.map((brand)=>brand.id)}}]},orderBy:{createdAt:"desc"},take:100,select:{id:true,brandId:true,originalFilename:true,mimeType:true,sizeBytes:true,durationMs:true,width:true,height:true}}),
   ]);
   const drafts = await db.contentPost.findMany({
-      where:{workspaceId:workspace.id,publishTargets:{some:{provider:{in:["FACEBOOK","INSTAGRAM","TIKTOK","YOUTUBE","LINKEDIN","PINTEREST","X"]}}}},
+      where:{workspaceId:workspace.id,OR:[{status:"DRAFT"},{publishTargets:{some:{provider:{in:["FACEBOOK","INSTAGRAM","TIKTOK","YOUTUBE","LINKEDIN","PINTEREST","X"]}}}}]},
       orderBy:{createdAt:"desc"},take:25,
       select:{id:true,title:true,body:true,status:true,scheduledAt:true,createdAt:true,mediaAssets:{orderBy:{position:"asc"},select:{mediaAsset:{select:{id:true,originalFilename:true,mimeType:true,durationMs:true}}}},publishTargets:{select:{id:true,provider:true,status:true,errorCode:true,providerPostId:true,uploadMetadata:true,uploadOffset:true,uploadTotalBytes:true,attempts:{orderBy:{startedAt:"desc"},take:5,select:{id:true,attemptNumber:true,status:true,errorCode:true,httpStatus:true,startedAt:true,finishedAt:true,durationMs:true,providerPostId:true}},socialAccount:{select:{accountName:true,scopes:true}}}}},
     });
