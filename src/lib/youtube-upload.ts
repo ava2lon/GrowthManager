@@ -110,7 +110,7 @@ export async function startYouTubeUploadTarget(input: {targetId: string; workspa
       snippet: {title: metadata.title, description: metadata.description,
         ...(metadata.categoryId ? {categoryId: metadata.categoryId} : {}),
         ...(metadata.tags ? {tags: metadata.tags} : {})},
-      status: {privacyStatus: metadata.privacyStatus, selfDeclaredMadeForKids: false},
+      status: {privacyStatus: metadata.privacyStatus},
     };
     const response = await fetch(initUrl, {
       method: "POST",
@@ -272,7 +272,9 @@ export async function processYouTubeUploadTarget(input: {targetId: string; works
     throw new Error("YOUTUBE_CHUNK_UPLOAD_FAILED");
   } catch (error) {
     const code = error instanceof Error ? error.message : "YOUTUBE_UPLOAD_FAILED";
-    if (["YOUTUBE_REFRESH_UNAVAILABLE", "YOUTUBE_PROVIDER_UNAVAILABLE", "YOUTUBE_UPLOAD_COMPLETION_UNCERTAIN"].includes(code)) {
+    if (["YOUTUBE_REFRESH_UNAVAILABLE", "YOUTUBE_PROVIDER_UNAVAILABLE", "YOUTUBE_UPLOAD_COMPLETION_UNCERTAIN"].includes(code) ||
+        error instanceof TypeError || (error instanceof Error && error.name === "AbortError")) {
+      // A transport failure can happen after Google committed bytes. Reconcile from the session URI next run.
       await defer();
       return {status: "PROCESSING" as const};
     }
