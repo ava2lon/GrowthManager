@@ -212,3 +212,24 @@ export async function publishXTarget(input:{targetId:string;workspaceId:string;a
   return {status:"FAILED",errorCode:code};
  }
 }
+
+
+export async function deleteXPublishedTarget(input:{targetId:string;workspaceId:string;actorUserId:string}):Promise<void>{
+ const target=await db.socialPostTarget.findFirst({where:{id:input.targetId,workspaceId:input.workspaceId,provider:"X",status:"PUBLISHED",providerPostId:{not:null}},select:{id:true,workspaceId:true,contentPostId:true,providerPostId:true,socialAccountId:true,socialAccount:{select:{id:true,status:true,scopes:true}}}});
+ if(!target||!target.providerPostId)throw new Error("Only a published X post in the active workspace can be deleted.");
+ if(target.socialAccount.status!=="CONNECTED"||!target.socialAccount.scopes.includes("tweet.write"))throw new Error("Reconnect X with tweet.write permission before deleting this post.");
+ const {token}=await freshToken(input.workspaceId,target.socialAccount.id,false);
+ let response:Response;
+ try{response=await fetch("https://api.x.com/2/tweets/"+encodeURIComponent(target.providerPostId),{method:"DELETE",headers:{Authorization:"Bearer "+token},cache:"no-store",redirect:"error",signal:AbortSignal.timeout(15000)})}
+ catch{throw new Error("X_DELETE_OUTCOME_UNKNOWN: X may have processed the delete request. Verify the post on X before retrying.");}
+ const body=await response.json().catch(()=>null) as {data?:{deleted?:boolean};errors?:Array<{message?:string;type?:string}>}|null;
+ if(!response.ok||body?.data?.deleted!==true){
+  const code=response.status===401?"X_REAUTHORIZATION_REQUIRED":response.status===403?"X_PERMISSION_DENIED":response.status===429?"X_RATE_LIMITED":response.status>=500?"X_DELETE_OUTCOME_UNKNOWN":"X_DELETE_REJECTED";
+  throw new Error(code+": X did not confirm deletion.");
+ }
+ await db.$transaction(async tx=>{
+  const changed=await tx.socialPostTarget.updateMany({where:{id:target.id,workspaceId:input.workspaceId,provider:"X",status:"PUBLISHED",providerPostId:target.providerPostId},data:{status:"DELETED",errorCode:null,nextCheckAt:null}});
+  if(changed.count!==1)throw new Error("X target changed while deletion was in progress. Verify its status before retrying.");
+  await tx.activityLog.create({data:{workspaceId:input.workspaceId,userId:input.actorUserId,action:"social_post.deleted",entityType:"ContentPost",entityId:target.contentPostId,metadata:{provider:"X",targetId:target.id,providerPostId:target.providerPostId}}});
+ });
+}
