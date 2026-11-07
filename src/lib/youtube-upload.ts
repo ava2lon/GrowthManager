@@ -16,7 +16,7 @@ async function failTarget(input: {targetId: string; workspaceId: string; code: s
       select: {contentPostId: true},
     });
     await tx.socialPostTarget.updateMany({
-      where: {id: input.targetId, workspaceId: input.workspaceId, provider: "YOUTUBE", status: "PUBLISHING"},
+      where: {id: input.targetId, workspaceId: input.workspaceId, provider: "YOUTUBE", status: {in: ["PUBLISHING", "PROCESSING"]}},
       data: {status: "FAILED", errorCode: input.code, nextCheckAt: null, uploadSessionEncrypted: null},
     });
     if (target) await tx.contentPost.updateMany({
@@ -144,14 +144,18 @@ export async function processYouTubeUploadTarget(input: {targetId: string; works
   const now = new Date();
   const claimed = await db.socialPostTarget.updateMany({
     where: {id: input.targetId, workspaceId: input.workspaceId, provider: "YOUTUBE",
-      status: "PUBLISHING", uploadSessionEncrypted: {not: null},
-      OR: [{nextCheckAt: null}, {nextCheckAt: {lte: now}}]},
+      status: {in: ["PUBLISHING", "PROCESSING"]},
+      OR: [
+        {status: "PUBLISHING", uploadSessionEncrypted: {not: null}},
+        {status: "PROCESSING", providerPostId: {not: null}},
+      ],
+      AND: [{OR: [{nextCheckAt: null}, {nextCheckAt: {lte: now}}]}]},
     data: {nextCheckAt: new Date(now.getTime() + 3 * 60_000)},
   });
   if (claimed.count !== 1) return {status: "SKIPPED" as const};
 
   const target = await db.socialPostTarget.findFirst({
-    where: {id: input.targetId, workspaceId: input.workspaceId, provider: "YOUTUBE", status: "PUBLISHING"},
+    where: {id: input.targetId, workspaceId: input.workspaceId, provider: "YOUTUBE", status: {in: ["PUBLISHING", "PROCESSING"]}},
     include: {
       contentPost: {select: {id: true, workspaceId: true, brandId: true, mediaAssets: {
         orderBy: {position: "asc"}, select: {mediaAsset: {select: {
@@ -178,6 +182,39 @@ export async function processYouTubeUploadTarget(input: {targetId: string; works
     if (typeof sessionEnvelope.sessionUrl !== "string") throw new Error("YOUTUBE_UPLOAD_SESSION_INVALID");
     const sessionUrl = validateYouTubeSessionUrl(sessionEnvelope.sessionUrl);
     const {accessToken} = await getFreshYouTubeCredentials({workspaceId: input.workspaceId, accountId: target.socialAccount.id});
+
+    if (target.status === "PROCESSING" && target.providerPostId) {
+      const statusUrl = new URL("https://www.googleapis.com/youtube/v3/videos");
+      statusUrl.searchParams.set("part", "status");
+      statusUrl.searchParams.set("id", target.providerPostId);
+      const statusResponse = await fetch(statusUrl, {
+        headers: {Authorization: "Bearer " + accessToken},
+        cache: "no-store", redirect: "error", signal: AbortSignal.timeout(12000),
+      });
+      if (!statusResponse.ok) {
+        if (statusResponse.status === 429 || statusResponse.status >= 500) {
+          await defer();
+          return {status: "PROCESSING" as const};
+        }
+        throw new Error(statusResponse.status === 401 ? "YOUTUBE_AUTH_FAILED" : "YOUTUBE_VIDEO_STATUS_FAILED");
+      }
+      const statusPayload = await statusResponse.json().catch(() => null) as {
+        items?: Array<{id?: string; status?: {uploadStatus?: string; failureReason?: string; rejectionReason?: string}}>;
+      } | null;
+      const video = statusPayload?.items?.find(item => item.id === target.providerPostId);
+      const uploadStatus = video?.status?.uploadStatus;
+      if (uploadStatus === "processed") return await markPublished(target.providerPostId);
+      if (uploadStatus === "failed" || uploadStatus === "rejected") {
+        throw new Error("YOUTUBE_VIDEO_" + uploadStatus.toUpperCase() + "_" +
+          (video?.status?.failureReason ?? video?.status?.rejectionReason ?? "UNKNOWN").toUpperCase());
+      }
+      if (uploadStatus !== "uploaded") throw new Error("YOUTUBE_VIDEO_STATUS_UNKNOWN");
+      await db.socialPostTarget.updateMany({
+        where: {id: target.id, workspaceId: input.workspaceId, status: "PROCESSING"},
+        data: {nextCheckAt: new Date(Date.now() + 60_000)},
+      });
+      return {status: "PROCESSING" as const};
+    }
 
     // Google is authoritative about the committed offset; never infer it from a timed-out PUT.
     const statusResponse = await fetch(sessionUrl, {
@@ -269,14 +306,12 @@ export async function processYouTubeUploadTarget(input: {targetId: string; works
       data: {nextCheckAt: new Date(Date.now() + 5 * 60_000)},
     });
   }
-  async function completeUpload(videoId: string) {
+  async function markPublished(videoId: string) {
     const finished = new Date();
     await db.$transaction(async tx => {
       await tx.socialPostTarget.update({
         where: {id: input.targetId},
-        data: {status: "PUBLISHED", providerPostId: videoId, publishedAt: finished,
-          uploadSessionEncrypted: null, uploadOffset: BigInt(target.uploadTotalBytes as bigint),
-          nextCheckAt: null, errorCode: null},
+        data: {status: "PUBLISHED", publishedAt: finished, nextCheckAt: null, errorCode: null},
       });
       await tx.socialPublishAttempt.updateMany({
         where: {workspaceId: input.workspaceId, targetId: input.targetId, status: "PROCESSING"},
@@ -295,5 +330,27 @@ export async function processYouTubeUploadTarget(input: {targetId: string; works
       }});
     });
     return {status: "PUBLISHED" as const, videoId};
+  }
+
+  async function completeUpload(videoId: string) {
+    const finished = new Date();
+    await db.$transaction(async tx => {
+      await tx.socialPostTarget.update({
+        where: {id: input.targetId},
+        data: {status: "PROCESSING", providerPostId: videoId,
+          uploadSessionEncrypted: null, uploadOffset: BigInt(target.uploadTotalBytes as bigint),
+          nextCheckAt: new Date(Date.now() + 60_000), errorCode: null},
+      });
+      await tx.socialPublishAttempt.updateMany({
+        where: {workspaceId: input.workspaceId, targetId: input.targetId, status: "PROCESSING"},
+        data: {providerPostId: videoId},
+      });
+      await tx.activityLog.create({data: {
+        workspaceId: input.workspaceId, action: "social_post.youtube_upload_transferred",
+        entityType: "ContentPost", entityId: target.contentPostId,
+        metadata: {provider: "YOUTUBE", targetId: input.targetId, videoId},
+      }});
+    });
+    return {status: "PROCESSING" as const, videoId};
   }
 }
