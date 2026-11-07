@@ -150,6 +150,50 @@ export async function enqueueAutomationAlertEscalations(): Promise<{eventsChecke
   return {eventsChecked, deliveriesQueued};
 }
 
+/**
+ * Resolves stale incidents only after a successful provider evaluation.
+ * Unsent notifications are cancelled to avoid sending recovered alerts.
+ */
+export async function resolveAutomationAlerts(input: {
+  workspaceId: string;
+  integrationId: string;
+  activeAlertTypes: string[];
+}): Promise<{resolved: number; cancelledDeliveries: number}> {
+  return db.$transaction(async (tx) => {
+    const candidates = await tx.automationAlertEvent.findMany({
+      where: {
+        workspaceId: input.workspaceId,
+        integrationId: input.integrationId,
+        status: {in: ["OPEN", "ACKNOWLEDGED"]},
+        ...(input.activeAlertTypes.length ? {alertType: {notIn: input.activeAlertTypes}} : {}),
+      },
+      select: {id: true},
+    });
+    if (!candidates.length) return {resolved: 0, cancelledDeliveries: 0};
+    const ids = candidates.map((event) => event.id);
+    const now = new Date();
+    const updated = await tx.automationAlertEvent.updateMany({
+      where: {workspaceId: input.workspaceId, id: {in: ids}, status: {in: ["OPEN", "ACKNOWLEDGED"]}},
+      data: {status: "RESOLVED", resolvedAt: now, resolutionMessage: "The latest successful n8n evaluation no longer meets this alert threshold."},
+    });
+    const cancelled = await tx.automationAlertDelivery.updateMany({
+      where: {workspaceId: input.workspaceId, alertEventId: {in: ids}, status: {in: ["PENDING", "RETRY"]}},
+      data: {status: "CANCELLED", lockedAt: null, lastErrorCode: "INCIDENT_RESOLVED"},
+    });
+    if (updated.count) {
+      await tx.activityLog.create({
+        data: {
+          workspaceId: input.workspaceId,
+          action: "automation.alerts_auto_resolved",
+          entityType: "automation_alert",
+          metadata: {resolvedCount: updated.count, cancelledDeliveries: cancelled.count},
+        },
+      });
+    }
+    return {resolved: updated.count, cancelledDeliveries: cancelled.count};
+  });
+}
+
 export async function dispatchAutomationAlertEmails(limit = 20): Promise<{
   claimed: number; sent: number; retried: number; failed: number;
 }> {
