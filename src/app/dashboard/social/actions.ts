@@ -589,7 +589,7 @@ export async function scheduleInstagramDraftTargets(formData: FormData) {
   if (targets.length < 1 || targets.length > 10 ||
       targets.some((target) => target.socialAccount.brandId !== post.brandId ||
         target.socialAccount.status !== "CONNECTED" ||
-        !target.socialAccount.scopes.includes("instagram_content_publish"))) {
+        !target.socialAccount.scopes.includes("instagram_basic") || !target.socialAccount.scopes.includes("instagram_content_publish"))) {
     throw new Error("Every draft target must be a connected Instagram Professional account with publishing permission under this brand.");
   }
   await db.$transaction(async (tx) => {
