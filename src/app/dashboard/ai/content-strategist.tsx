@@ -22,7 +22,11 @@ export function ContentStrategist({workspaceName, brands, accounts, campaigns}: 
   const [offer, setOffer] = useState("");
   const [tone, setTone] = useState("Clear, useful, confident");
   const [platforms, setPlatforms] = useState<string[]>([]);
-  const [copied, setCopied] = useState(false);\n  const [generating, setGenerating] = useState(false);\n  const [generationError, setGenerationError] = useState("");\n  const [generated, setGenerated] = useState<Record<string, unknown> | null>(null);\n  const [savedDraft, setSavedDraft] = useState<{id: string; title: string | null} | null>(null);
+  const [copied, setCopied] = useState(false);
+  const [generating, setGenerating] = useState(false);
+  const [generationError, setGenerationError] = useState("");
+  const [generated, setGenerated] = useState<Record<string, unknown> | null>(null);
+  const [savedDraft, setSavedDraft] = useState<{id: string; title: string | null} | null>(null);
 
   const brand = brands.find(item => item.id === brandId);
   const campaign = campaigns.find(item => item.id === campaignId);
@@ -114,7 +118,7 @@ export function ContentStrategist({workspaceName, brands, accounts, campaigns}: 
 
       <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
         <p className="font-semibold">Provider-neutral foundation</p>
-        <p className="mt-1 leading-6">This phase prepares a structured, copyable strategy prompt. It does not call an AI provider or generate final copy yet. No provider credentials are required or stored. The model adapter and usage controls will be added as the next implementation step.</p>
+        <p className="mt-1 leading-6">Generate a two-week strategy using the configured AI provider. The output is saved as a workspace-scoped DRAFT for human review; it is never published or scheduled automatically.</p>
       </div>
 
       <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_minmax(340px,0.9fr)]">
