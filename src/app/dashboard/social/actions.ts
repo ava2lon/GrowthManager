@@ -638,7 +638,7 @@ export async function retryLinkedInPublish(formData:FormData){
  const metadata=readMetadata(target.socialAccount.metadata),required=metadata.accountType==="ORGANIZATION"?"w_organization_social":"w_member_social";
  if(target.socialAccount.status!=="CONNECTED"||!target.socialAccount.scopes.includes(required))throw new Error("Reconnect the LinkedIn account and restore its required publishing permissions before retrying.");
  await db.$transaction(async tx=>{
-  const changed=await tx.socialPostTarget.updateMany({where:{id:target.id,workspaceId:context.workspace.id,provider:"LINKEDIN",status:"FAILED",errorCode:target.errorCode},data:{status:"DRAFT",providerPostId:null,errorCode:null,publishedAt:null,uploadMetadata:{},uploadOffset:null,uploadTotalBytes:null,nextCheckAt:null}});
+  const changed=await tx.socialPostTarget.updateMany({where:{id:target.id,workspaceId:context.workspace.id,provider:"LINKEDIN",status:"FAILED",errorCode:target.errorCode},data:{status:"DRAFT",providerPostId:null,errorCode:null,publishedAt:null}});
   if(changed.count!==1)throw new Error("This LinkedIn target changed concurrently. Refresh and retry.");
   await tx.contentPost.updateMany({where:{id:target.contentPostId,workspaceId:context.workspace.id,status:"FAILED"},data:{status:"DRAFT",publishedAt:null}});
   await tx.activityLog.create({data:{workspaceId:context.workspace.id,userId:context.userId,action:"social_post.retry_authorized",entityType:"ContentPost",entityId:target.contentPostId,metadata:{provider:"LINKEDIN",targetId:target.id,previousErrorCode:target.errorCode}}});
@@ -1540,6 +1540,7 @@ export async function publishXDraft(formData:FormData){
  await enforcePublishLimit(context.workspace.id,context.userId);
  const result=await publishXTarget({targetId,workspaceId:context.workspace.id,actorUserId:context.userId,allowedStatuses:["DRAFT"]});
  revalidatePath("/dashboard/social");
+ if(result.status==="PROCESSING")return;
  if(result.status!=="PUBLISHED")throw new Error(result.status==="UNKNOWN"?"X's response could not be confirmed. Verify the account's posts before attempting another publication.":result.status==="SKIPPED"?"This X draft is no longer eligible for publishing.":result.errorCode==="X_PUBLISH_SCOPE_MISSING"?"Reconnect X with publishing permission.":"X rejected the post or the account is not eligible ("+(result.errorCode??"X_PUBLISH_FAILED")+").");
 }
 
