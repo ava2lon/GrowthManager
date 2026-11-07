@@ -211,3 +211,16 @@ The OAuth flow always requests OpenID Connect identity and member posting. Organ
 The current publishing phase supports text-only organic posts through `POST /rest/posts`, using the required `Linkedin-Version` and `X-Restli-Protocol-Version: 2.0.0` headers. Posts are published immediately; scheduling, images, videos, documents, analytics, and comments remain staged. An ambiguous provider response is marked `UNKNOWN` and is not blindly retried. LinkedIn access tokens are typically valid for 60 days. If LinkedIn has enabled programmatic refresh tokens for the developer application, GrowthManager refreshes them server-side and persists token rotation with compare-and-swap protection. Refresh-token access is restricted to approved LinkedIn Marketing Developer Platform partners; if no valid refresh token is issued or refresh is rejected, the workspace administrator must reconnect the identity.
 
 Credentials are encrypted at rest with workspace/account-bound AES-GCM. OAuth state is HMAC-signed, short-lived, cookie-bound, and checked against the current authenticated workspace administrator. Account health checks and publishing actions remain workspace-scoped and audited.
+
+
+## Pinterest account connection
+
+GrowthManager supports Pinterest API v5 OAuth account connection, identity validation, and board discovery. Register the callback URL exactly as:
+
+`https://growthmanager.vercel.app/api/integrations/pinterest/callback`
+
+Configure `PINTEREST_APP_ID`, `PINTEREST_APP_SECRET`, and `PINTEREST_REDIRECT_URI`. The OAuth flow requests `user_accounts:read`, `boards:read`, `pins:read`, and `pins:write`; it uses a short-lived HMAC-signed, HttpOnly, SameSite=Lax state cookie bound to the authenticated user, workspace, and active brand. Callback handling rechecks current workspace administrator membership and brand ownership before storing credentials.
+
+Access and refresh tokens are encrypted using the workspace/account-bound AES-GCM credential envelope. Pinterest access tokens are refreshed server-side before expiry; refresh-token rotation is persisted with compare-and-swap protection. The connection callback verifies the Pinterest user identity and retrieves the first 100 boards. Workspace administrators can run an account health check to validate identity, scopes, and board discovery. Disconnect removes locally stored credentials and scopes.
+
+**Current phase:** account connection and board discovery only. Image Pin creation, video Pin upload, scheduling, and Pinterest analytics are not yet enabled. Pinterest Trial access may restrict Pins created through the API to creator-visible content; public distribution requires the appropriate Pinterest API access tier. See the [Pinterest OAuth guide](https://developer.pinterest.com/docs/getting-started/set-up-authentication-and-authorization/) and [organic content guide](https://dev.pinterest.com/docs/work-with-organic-content-and-users/create-boards-and-pins/).
