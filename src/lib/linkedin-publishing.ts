@@ -29,13 +29,14 @@ export async function publishLinkedInTarget(input:{targetId:string;workspaceId:s
    if(!current)return failBeforeClaim("LINKEDIN_ORGANIZATION_ROLE_REVOKED");
   }catch{return failBeforeClaim("LINKEDIN_PROVIDER_UNAVAILABLE")}
  }
- const claim=await db.socialPostTarget.updateMany({where:{id:target.id,workspaceId:input.workspaceId,status:{in:allowed}},data:{status:"PUBLISHING",errorCode:null}});
- if(claim.count!==1)return {status:"SKIPPED"};
  const attempt=await db.$transaction(async tx=>{
+  const claim=await tx.socialPostTarget.updateMany({where:{id:target.id,workspaceId:input.workspaceId,status:{in:allowed}},data:{status:"PUBLISHING",errorCode:null}});
+  if(claim.count!==1)return null;
   const previous=await tx.socialPublishAttempt.aggregate({where:{workspaceId:input.workspaceId,targetId:target.id},_max:{attemptNumber:true}});
   const number=(previous._max.attemptNumber??0)+1;
   return tx.socialPublishAttempt.create({data:{workspaceId:input.workspaceId,targetId:target.id,attemptNumber:number,idempotencyKey:randomUUID(),status:"STARTED"},select:{id:true}});
  });
+ if(!attempt)return {status:"SKIPPED"};
  const started=Date.now();let postId:string|null=null,errorCode:string|null=null,httpStatus:number|null=null;
  try{
   const response=await fetch("https://api.linkedin.com/rest/posts",{method:"POST",headers:{...linkedinApiHeaders(credentials.accessToken),"Content-Type":"application/json"},body:JSON.stringify({author:authorUrn,commentary:target.contentPost.body,visibility:"PUBLIC",distribution:{feedDistribution:"MAIN_FEED",targetEntities:[],thirdPartyDistributionChannels:[]},lifecycleState:"PUBLISHED",isReshareDisabledByAuthor:false}),cache:"no-store",redirect:"error",signal:AbortSignal.timeout(20000)});
