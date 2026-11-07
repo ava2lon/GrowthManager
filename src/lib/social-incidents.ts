@@ -1,10 +1,11 @@
 import "server-only";
 import {db} from "@/lib/db";
+import type {Prisma} from "@prisma/client";
 
 type Signal = {
   workspaceId:string; sourceType:"SOCIAL_ACCOUNT"|"SOCIAL_PUBLISH_TARGET"; sourceId:string;
   socialAccountId?:string; socialPostTargetId?:string; category:string; severity:"CRITICAL"|"WARNING";
-  dedupeKey:string; message:string; errorCode?:string|null; metadata:Record<string,unknown>;
+  dedupeKey:string; message:string; errorCode?:string|null; metadata:Prisma.InputJsonObject;
 };
 function safeCode(value:string|null|undefined,fallback:string):string {
   return value&&/^[A-Z0-9_]{1,100}$/.test(value)?value:fallback;
