@@ -1,5 +1,6 @@
 import {createHmac, timingSafeEqual, randomUUID} from "node:crypto";
 import {NextResponse} from "next/server";
+import {Prisma} from "@prisma/client";
 import {cookies} from "next/headers";
 import {auth} from "@/auth";
 import {db} from "@/lib/db";
@@ -149,7 +150,7 @@ export async function GET(request: Request) {
       openId: user.open_id,
       displayName: user.display_name,
       avatarUrl: typeof user.avatar_url === "string" ? user.avatar_url : null,
-      creatorInfo,
+      creatorInfo: creatorInfo ? JSON.parse(JSON.stringify(creatorInfo)) : null,
       refreshTokenExpiresAt: refreshExpiresAt?.toISOString() ?? null,
     };
     const encrypted = encryptIntegrationCredentials({
@@ -169,12 +170,12 @@ export async function GET(request: Request) {
           id,workspaceId:state.workspaceId,brandId:state.brandId,provider:"TIKTOK",
           providerUserId:user.open_id,accountName:user.display_name as string,
           credentialsEncrypted:encrypted,status:"CONNECTED",scopes,
-          connectedAt:new Date(),lastValidatedAt:new Date(),tokenExpiresAt,lastErrorCode:null,metadata,
+          connectedAt:new Date(),lastValidatedAt:new Date(),tokenExpiresAt,lastErrorCode:null,metadata: metadata as Prisma.InputJsonValue,
         },
         update: {
           brandId:state.brandId,accountName:user.display_name as string,
           credentialsEncrypted:encrypted,status:"CONNECTED",scopes,
-          connectedAt:new Date(),lastValidatedAt:new Date(),tokenExpiresAt,lastErrorCode:null,metadata,
+          connectedAt:new Date(),lastValidatedAt:new Date(),tokenExpiresAt,lastErrorCode:null,metadata: metadata as Prisma.InputJsonValue,
         },
       });
       await tx.activityLog.create({
