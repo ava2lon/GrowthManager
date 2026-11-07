@@ -15,7 +15,7 @@ function appUrl():string{
 }
 function retryable(status:number){return status===408||status===429||status>=500;}
 
-export async function dispatchSocialIncidentEmails(batchSize=10):Promise<{claimed:number;sent:number;retried:number;failed:number;cancelled:number;deferred:number}>{
+export async function dispatchSocialIncidentEmails(batchSize=10):Promise<{claimed:number;sent:number;retried:number;failed:number;cancelled:number;deferred:number;configurationMissing:boolean}>{
   const apiKey=process.env.RESEND_API_KEY,from=process.env.RESEND_FROM_EMAIL;
   if(!apiKey||apiKey.length<10||!from||from.length>320)return {claimed:0,sent:0,retried:0,failed:0,cancelled:0,deferred:0,configurationMissing:true};
   const now=new Date(),staleLock=new Date(now.getTime()-LOCK_TTL_MS),limit=Math.max(1,Math.min(batchSize,25));
@@ -24,7 +24,7 @@ export async function dispatchSocialIncidentEmails(batchSize=10):Promise<{claime
     orderBy:{createdAt:"asc"},take:100,
     select:{id:true,workspaceId:true,incidentId:true,recipientUserId:true,recipientEmail:true,incidentOccurrence:true,eventType:true,attempts:true,createdAt:true,incident:{select:{status:true,severity:true,category:true,message:true,workspace:{select:{name:true}}}}},
   });
-  const result={claimed:0,sent:0,retried:0,failed:0,cancelled:0,deferred:0};
+  const result={claimed:0,sent:0,retried:0,failed:0,cancelled:0,deferred:0,configurationMissing:false};
   for(const item of candidates){
     if(result.claimed>=limit)break;
     const preferences=await db.workspaceNotificationPreference.findUnique({
