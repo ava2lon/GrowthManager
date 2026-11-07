@@ -16,11 +16,16 @@ function digestPeriodKey(date: string, frequency: string): string {
 }
 
 export function digestDue(now: Date, timezone: string, frequency: string, sendTime: string): {periodKey: string} | null {
-  const clock = digestClock(now, timezone);
-  const match = /^(\\d{2}):(\\d{2})$/.exec(sendTime);
-  if (!match) return null;
-  const targetMinute = Number(match[1]) * 60 + Number(match[2]);
-  if (clock.minute < targetMinute) return null;
-  if (frequency === "WEEKLY" && clock.weekday !== "Mon") return null;
-  return {periodKey: digestPeriodKey(clock.date, frequency)};
+  try {
+    const clock = digestClock(now, timezone);
+    const match = /^(\\d{2}):(\\d{2})$/.exec(sendTime);
+    if (!match) return null;
+    const targetMinute = Number(match[1]) * 60 + Number(match[2]);
+    if (clock.minute < targetMinute) return null;
+    if (frequency === "WEEKLY" && clock.weekday !== "Mon") return null;
+    if (frequency !== "DAILY" && frequency !== "WEEKLY") return null;
+    return {periodKey: digestPeriodKey(clock.date, frequency)};
+  } catch {
+    return null;
+  }
 }
