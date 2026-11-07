@@ -116,9 +116,11 @@ export async function GET(request: Request) {
 
     const scopes = (token.scope ?? "").split(",").map((scope) => scope.trim()).filter(Boolean);
     if (!scopes.includes("user.info.basic")) throw new Error("TIKTOK_PROFILE_SCOPE_MISSING");
+    const analyticsEnabled = process.env.TIKTOK_ENABLE_ANALYTICS_SCOPE === "true";
+    if (analyticsEnabled && !scopes.includes("video.list")) throw new Error("TIKTOK_ANALYTICS_SCOPE_MISSING");
 
     const profile = await api<{data?: {user?: {open_id?: string; display_name?: string; avatar_url?: string}}}>(
-      "/v2/user/info/?fields=open_id,display_name,avatar_url", token.access_token,
+      "/v2/user/info/?fields="+["open_id","display_name","avatar_url",...(scopes.includes("user.info.stats")?["follower_count","following_count","likes_count","video_count"]:[])].join(","), token.access_token,
     );
     const user = profile.data?.user;
     if (!user?.open_id || user.open_id !== token.open_id || !user.display_name) {
@@ -140,6 +142,7 @@ export async function GET(request: Request) {
       displayName: user.display_name,
       avatarUrl: typeof user.avatar_url === "string" ? user.avatar_url : null,
       inboxUploadEnabled: scopes.includes("video.upload"),
+      analyticsEnabled: scopes.includes("video.list"),
       refreshTokenExpiresAt: refreshExpiresAt?.toISOString() ?? null,
     };
     const encrypted = encryptIntegrationCredentials({
@@ -171,7 +174,7 @@ export async function GET(request: Request) {
         data: {
           workspaceId:state.workspaceId,userId:state.userId,
           action:"social_account.connected",entityType:"SocialAccount",entityId:id,
-          metadata:{provider:"TIKTOK",scopes,inboxUploadEnabled:scopes.includes("video.upload")},
+          metadata:{provider:"TIKTOK",scopes,inboxUploadEnabled:scopes.includes("video.upload"),analyticsEnabled:scopes.includes("video.list")},
         },
       });
     });
