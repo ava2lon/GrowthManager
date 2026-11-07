@@ -254,6 +254,18 @@ export default async function SocialPage({searchParams}:{searchParams:Promise<{m
 </section>
 
 <section className="rounded-2xl border border-slate-200 bg-white p-5 sm:p-6">
+ <h2 className="font-semibold text-slate-900">X text composer</h2>
+ <p className="mt-1 text-sm text-slate-500">Create text-only X posts and schedule them through the GrowthManager worker. Media uploads are not enabled yet.</p>
+ {params.xPublish==="published"&&<p className="mt-2 text-sm text-emerald-700">X post published.</p>}
+ {xWritableAccounts.length>0?<form action={createXDraft} className="mt-4 grid gap-3">
+  <label className="grid gap-1 text-xs font-medium text-slate-600">X accounts <select name="accountIds" required multiple size={Math.min(5,Math.max(3,xWritableAccounts.length))} className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm">{xWritableAccounts.map(account=><option key={account.id} value={account.id}>{account.accountName} · {brandNames.get(account.brandId)??"Brand unavailable"}</option>)}</select></label>
+  <label className="grid gap-1 text-xs font-medium text-slate-600">Post text <textarea name="body" required maxLength={280} rows={3} placeholder="Write your X post…" className="rounded-lg border border-slate-300 px-3 py-2 text-sm"/></label>
+  <label className="grid gap-1 text-xs font-medium text-slate-600">Schedule (optional) <input name="scheduledAt" type="text" placeholder="2026-11-10T14:30:00+01:00" className="rounded-lg border border-slate-300 px-3 py-2 text-sm"/><span className="font-normal text-slate-400">Timezone-qualified ISO 8601; at least 15 minutes ahead.</span></label>
+  <button type="submit" className="w-fit rounded-xl bg-slate-950 px-4 py-2.5 text-sm font-semibold text-white">Save X draft</button>
+ </form>:<p className="mt-3 text-sm text-slate-500">Authorize publishing separately with the “Connect X publishing” link above. This adds tweet.write permission.</p>}
+</section>
+
+<section className="rounded-2xl border border-slate-200 bg-white p-5 sm:p-6">
         <div><h2 className="font-semibold text-slate-900">Meta analytics · Facebook and Instagram</h2><p className="mt-1 text-sm text-slate-500">Provider-native Page, account, and published-media insights. Metric names are preserved; unsupported metrics and permission gaps are reported rather than converted into cross-platform estimates.</p></div>
         {params.metaAnalytics==="refreshed"&&<p className="mt-3 rounded-lg bg-emerald-50 px-3 py-2 text-sm text-emerald-800">Meta analytics refresh completed.</p>}
         {metaAccounts.some(account=>account.provider==="FACEBOOK"&&!account.scopes.includes("read_insights"))&&<div className="mt-3 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900"><p>Some Facebook Pages need renewed Meta authorization to grant the new read_insights permission.</p><div className="mt-2 flex flex-wrap gap-2">{metaAccounts.filter(account=>account.provider==="FACEBOOK"&&!account.scopes.includes("read_insights")).map(account=><a key={account.id} href={"/api/integrations/meta/connect?brandId="+encodeURIComponent(account.brandId)} className="rounded-lg border border-amber-300 bg-white px-3 py-1.5 text-xs font-semibold text-amber-900">Reauthorize {account.accountName}</a>)}</div></div>}
