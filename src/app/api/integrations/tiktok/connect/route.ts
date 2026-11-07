@@ -9,7 +9,7 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 const COOKIE = "gm_tiktok_oauth_state";
-const SCOPES = ["user.info.basic", "video.upload"];
+const SCOPES = ["user.info.basic", "video.upload", ...(process.env.TIKTOK_ENABLE_ANALYTICS_SCOPE === "true" ? ["video.list", "user.info.stats"] : [])];
 
 function sign(value: string) {
   const secret = process.env.AUTH_SECRET;
