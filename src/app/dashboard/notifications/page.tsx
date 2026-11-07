@@ -65,6 +65,14 @@ export default async function NotificationsPage({searchParams}:{searchParams:Pro
             <label className="text-xs font-medium text-slate-600">Quiet hours end<input type="time" name="quietHoursEnd" defaultValue={preferences?.quietHoursEnd ?? "08:00"} className="mt-1 block w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"/></label>
           </div>
         </div>
+        <div className="rounded-xl border border-slate-100 p-4">
+          <label className="flex items-center gap-3 text-sm font-medium text-slate-700"><input type="checkbox" name="digestEnabled" defaultChecked={preferences?.digestEnabled ?? false} className="h-4 w-4 rounded border-slate-300"/> Replace immediate review emails with a digest</label>
+          <p className="mt-1 text-xs text-slate-500">When enabled, review emails are grouped into a scheduled summary. In-app notifications remain immediate.</p>
+          <div className="mt-3 grid gap-3 sm:grid-cols-2">
+            <label className="text-xs font-medium text-slate-600">Digest frequency<select name="digestFrequency" defaultValue={preferences?.digestFrequency ?? "DAILY"} className="mt-1 block w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"><option value="DAILY">Daily</option><option value="WEEKLY">Weekly (Monday)</option></select></label>
+            <label className="text-xs font-medium text-slate-600">Local send time<input type="time" name="digestSendTime" defaultValue={preferences?.digestSendTime ?? "09:00"} className="mt-1 block w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"/></label>
+          </div>
+        </div>
         <button type="submit" className="rounded-lg bg-slate-900 px-4 py-2 text-xs font-semibold text-white">Save preferences</button>
       </form>
     </section>
