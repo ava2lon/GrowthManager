@@ -73,7 +73,11 @@ export async function publishPinterestTarget(input:{targetId:string;workspaceId:
  let credentials;try{credentials=await getPinterestCredentials({workspaceId:input.workspaceId,accountId:target.socialAccount.id});}catch(error){return fail(error instanceof Error?error.message:"PINTEREST_AUTH_FAILED");}
  let coverUrl:string;try{coverUrl=await signedMediaUrl(image);}catch(error){return fail(error instanceof Error?error.message:"PINTEREST_MEDIA_SIGNING_FAILED");}
  const claim=await db.$transaction(async tx=>{
-  const changed=await tx.socialPostTarget.updateMany({where:{id:target.id,workspaceId:input.workspaceId,provider:"PINTEREST",status:{in:allowedStatuses}},data:{status:"PUBLISHING",errorCode:null}});
+  const scheduledDue = allowedStatuses.includes("SCHEDULED");
+  const changed=await tx.socialPostTarget.updateMany({where:{
+   id:target.id,workspaceId:input.workspaceId,provider:"PINTEREST",status:{in:allowedStatuses},
+   ...(scheduledDue ? {contentPost:{scheduledAt:{lte:new Date()}}} : {}),
+  },data:{status:"PUBLISHING",errorCode:null}});
   if(changed.count!==1)return null;
   const previous=await tx.socialPublishAttempt.aggregate({where:{workspaceId:input.workspaceId,targetId:target.id},_max:{attemptNumber:true}});
   const attempt=await tx.socialPublishAttempt.create({data:{workspaceId:input.workspaceId,targetId:target.id,attemptNumber:(previous._max.attemptNumber??0)+1,idempotencyKey:randomUUID(),status:"STARTED"},select:{id:true}});
