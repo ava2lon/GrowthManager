@@ -3,12 +3,12 @@
 import Link from "next/link";
 import {usePathname} from "next/navigation";
 import {signOut} from "next-auth/react";
-import {Activity,AlertTriangle,BarChart3,CalendarDays,Globe2,LayoutDashboard,LogOut,Megaphone,Images,Plug,Settings2,Sparkles,Users2,Workflow,Bell} from "lucide-react";
+import {Activity,AlertTriangle,BarChart3,CalendarDays,Globe2,LayoutDashboard,LogOut,Megaphone,Images,Plug,Settings2,Sparkles,Users2,Workflow,Bell,ShieldCheck} from "lucide-react";
 import {BrandMark} from "@/components/brand-mark";
 import {WorkspaceSwitcher} from "@/components/workspace-switcher";
 import {cn} from "@/lib/utils";
 
-const nav=[{label:"Overview",href:"/dashboard",icon:LayoutDashboard},{label:"Brands",href:"/dashboard/brands",icon:Users2},{label:"Social media",href:"/dashboard/social",icon:Megaphone},{label:"Media library",href:"/dashboard/media",icon:Images},{label:"Content calendar",href:"/dashboard/calendar",icon:CalendarDays},{label:"Campaigns",href:"/dashboard/campaigns",icon:Activity},{label:"Analytics",href:"/dashboard/analytics",icon:BarChart3},{label:"Websites & SEO",href:"/dashboard/websites",icon:Globe2},{label:"AI assistant",href:"/dashboard/ai",icon:Sparkles},{label:"Notifications",href:"/dashboard/notifications",icon:Bell},{label:"Incidents",href:"/dashboard/incidents",icon:AlertTriangle},{label:"Automation health",href:"/dashboard/automations",icon:Workflow},{label:"Integrations",href:"/dashboard/integrations",icon:Plug},{label:"Team",href:"/dashboard/team",icon:Users2}];
+const nav=[{label:"Overview",href:"/dashboard",icon:LayoutDashboard},{label:"Brands",href:"/dashboard/brands",icon:Users2},{label:"Social media",href:"/dashboard/social",icon:Megaphone},{label:"Media library",href:"/dashboard/media",icon:Images},{label:"Content calendar",href:"/dashboard/calendar",icon:CalendarDays},{label:"Campaigns",href:"/dashboard/campaigns",icon:Activity},{label:"Analytics",href:"/dashboard/analytics",icon:BarChart3},{label:"Websites & SEO",href:"/dashboard/websites",icon:Globe2},{label:"AI assistant",href:"/dashboard/ai",icon:Sparkles},{label:"Notifications",href:"/dashboard/notifications",icon:Bell},{label:"Incidents",href:"/dashboard/incidents",icon:AlertTriangle},{label:"Reliability",href:"/dashboard/reliability",icon:ShieldCheck},{label:"Automation health",href:"/dashboard/automations",icon:Workflow},{label:"Integrations",href:"/dashboard/integrations",icon:Plug},{label:"Team",href:"/dashboard/team",icon:Users2}];
 
 type DashboardUser={name?:string|null;email?:string|null};
 type WorkspaceRole="OWNER"|"ADMIN"|"MEMBER"|"VIEWER";
