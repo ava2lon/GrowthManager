@@ -1565,6 +1565,36 @@ export async function retryXPublish(formData:FormData){
 }
 
 
+export async function updateSocialDraftText(formData:FormData){
+ const context=await requireWorkspaceRole("MEMBER");
+ const contentPostId=String(formData.get("contentPostId")??"").trim();
+ const body=String(formData.get("body")??"").trim();
+ if(!contentPostId||contentPostId.length>128||!body)throw new Error("Provide a valid draft and non-empty post text.");
+ await enforceSocialRateLimit(context.workspace.id,context.userId,"publish");
+ await db.$transaction(async tx=>{
+  const post=await tx.contentPost.findFirst({
+   where:{id:contentPostId,workspaceId:context.workspace.id,status:"DRAFT"},
+   select:{id:true,publishTargets:{select:{id:true,provider:true,status:true,uploadMetadata:true}}}
+  });
+  if(!post||post.publishTargets.length===0||post.publishTargets.some(target=>target.status!=="DRAFT"||target.provider==="X"))throw new Error("Only unpublished non-X drafts with every target still in DRAFT can be edited here. Use the X editor for X-only drafts.");
+  const limits:Record<string,number>={FACEBOOK:63206,INSTAGRAM:2200,LINKEDIN:3000,TIKTOK:2200,YOUTUBE:5000,PINTEREST:500};
+  for(const target of post.publishTargets){
+   const limit=limits[target.provider];
+   if(!limit||body.length>limit)throw new Error(`${target.provider} draft text must be ${limit??"within the supported"} characters or fewer.`);
+  }
+  const changed=await tx.contentPost.updateMany({where:{id:post.id,workspaceId:context.workspace.id,status:"DRAFT"},data:{body}});
+  if(changed.count!==1)throw new Error("This draft changed concurrently. Refresh and retry.");
+  for(const target of post.publishTargets){
+   const metadata=readMetadata(target.uploadMetadata);
+   const data=target.provider==="PINTEREST"?{uploadMetadata:{...metadata,description:body}}:{};
+   const result=await tx.socialPostTarget.updateMany({where:{id:target.id,workspaceId:context.workspace.id,provider:target.provider,status:"DRAFT"},data});
+   if(result.count!==1)throw new Error("A publishing target changed concurrently. Refresh and verify the draft.");
+  }
+  await tx.activityLog.create({data:{workspaceId:context.workspace.id,userId:context.userId,action:"social_post.draft_updated",entityType:"ContentPost",entityId:post.id,metadata:{providers:[...new Set(post.publishTargets.map(target=>target.provider))],targetCount:post.publishTargets.length,fields:["body"]}}});
+ });
+ revalidatePath("/dashboard/social");
+}
+
 export async function updateXDraft(formData:FormData){
  const context=await requireWorkspaceRole("MEMBER");
  const contentPostId=String(formData.get("contentPostId")??"").trim();
