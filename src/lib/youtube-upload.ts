@@ -4,33 +4,10 @@ import {db} from "@/lib/db";
 import {decryptIntegrationCredentials, encryptIntegrationCredentials} from "@/lib/integration-crypto";
 import {getSupabaseStorageConfig, storageHeaders} from "@/lib/media-storage";
 import {getFreshYouTubeCredentials} from "@/lib/youtube-auth";
+import {parseYouTubeCommittedOffset, validateYouTubeMetadata, validateYouTubeSessionUrl} from "@/lib/youtube-upload-utils";
 
 const MAX_VIDEO_BYTES = 100 * 1024 * 1024;
 const CHUNK_BYTES = 8 * 1024 * 1024; // Google requires non-final chunks to be multiples of 256 KiB.
-const SESSION_HOSTS = new Set(["www.googleapis.com", "youtube.googleapis.com"]);
-type VideoMetadata = {title: string; description: string; privacyStatus: "private" | "unlisted" | "public"; categoryId?: string; tags?: string[]};
-
-function safeMetadata(value: unknown, fallbackTitle: string): VideoMetadata {
-  const raw = value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : {};
-  const title = typeof raw.title === "string" ? raw.title.trim() : fallbackTitle;
-  const description = typeof raw.description === "string" ? raw.description : "";
-  const privacy = raw.privacyStatus;
-  if (!title || title.length > 100 || description.length > 5000) throw new Error("YOUTUBE_METADATA_INVALID");
-  const privacyStatus = privacy === "unlisted" || privacy === "public" ? privacy : "private";
-  const tags = Array.isArray(raw.tags) ? raw.tags.filter((x): x is string => typeof x === "string").map(x => x.trim()).filter(Boolean).slice(0, 20) : [];
-  if (tags.some(x => x.length > 30)) throw new Error("YOUTUBE_TAGS_INVALID");
-  const categoryId = typeof raw.categoryId === "string" && /^\d{1,3}$/.test(raw.categoryId) ? raw.categoryId : undefined;
-  return {title, description, privacyStatus, ...(categoryId ? {categoryId} : {}), ...(tags.length ? {tags} : {})};
-}
-
-function validateSessionUrl(value: string) {
-  const url = new URL(value);
-  if (url.protocol !== "https:" || !SESSION_HOSTS.has(url.hostname) ||
-      !url.pathname.startsWith("/upload/youtube/v3/videos") || url.username || url.password ||
-      url.hash || url.search.length > 4096) throw new Error("YOUTUBE_UPLOAD_SESSION_INVALID");
-  return url;
-}
-
 async function failTarget(input: {targetId: string; workspaceId: string; code: string}) {
   const now = new Date();
   await db.$transaction(async tx => {
@@ -88,7 +65,7 @@ export async function startYouTubeUploadTarget(input: {targetId: string; workspa
       !Number.isSafeInteger(size) || size < 1 || size > MAX_VIDEO_BYTES) {
     throw new Error("YOUTUBE_VIDEO_CONSTRAINTS");
   }
-  const metadata = safeMetadata(target.uploadMetadata, target.contentPost.title || target.contentPost.body.slice(0, 100));
+  const metadata = validateYouTubeMetadata(target.uploadMetadata, target.contentPost.title || target.contentPost.body.slice(0, 100));
   const claim = await db.socialPostTarget.updateMany({
     where: {id: target.id, workspaceId: input.workspaceId, provider: "YOUTUBE", status: "DRAFT"},
     data: {status: "PUBLISHING", errorCode: null, uploadTotalBytes: BigInt(size), uploadOffset: 0n},
@@ -134,7 +111,7 @@ export async function startYouTubeUploadTarget(input: {targetId: string; workspa
     if (!response.ok) throw new Error(response.status === 403 ? "YOUTUBE_UPLOAD_FORBIDDEN_OR_QUOTA" : "YOUTUBE_UPLOAD_SESSION_INIT_FAILED");
     const location = response.headers.get("location");
     if (!location) throw new Error("YOUTUBE_UPLOAD_SESSION_MISSING");
-    const sessionUrl = validateSessionUrl(location);
+    const sessionUrl = validateYouTubeSessionUrl(location);
     const encryptedSession = encryptIntegrationCredentials(
       {sessionUrl: sessionUrl.toString()}, input.workspaceId, target.id,
     );
@@ -199,7 +176,7 @@ export async function processYouTubeUploadTarget(input: {targetId: string; works
     }
     const sessionEnvelope = decryptIntegrationCredentials(target.uploadSessionEncrypted, input.workspaceId, target.id);
     if (typeof sessionEnvelope.sessionUrl !== "string") throw new Error("YOUTUBE_UPLOAD_SESSION_INVALID");
-    const sessionUrl = validateSessionUrl(sessionEnvelope.sessionUrl);
+    const sessionUrl = validateYouTubeSessionUrl(sessionEnvelope.sessionUrl);
     const {accessToken} = await getFreshYouTubeCredentials({workspaceId: input.workspaceId, accountId: target.socialAccount.id});
 
     // Google is authoritative about the committed offset; never infer it from a timed-out PUT.
@@ -222,8 +199,7 @@ export async function processYouTubeUploadTarget(input: {targetId: string; works
       throw new Error(statusResponse.status === 401 ? "YOUTUBE_AUTH_FAILED" : "YOUTUBE_UPLOAD_STATUS_FAILED");
     }
     const range = statusResponse.headers.get("range");
-    const offset = range ? Number(range.match(/^bytes=0-(\d+)$/)?.[1]) + 1 : 0;
-    if (!Number.isSafeInteger(offset) || offset < 0 || offset > total) throw new Error("YOUTUBE_UPLOAD_RANGE_INVALID");
+    const offset = parseYouTubeCommittedOffset(range, total);
     if (offset === total) {
       await defer();
       return {status: "PROCESSING" as const};
@@ -263,10 +239,8 @@ export async function processYouTubeUploadTarget(input: {targetId: string; works
     }
     if (uploadResponse.status === 308) {
       const committedRange = uploadResponse.headers.get("range");
-      const committedOffset = committedRange ? Number(committedRange.match(/^bytes=0-(\d+)$/)?.[1]) + 1 : 0;
-      if (!Number.isSafeInteger(committedOffset) || committedOffset < offset || committedOffset > total) {
-        throw new Error("YOUTUBE_UPLOAD_RANGE_INVALID");
-      }
+      const committedOffset = parseYouTubeCommittedOffset(committedRange, total);
+      if (committedOffset < offset) throw new Error("YOUTUBE_UPLOAD_RANGE_INVALID");
       await db.socialPostTarget.updateMany({
         where: {id: target.id, workspaceId: input.workspaceId, status: "PUBLISHING"},
         data: {uploadOffset: BigInt(committedOffset), nextCheckAt: new Date(Date.now() + 30_000)},
