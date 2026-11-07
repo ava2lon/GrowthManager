@@ -57,7 +57,9 @@ export default async function IntegrationsPage({searchParams}: {searchParams: Pr
   let selectedWorkflow: N8nWorkflowDetail | null = null;
   let selectedWorkflowUnavailable = false;
   const n8nIntegration = integrations.find((item) => item.provider === "n8n");
-  const analyticsWindowStart = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+  const analyticsWindowStart = new Date();
+  analyticsWindowStart.setHours(0, 0, 0, 0);
+  analyticsWindowStart.setDate(analyticsWindowStart.getDate() - 6);
   const analyticsSnapshots = n8nIntegration ? await db.n8nExecutionSnapshot.findMany({
     where: {
       workspaceId: context.workspace.id,
