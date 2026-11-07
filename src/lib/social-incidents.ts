@@ -12,19 +12,51 @@ function safeCode(value:string|null|undefined,fallback:string):string {
 }
 async function activate(signal:Signal,now:Date):Promise<"created"|"reopened"|"updated"> {
   return db.$transaction(async tx=>{
-    const existing=await tx.workspaceIncident.findUnique({where:{workspaceId_dedupeKey:{workspaceId:signal.workspaceId,dedupeKey:signal.dedupeKey}},select:{id:true,status:true}});
-    if(existing?.status==="OPEN"){
+    const existing=await tx.workspaceIncident.findUnique({
+      where:{workspaceId_dedupeKey:{workspaceId:signal.workspaceId,dedupeKey:signal.dedupeKey}},
+      select:{id:true,status:true,occurrenceCount:true},
+    });
+    let incidentId:string,occurrence:number,result:"created"|"reopened"|"updated";
+    if(existing&&(existing.status==="OPEN"||existing.status==="ACKNOWLEDGED")){
       await tx.workspaceIncident.update({where:{id:existing.id},data:{lastSeenAt:now,message:signal.message,errorCode:signal.errorCode??null,metadata:signal.metadata}});
-      return "updated";
-    }
-    if(existing){
-      await tx.workspaceIncident.update({where:{id:existing.id},data:{status:"OPEN",severity:signal.severity,message:signal.message,errorCode:signal.errorCode??null,occurrenceCount:{increment:1},firstSeenAt:now,lastSeenAt:now,resolvedAt:null,escalatedAt:null,resolutionMessage:null,metadata:signal.metadata}});
+      incidentId=existing.id;occurrence=existing.occurrenceCount;result="updated";
+    }else if(existing){
+      const reopened=await tx.workspaceIncident.update({
+        where:{id:existing.id},
+        data:{status:"OPEN",severity:signal.severity,message:signal.message,errorCode:signal.errorCode??null,occurrenceCount:{increment:1},firstSeenAt:now,lastSeenAt:now,resolvedAt:null,escalatedAt:null,resolutionMessage:null,metadata:signal.metadata},
+        select:{id:true,occurrenceCount:true},
+      });
+      incidentId=reopened.id;occurrence=reopened.occurrenceCount;result="reopened";
     }else{
-      await tx.workspaceIncident.create({data:{workspaceId:signal.workspaceId,sourceType:signal.sourceType,sourceId:signal.sourceId,socialAccountId:signal.socialAccountId,socialPostTargetId:signal.socialPostTargetId,category:signal.category,severity:signal.severity,dedupeKey:signal.dedupeKey,message:signal.message,errorCode:signal.errorCode??null,firstSeenAt:now,lastSeenAt:now,metadata:signal.metadata}});
+      const created=await tx.workspaceIncident.create({
+        data:{workspaceId:signal.workspaceId,sourceType:signal.sourceType,sourceId:signal.sourceId,socialAccountId:signal.socialAccountId,socialPostTargetId:signal.socialPostTargetId,category:signal.category,severity:signal.severity,dedupeKey:signal.dedupeKey,message:signal.message,errorCode:signal.errorCode??null,firstSeenAt:now,lastSeenAt:now,metadata:signal.metadata},
+        select:{id:true,occurrenceCount:true},
+      });
+      incidentId=created.id;occurrence=created.occurrenceCount;result="created";
     }
-    const admins=await tx.workspaceMembership.findMany({where:{workspaceId:signal.workspaceId,role:{in:["OWNER","ADMIN"]}},select:{userId:true}});
-    if(admins.length)await tx.workspaceNotification.createMany({data:admins.map(member=>({workspaceId:signal.workspaceId,userId:member.userId,type:"SOCIAL_INCIDENT" as const,title:"Social integration incident",message:signal.message,href:"/dashboard/social"}))});
-    return existing?"reopened":"created";
+    if(result!=="updated"){
+      const admins=await tx.workspaceMembership.findMany({
+        where:{workspaceId:signal.workspaceId,role:{in:["OWNER","ADMIN"]}},
+        select:{userId:true,user:{select:{email:true}}},
+      });
+      const preferences=await tx.workspaceNotificationPreference.findMany({
+        where:{workspaceId:signal.workspaceId,userId:{in:admins.map(member=>member.userId)}},
+        select:{userId:true,inAppSocialIncidents:true,emailSocialIncidents:true},
+      });
+      const byUser=new Map(preferences.map(item=>[item.userId,item]));
+      const inApp=admins.filter(member=>byUser.get(member.userId)?.inAppSocialIncidents??true);
+      if(inApp.length)await tx.workspaceNotification.createMany({data:inApp.map(member=>({
+        workspaceId:signal.workspaceId,userId:member.userId,type:"SOCIAL_INCIDENT" as const,
+        title:result==="reopened"?"Social incident reopened":"Social integration incident",
+        message:signal.message,href:"/dashboard/social",
+      }))});
+      const email=admins.filter(member=>byUser.get(member.userId)?.emailSocialIncidents===true&&member.user.email);
+      if(email.length)await tx.workspaceIncidentEmailDelivery.createMany({
+        data:email.map(member=>({workspaceId:signal.workspaceId,incidentId,recipientUserId:member.userId,recipientEmail:member.user.email,incidentOccurrence:occurrence,eventType:"OPENED"})),
+        skipDuplicates:true,
+      });
+    }
+    return result;
   });
 }
 
@@ -53,35 +85,47 @@ export async function synchronizeSocialIncidents():Promise<{created:number;reope
   for(const signal of signals){const result=await activate(signal,now);if(result==="created")created++;else if(result==="reopened")reopened++;else updated++;}
   const scannedAccounts=new Set(accounts.map(account=>account.id));
   const scannedTargets=new Set(targets.map(target=>target.id));
-  const open=await db.workspaceIncident.findMany({where:{status:"OPEN",sourceType:{in:["SOCIAL_ACCOUNT","SOCIAL_PUBLISH_TARGET"]}},select:{id:true,workspaceId:true,dedupeKey:true,sourceType:true,sourceId:true},take:2000});
+  const open=await db.workspaceIncident.findMany({where:{status:{in:["OPEN","ACKNOWLEDGED"]},sourceType:{in:["SOCIAL_ACCOUNT","SOCIAL_PUBLISH_TARGET"]}},select:{id:true,workspaceId:true,dedupeKey:true,sourceType:true,sourceId:true,occurrenceCount:true,message:true,severity:true},take:2000});
   for(const incident of open){
     const sourceWasScanned=incident.sourceType==="SOCIAL_ACCOUNT"?scannedAccounts.has(incident.sourceId):scannedTargets.has(incident.sourceId);
     if(!sourceWasScanned||activeKeys.has(incident.workspaceId+"|"+incident.dedupeKey))continue;
-    const changed=await db.workspaceIncident.updateMany({where:{id:incident.id,workspaceId:incident.workspaceId,status:"OPEN"},data:{status:"RESOLVED",resolvedAt:now,resolutionMessage:"The latest social publishing worker scan no longer detects this condition."}});
+    const changed=await db.workspaceIncident.updateMany({where:{id:incident.id,workspaceId:incident.workspaceId,status:{in:["OPEN","ACKNOWLEDGED"]}},data:{status:"RESOLVED",resolvedAt:now,resolutionMessage:"The latest social publishing worker scan no longer detects this condition."}});
     if(changed.count){
       resolved++;
-      const admins=await db.workspaceMembership.findMany({where:{workspaceId:incident.workspaceId,role:{in:["OWNER","ADMIN"]}},select:{userId:true}});
-      if(admins.length)await db.workspaceNotification.createMany({data:admins.map(member=>({workspaceId:incident.workspaceId,userId:member.userId,type:"SOCIAL_INCIDENT_RESOLVED" as const,title:"Social incident resolved",message:"A previously detected social account or publishing issue has recovered.",href:"/dashboard/social"}))});
+      await db.$transaction(async tx=>{
+        const admins=await tx.workspaceMembership.findMany({where:{workspaceId:incident.workspaceId,role:{in:["OWNER","ADMIN"]}},select:{userId:true,user:{select:{email:true}}}});
+        const prefs=await tx.workspaceNotificationPreference.findMany({where:{workspaceId:incident.workspaceId,userId:{in:admins.map(member=>member.userId)}},select:{userId:true,inAppSocialIncidents:true,emailSocialIncidents:true}});
+        const byUser=new Map(prefs.map(item=>[item.userId,item]));
+        const inApp=admins.filter(member=>byUser.get(member.userId)?.inAppSocialIncidents??true);
+        if(inApp.length)await tx.workspaceNotification.createMany({data:inApp.map(member=>({workspaceId:incident.workspaceId,userId:member.userId,type:"SOCIAL_INCIDENT_RESOLVED" as const,title:"Social incident resolved",message:"A previously detected social account or publishing issue has recovered.",href:"/dashboard/social"}))});
+        const email=admins.filter(member=>byUser.get(member.userId)?.emailSocialIncidents===true&&member.user.email);
+        if(email.length)await tx.workspaceIncidentEmailDelivery.createMany({data:email.map(member=>({workspaceId:incident.workspaceId,incidentId:incident.id,recipientUserId:member.userId,recipientEmail:member.user.email,incidentOccurrence:incident.occurrenceCount,eventType:"RESOLVED"})),skipDuplicates:true});
+      });
     }
   }
   let escalated=0;
   const escalationCutoff=new Date(now.getTime()-30*60_000);
   const dueEscalations=await db.workspaceIncident.findMany({
-    where:{status:"OPEN",sourceType:{in:["SOCIAL_ACCOUNT","SOCIAL_PUBLISH_TARGET"]},escalatedAt:null,firstSeenAt:{lte:escalationCutoff}},
+    where:{status:{in:["OPEN","ACKNOWLEDGED"]},sourceType:{in:["SOCIAL_ACCOUNT","SOCIAL_PUBLISH_TARGET"]},escalatedAt:null,firstSeenAt:{lte:escalationCutoff}},
     orderBy:{firstSeenAt:"asc"},take:500,select:{id:true,workspaceId:true,message:true,category:true,severity:true},
   });
   for(const incident of dueEscalations){
     await db.$transaction(async tx=>{
-      const admins=await tx.workspaceMembership.findMany({where:{workspaceId:incident.workspaceId,role:{in:["OWNER","ADMIN"]}},select:{userId:true}});
+      const admins=await tx.workspaceMembership.findMany({where:{workspaceId:incident.workspaceId,role:{in:["OWNER","ADMIN"]}},select:{userId:true,user:{select:{email:true}}}});
       if(!admins.length)return;
-      const claimed=await tx.workspaceIncident.updateMany({where:{id:incident.id,workspaceId:incident.workspaceId,status:"OPEN",escalatedAt:null},data:{escalatedAt:now}});
+      const claimed=await tx.workspaceIncident.updateMany({where:{id:incident.id,workspaceId:incident.workspaceId,status:{in:["OPEN","ACKNOWLEDGED"]},escalatedAt:null},data:{escalatedAt:now}});
       if(!claimed.count)return;
-      await tx.workspaceNotification.createMany({data:admins.map(member=>({
+      const prefs=await tx.workspaceNotificationPreference.findMany({where:{workspaceId:incident.workspaceId,userId:{in:admins.map(member=>member.userId)}},select:{userId:true,inAppSocialIncidents:true,emailSocialIncidents:true}});
+      const byUser=new Map(prefs.map(item=>[item.userId,item]));
+      const inApp=admins.filter(member=>byUser.get(member.userId)?.inAppSocialIncidents??true);
+      if(inApp.length)await tx.workspaceNotification.createMany({data:inApp.map(member=>({
         workspaceId:incident.workspaceId,userId:member.userId,type:"SOCIAL_INCIDENT_ESCALATED" as const,
         title:"Unresolved social incident escalation",
         message:incident.category.replaceAll("_"," ")+" remains open after 30 minutes: "+incident.message,
         href:"/dashboard/social",
       }))});
+      const email=admins.filter(member=>byUser.get(member.userId)?.emailSocialIncidents===true&&member.user.email);
+      if(email.length)await tx.workspaceIncidentEmailDelivery.createMany({data:email.map(member=>({workspaceId:incident.workspaceId,incidentId:incident.id,recipientUserId:member.userId,recipientEmail:member.user.email,incidentOccurrence:incident.occurrenceCount,eventType:"ESCALATED"})),skipDuplicates:true});
       escalated++;
     });
   }
