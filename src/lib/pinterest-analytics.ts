@@ -6,6 +6,7 @@ import {getPinterestCredentials,pinterestApi} from "@/lib/pinterest-auth";
 const METRIC_TYPES=["IMPRESSION","SAVE","OUTBOUND_CLICK","PIN_CLICK","ENGAGEMENT","ENGAGEMENT_RATE"] as const;
 type MetricName=typeof METRIC_TYPES[number];
 type MetricValues=Partial<Record<MetricName,number>>;
+const ALIASES:Record<MetricName,string[]>={IMPRESSION:["IMPRESSION","impression"],SAVE:["SAVE","save"],OUTBOUND_CLICK:["OUTBOUND_CLICK","outbound_click","clickthrough"],PIN_CLICK:["PIN_CLICK","pin_click"],ENGAGEMENT:["ENGAGEMENT","engagement"],ENGAGEMENT_RATE:["ENGAGEMENT_RATE","engagement_rate"]};
 type PinterestDailyMetric={date?:string;data_status?:string;metrics?:Record<string,unknown>};
 type PinterestAnalyticsResponse=Record<string,{daily_metrics?:PinterestDailyMetric[];summary_metrics?:Record<string,unknown>}>;
 function dateOnly(date:Date){return date.toISOString().slice(0,10)}
@@ -13,7 +14,7 @@ function finiteMetric(value:unknown){if(typeof value==="number"&&Number.isFinite
 function normalizeMetrics(input:Record<string,unknown>|undefined):MetricValues{
  const result:MetricValues={};
  if(!input)return result;
- for(const name of METRIC_TYPES){const value=finiteMetric(input[name]);if(value!==null)result[name]=value}
+ for(const name of METRIC_TYPES){for(const key of ALIASES[name]){const value=finiteMetric(input[key]);if(value!==null){result[name]=value;break}}}
  return result;
 }
 export async function refreshPinterestAccountAnalytics(input:{workspaceId:string;accountId:string;asOf?:Date}){
