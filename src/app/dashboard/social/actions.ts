@@ -1279,7 +1279,7 @@ export async function checkPinterestAccountHealth(formData:FormData){
     displayName=(profile.business_name||profile.username||account.accountName).slice(0,255);
     const boardData=await pinterestApi<{items?:Array<{id?:string;name?:string;privacy?:string}>;bookmark?:string|null}>(credentials.accessToken,"/v5/boards?page_size=100");
     boards=(boardData.items??[]).filter(x=>typeof x.id==="string"&&typeof x.name==="string").map(x=>({id:x.id!,name:x.name!.slice(0,100),privacy:typeof x.privacy==="string"?x.privacy:"UNKNOWN"}));
-    metadata={...metadata,username:profile.username??metadata.username,boardCount:boards.length,boards,hasMoreBoards:!!boardData.bookmark};
+    metadata={...metadata,username:profile.username??metadata.username,boardCount:boards.length,boards,hasMoreBoards:!!boardData.bookmark,boardBookmark:typeof boardData.bookmark==="string"?boardData.bookmark:null};
    }
   }
  }catch(error){const code=error instanceof Error?error.message:"";failure=["PINTEREST_AUTH_FAILED","PINTEREST_REAUTHORIZATION_REQUIRED","PINTEREST_CREDENTIAL_DECRYPTION_FAILED","PINTEREST_REQUIRED_SCOPE_MISSING","PINTEREST_ACCOUNT_MISMATCH","PINTEREST_ACCOUNT_NOT_CONNECTED"].includes(code)?code:code==="PINTEREST_NOT_CONFIGURED"?"PINTEREST_NOT_CONFIGURED":"PINTEREST_PROVIDER_UNAVAILABLE"}
