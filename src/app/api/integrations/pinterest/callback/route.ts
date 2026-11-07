@@ -31,7 +31,7 @@ export async function GET(request:Request){
   const response=await fetch("https://api.pinterest.com/v5/oauth/token",{method:"POST",headers:{Authorization:basicAuth(),"Content-Type":"application/x-www-form-urlencoded","Cache-Control":"no-cache"},body:new URLSearchParams({grant_type:"authorization_code",code,redirect_uri:redirectUri}),cache:"no-store",redirect:"error",signal:AbortSignal.timeout(12000)});
   const token=await response.json().catch(()=>null) as Token|null;
   if(!response.ok||!token?.access_token||!token.refresh_token||!Number.isFinite(token.expires_in)||!Number.isFinite(token.refresh_token_expires_in)||!token.scope)throw new Error("PINTEREST_TOKEN_EXCHANGE_FAILED");
-  const scopes=token.scope.split(/[ ,]+/).filter(Boolean);if(!["user_accounts:read","boards:read","pins:write"].every(x=>scopes.includes(x)))throw new Error("PINTEREST_SCOPE_MISSING");
+  const scopes=token.scope.split(/[ ,]+/).filter(Boolean);if(!["user_accounts:read","boards:read","pins:read","pins:write"].every(x=>scopes.includes(x)))throw new Error("PINTEREST_SCOPE_MISSING");
   const profile=await api<{id?:string;username?:string;account_type?:string;business_name?:string;profile_image?:string}>(token.access_token,"/v5/user_account");
   if(!profile.id||!profile.username)throw new Error("PINTEREST_IDENTITY_MISSING");
   const boardPayload=await api<{items?:Array<{id?:string;name?:string;privacy?:string}>;bookmark?:string|null}>(token.access_token,"/v5/boards?page_size=100");
