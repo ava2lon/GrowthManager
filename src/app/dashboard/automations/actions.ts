@@ -486,9 +486,9 @@ export async function reconcileAutomationBlueprintProvisioning(formData: FormDat
     throw new Error("Workspace blueprint not found.");
   }
   const definition = blueprint.definition as Record<string, unknown>;
+  const workflowId = typeof definition.n8nWorkflowId === "string" ? definition.n8nWorkflowId : null;
   if (definition.kind !== "GROWTHMANAGER_AUTOMATION_BLUEPRINT" ||
-      !["PROVISIONING", "CREATE_OUTCOME_UNKNOWN", "CREATED_UNVERIFIED"].includes(String(definition.provisioningStatus)) ||
-      typeof definition.n8nWorkflowId === "string") {
+      !["PROVISIONING", "CREATE_OUTCOME_UNKNOWN", "CREATED_UNVERIFIED"].includes(String(definition.provisioningStatus))) {
     throw new Error("This blueprint does not need provisioning reconciliation.");
   }
 
@@ -497,6 +497,9 @@ export async function reconcileAutomationBlueprintProvisioning(formData: FormDat
     select: {id: true, credentialsEncrypted: true},
   });
   if (!integration?.credentialsEncrypted) throw new Error("A connected n8n integration is required to reconcile this blueprint.");
+  if (workflowId && definition.n8nIntegrationId !== integration.id) {
+    throw new Error("The recorded workflow belongs to a different n8n connection. Reconnect the original instance before reconciling.");
+  }
   let credentials: Record<string, unknown>;
   try {
     credentials = decryptIntegrationCredentials(integration.credentialsEncrypted, context.workspace.id, integration.id);
@@ -508,24 +511,35 @@ export async function reconcileAutomationBlueprintProvisioning(formData: FormDat
   }
 
   const {listN8nWorkflows, getN8nWorkflowDetail} = await import("@/lib/n8n-client");
-  let inventory: Awaited<ReturnType<typeof listN8nWorkflows>>;
-  try {
-    inventory = await listN8nWorkflows(credentials.baseUrl, credentials.apiKey);
-  } catch {
-    throw new Error("Could not inspect n8n workflows. No changes were made.");
-  }
-  const expectedName = "GrowthManager · " + blueprint.name;
-  const matches = inventory.workflows.filter(item => item.name === expectedName);
-  if (matches.length !== 1) {
-    if (matches.length === 0 && inventory.hasMore) {
-      throw new Error("The matching workflow may be outside the current inventory page. Inspect n8n directly before retrying.");
+  let detail: Awaited<ReturnType<typeof getN8nWorkflowDetail>>;
+  if (workflowId) {
+    try {
+      detail = await getN8nWorkflowDetail(credentials.baseUrl, credentials.apiKey, workflowId);
+    } catch {
+      throw new Error("Could not verify the recorded n8n workflow. No changes were made.");
     }
-    throw new Error(matches.length > 1
-      ? "Multiple workflows have this exact name. Resolve duplicates in n8n before linking."
-      : "No matching workflow was found. Inspect n8n directly; GrowthManager will not create another copy automatically.");
+    if (detail.name !== "GrowthManager · " + blueprint.name) {
+      throw new Error("The recorded workflow name no longer matches this blueprint. Resolve the link manually.");
+    }
+  } else {
+    let inventory: Awaited<ReturnType<typeof listN8nWorkflows>>;
+    try {
+      inventory = await listN8nWorkflows(credentials.baseUrl, credentials.apiKey);
+    } catch {
+      throw new Error("Could not inspect n8n workflows. No changes were made.");
+    }
+    const expectedName = "GrowthManager · " + blueprint.name;
+    const matches = inventory.workflows.filter(item => item.name === expectedName);
+    if (matches.length !== 1) {
+      if (matches.length === 0 && inventory.hasMore) {
+        throw new Error("The matching workflow may be outside the current inventory page. Inspect n8n directly before retrying.");
+      }
+      throw new Error(matches.length > 1
+        ? "Multiple workflows have this exact name. Resolve duplicates in n8n before linking."
+        : "No matching workflow was found. Inspect n8n directly; GrowthManager will not create another copy automatically.");
+    }
+    detail = await getN8nWorkflowDetail(credentials.baseUrl, credentials.apiKey, matches[0].id);
   }
-
-  const detail = await getN8nWorkflowDetail(credentials.baseUrl, credentials.apiKey, matches[0].id);
   const linkedDefinition = {
     ...definition,
     executionMode: "N8N_STARTER_SCAFFOLD",
