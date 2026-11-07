@@ -637,7 +637,9 @@ export async function checkLinkedInAccountHealth(formData:FormData){
  try{
   const credentials=await getLinkedInCredentials({workspaceId:context.workspace.id,accountId:account.id});
   const meta=readMetadata(account.metadata);
-  if(meta.accountType==="MEMBER"){
+  const requiredScope=meta.accountType==="ORGANIZATION"?"w_organization_social":"w_member_social";
+  if(!account.scopes.includes(requiredScope)||(meta.accountType==="ORGANIZATION"&&!account.scopes.includes("r_organization_admin"))){failure="LINKEDIN_PUBLISH_SCOPE_MISSING";}
+  else if(meta.accountType==="MEMBER"){
    const response=await fetch("https://api.linkedin.com/v2/userinfo",{headers:linkedinApiHeaders(credentials.accessToken),cache:"no-store",redirect:"error",signal:AbortSignal.timeout(10000)});
    const payload=await response.json().catch(()=>null) as {sub?:string;name?:string}|null;
    if(response.status===401||response.status===403)failure="LINKEDIN_AUTH_FAILED";
@@ -658,7 +660,7 @@ export async function checkLinkedInAccountHealth(formData:FormData){
   if(changed.count!==1)throw new Error("LinkedIn account changed during the health check. Refresh and retry.");
   await tx.activityLog.create({data:{workspaceId:context.workspace.id,userId:context.userId,action:failure?"social_account.health_check_failed":"social_account.health_check_succeeded",entityType:"SocialAccount",entityId:account.id,metadata:{provider:"LINKEDIN",errorCode:failure,authorizationStateChanged:definitive}}});
  });
- revalidatePath("/dashboard/social");if(failure)throw new Error(failure==="LINKEDIN_REAUTHORIZATION_REQUIRED"||failure==="LINKEDIN_AUTH_FAILED"?"LinkedIn authorization expired or was revoked. Reconnect this account.":failure==="LINKEDIN_ORGANIZATION_ROLE_REVOKED"?"The connected member no longer has an eligible role for this LinkedIn organization.":"LinkedIn could not validate this account. Retry the health check.");
+ revalidatePath("/dashboard/social");if(failure)throw new Error(failure==="LINKEDIN_REAUTHORIZATION_REQUIRED"||failure==="LINKEDIN_AUTH_FAILED"?"LinkedIn authorization expired or was revoked. Reconnect this account.":failure==="LINKEDIN_ORGANIZATION_ROLE_REVOKED"?"The connected member no longer has an eligible role for this LinkedIn organization.":failure==="LINKEDIN_PUBLISH_SCOPE_MISSING"?"Required LinkedIn publishing permissions are missing. Reconnect after enabling the required LinkedIn product access.":"LinkedIn could not validate this account. Retry the health check.");
 }
 
 export async function createFacebookDraft(formData: FormData) {
