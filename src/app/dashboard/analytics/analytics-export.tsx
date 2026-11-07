@@ -18,7 +18,7 @@ export default function AnalyticsExport({rows}:{rows:ExportRow[]}){
       const header=["platform","content_title","published_at","analytics_snapshot_available"];
       const lines=[header,...rows.map(row=>[row.provider,row.title,row.publishedAt,row.analyticsSnapshotAvailable])]
         .map(line=>line.map(csvCell).join(","));
-      const blob=new Blob(["\\uFEFF"+lines.join("\\r\\n")],{type:"text/csv;charset=utf-8"});
+      const blob=new Blob(["\uFEFF"+lines.join("\r\n")],{type:"text/csv;charset=utf-8"});
       const url=URL.createObjectURL(blob);
       const anchor=document.createElement("a");
       anchor.href=url;
