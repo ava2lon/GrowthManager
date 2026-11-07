@@ -46,6 +46,18 @@ enum CampaignStatus {
   COMPLETED
 }
 
+enum ContentReviewStatus {
+  PENDING
+  APPROVED
+  CHANGES_REQUESTED
+}
+
+enum WorkspaceNotificationType {
+  CONTENT_REVIEW_ASSIGNED
+  CONTENT_REVIEW_COMPLETED
+  CONTENT_CHANGES_REQUESTED
+}
+
 enum MediaAssetStatus {
   PENDING
   READY
@@ -64,6 +76,9 @@ model User {
   memberships  WorkspaceMembership[]
   activityLogs ActivityLog[]
   sentWorkspaceInvitations WorkspaceInvitation[] @relation("WorkspaceInvitationInviter")
+  assignedContentReviews ContentReviewAssignment[] @relation("ContentReviewAssignee")
+  createdContentReviews ContentReviewAssignment[] @relation("ContentReviewAssigner")
+  workspaceNotifications WorkspaceNotification[]
 }
 
 model Workspace {
@@ -83,6 +98,8 @@ model Workspace {
   automationAlertPolicy AutomationAlertPolicy?
   automationAlertEvents AutomationAlertEvent[]
   mediaAssets MediaAsset[]
+  contentReviewAssignments ContentReviewAssignment[]
+  notifications WorkspaceNotification[]
 }
 
 model WorkspaceInvitation {
@@ -178,6 +195,7 @@ model ContentPost {
   publishTargets SocialPostTarget[]
   mediaAssets ContentPostMedia[]
   revisions ContentPostRevision[]
+  reviewAssignments ContentReviewAssignment[]
   @@unique([workspaceId, id])
   @@index([workspaceId, brandId, status, scheduledAt])
 }
@@ -195,6 +213,42 @@ model ContentPostRevision {
   contentPost   ContentPost @relation(fields: [workspaceId, contentPostId], references: [workspaceId, id], onDelete: Cascade)
   @@unique([contentPostId, version])
   @@index([workspaceId, contentPostId, createdAt])
+}
+
+model ContentReviewAssignment {
+  id             String              @id @default(cuid())
+  workspaceId    String
+  contentPostId  String
+  reviewerUserId String
+  assignedById   String
+  status         ContentReviewStatus @default(PENDING)
+  feedback       String?             @db.Text
+  reviewedAt     DateTime?
+  createdAt      DateTime            @default(now())
+  updatedAt      DateTime            @updatedAt
+  workspace      Workspace           @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  contentPost    ContentPost         @relation(fields: [workspaceId, contentPostId], references: [workspaceId, id], onDelete: Cascade)
+  reviewer       User                @relation("ContentReviewAssignee", fields: [reviewerUserId], references: [id], onDelete: Cascade)
+  assignedBy     User                @relation("ContentReviewAssigner", fields: [assignedById], references: [id], onDelete: Cascade)
+  @@unique([workspaceId, contentPostId, reviewerUserId])
+  @@unique([workspaceId, id])
+  @@index([workspaceId, reviewerUserId, status, updatedAt])
+  @@index([workspaceId, contentPostId, status])
+}
+
+model WorkspaceNotification {
+  id          String                    @id @default(cuid())
+  workspaceId String
+  userId      String
+  type        WorkspaceNotificationType
+  title       String
+  message     String                    @db.Text
+  href        String
+  readAt      DateTime?
+  createdAt   DateTime                  @default(now())
+  workspace   Workspace                 @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  user        User                      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  @@index([workspaceId, userId, readAt, createdAt])
 }
 
 model SocialPostTarget {
