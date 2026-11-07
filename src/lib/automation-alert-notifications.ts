@@ -93,7 +93,7 @@ export async function enqueueAutomationAlertEscalations(): Promise<{eventsChecke
   const policies = await db.automationAlertPolicy.findMany({
     where: {enabled: true, emailNotificationsEnabled: true},
     select: {workspaceId: true},
-    take: 100,
+    take: 50,
   });
   let eventsChecked = 0;
   let deliveriesQueued = 0;
@@ -102,8 +102,8 @@ export async function enqueueAutomationAlertEscalations(): Promise<{eventsChecke
   for (const policy of policies) {
     const events = await db.automationAlertEvent.findMany({
       where: {workspaceId: policy.workspaceId, status: "OPEN", lastNotifiedAt: {lte: cutoff}},
-      select: {id: true, integrationId: true},
-      take: 100,
+      select: {id: true},
+      take: 25,
     });
     if (!events.length) continue;
     eventsChecked += events.length;
