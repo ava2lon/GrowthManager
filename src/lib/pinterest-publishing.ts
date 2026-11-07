@@ -79,21 +79,22 @@ export async function publishPinterestTarget(input:{targetId:string;workspaceId:
   return attempt.id;
  });
  if(!claim)return {status:"SKIPPED"};
- const started=Date.now();let providerPostId:string|null=null,errorCode:string|null=null,httpStatus:number|null=null;
+ const started=Date.now();let providerPostId:string|null=null,errorCode:string|null=null,httpStatus:number|null=null;let pinRequestStarted=false;
  try{
   const mediaSource=video?{source_type:"video_id",media_id:await uploadPinterestVideo(assets[0],credentials.accessToken),cover_image_url:coverUrl}:{source_type:"image_url",url:coverUrl};
   const body:Record<string,unknown>={board_id:boardId,title,description,media_source:mediaSource};
   if(typeof link==="string"&&link)body.link=link;
+  pinRequestStarted=true;
   const response=await fetch("https://api.pinterest.com/v5/pins",{method:"POST",headers:{Authorization:"Bearer "+credentials.accessToken,Accept:"application/json","Content-Type":"application/json"},body:JSON.stringify(body),cache:"no-store",redirect:"error",signal:AbortSignal.timeout(30000)});
   httpStatus=response.status;const payload=await response.json().catch(()=>null) as {id?:string}|null;
   if(response.ok&&typeof payload?.id==="string")providerPostId=payload.id;
   else if(response.status>=500||response.ok)errorCode="PINTEREST_PUBLISH_OUTCOME_UNKNOWN";
   else errorCode=response.status===401?"PINTEREST_AUTH_FAILED":response.status===403?"PINTEREST_PERMISSION_DENIED":response.status===429?"PINTEREST_RATE_LIMITED":response.status===404?"PINTEREST_BOARD_NOT_FOUND":"PINTEREST_PUBLISH_REJECTED";
  }catch(error){
-  const code=error instanceof Error?error.message:"";
-  errorCode=code==="PINTEREST_PUBLISH_OUTCOME_UNKNOWN"?"PINTEREST_PUBLISH_OUTCOME_UNKNOWN":code==="PINTEREST_VIDEO_UPLOAD_UNCERTAIN"?"PINTEREST_VIDEO_UPLOAD_UNCERTAIN":code||"PINTEREST_PROVIDER_UNAVAILABLE";
+  const code=error instanceof Error?error.message:"PINTEREST_PROVIDER_UNAVAILABLE";
+  errorCode=pinRequestStarted?"PINTEREST_PUBLISH_OUTCOME_UNKNOWN":code||"PINTEREST_PROVIDER_UNAVAILABLE";
  }
- const finished=new Date(),status=providerPostId?"PUBLISHED":errorCode==="PINTEREST_PUBLISH_OUTCOME_UNKNOWN"||errorCode==="PINTEREST_VIDEO_UPLOAD_UNCERTAIN"?"UNKNOWN":"FAILED";
+ const finished=new Date(),status=providerPostId?"PUBLISHED":errorCode==="PINTEREST_PUBLISH_OUTCOME_UNKNOWN"?"UNKNOWN":"FAILED";
  await db.$transaction(async tx=>{
   await tx.socialPublishAttempt.update({where:{id:claim},data:{status,providerPostId,errorCode,httpStatus,finishedAt:finished,durationMs:Math.max(0,Date.now()-started)}});
   await tx.socialPostTarget.update({where:{id:target.id},data:{status,providerPostId,errorCode,publishedAt:providerPostId?finished:null}});
