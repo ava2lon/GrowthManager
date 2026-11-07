@@ -6,6 +6,7 @@ import {startInstagramReelTarget,processInstagramReelTarget} from "@/lib/instagr
 import {processTikTokInboxTarget} from "@/lib/tiktok-upload";
 import {processYouTubeUploadTarget} from "@/lib/youtube-upload";
 import {publishPinterestTarget} from "@/lib/pinterest-publishing";
+import {publishXTarget} from "@/lib/x-publishing";
 import {refreshPinterestAccountAnalytics} from "@/lib/pinterest-analytics";
 import {refreshPinterestPinAnalytics} from "@/lib/pinterest-pin-analytics";
 import {refreshMetaAnalytics} from "@/lib/meta-analytics";
@@ -31,7 +32,7 @@ export async function GET(request:Request){
   const now=new Date();
   const staleBefore=new Date(now.getTime()-3*60_000);
   const stale=await db.socialPostTarget.findMany({
-    where:{provider:{in:["FACEBOOK","INSTAGRAM","TIKTOK","PINTEREST"]},status:"PUBLISHING",updatedAt:{lt:staleBefore}},
+    where:{provider:{in:["FACEBOOK","INSTAGRAM","TIKTOK","PINTEREST","X"]},status:"PUBLISHING",updatedAt:{lt:staleBefore}},
     select:{id:true,workspaceId:true,contentPostId:true,provider:true},
     take:50,
   });
