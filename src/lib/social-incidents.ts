@@ -30,8 +30,8 @@ async function activate(signal:Signal,now:Date):Promise<"created"|"reopened"|"up
 export async function synchronizeSocialIncidents():Promise<{created:number;reopened:number;updated:number;resolved:number}> {
   const now=new Date(),expiryWarning=new Date(now.getTime()+14*86400000),targetLookback=new Date(now.getTime()-30*86400000);
   const [accounts,targets]=await Promise.all([
-    db.socialAccount.findMany({where:{status:{not:"DISCONNECTED"}},select:{id:true,workspaceId:true,provider:true,accountName:true,status:true,lastErrorCode:true,tokenExpiresAt:true},take:2000}),
-    db.socialPostTarget.findMany({where:{status:{in:["FAILED","UNKNOWN"]},updatedAt:{gte:targetLookback}},orderBy:{updatedAt:"desc"},take:1000,select:{id:true,workspaceId:true,provider:true,status:true,errorCode:true,socialAccountId:true,socialAccount:{select:{accountName:true}}}}),
+    db.socialAccount.findMany({where:{OR:[{status:{not:"DISCONNECTED"}},{incidents:{some:{status:"OPEN"}}}]},select:{id:true,workspaceId:true,provider:true,accountName:true,status:true,lastErrorCode:true,tokenExpiresAt:true},take:2000}),
+    db.socialPostTarget.findMany({where:{OR:[{status:{in:["FAILED","UNKNOWN"]},updatedAt:{gte:targetLookback}},{incidents:{some:{status:"OPEN"}}}]},orderBy:{updatedAt:"desc"},take:2000,select:{id:true,workspaceId:true,provider:true,status:true,errorCode:true,socialAccountId:true,socialAccount:{select:{accountName:true}}}}),
   ]);
   const signals:Signal[]=[];
   for(const account of accounts){
@@ -43,15 +43,19 @@ export async function synchronizeSocialIncidents():Promise<{created:number;reope
     else if(account.tokenExpiresAt&&account.tokenExpiresAt<=expiryWarning)signals.push({...base,category:"TOKEN_EXPIRING",severity:"WARNING",dedupeKey:"social-account:"+account.id+":TOKEN_EXPIRING",message:account.accountName+" ("+account.provider+") authorization expires within 14 days.",errorCode:"TOKEN_EXPIRING"});
   }
   for(const target of targets){
+    if(target.status!=="FAILED"&&target.status!=="UNKNOWN")continue;
     const category=target.status==="UNKNOWN"?"PUBLISH_OUTCOME_UNKNOWN":"PUBLISH_FAILED";
     signals.push({workspaceId:target.workspaceId,sourceType:"SOCIAL_PUBLISH_TARGET",sourceId:target.id,socialAccountId:target.socialAccountId,socialPostTargetId:target.id,category,severity:target.status==="UNKNOWN"?"CRITICAL":"WARNING",dedupeKey:"social-target:"+target.id+":"+category,message:(target.socialAccount.accountName||target.provider)+" ("+target.provider+") has a "+target.status.toLowerCase()+" publishing outcome.",errorCode:safeCode(target.errorCode,target.status==="UNKNOWN"?"PUBLISH_OUTCOME_UNKNOWN":"PUBLISH_FAILED"),metadata:{provider:target.provider,targetStatus:target.status}});
   }
   const activeKeys=new Set(signals.map(signal=>signal.workspaceId+"|"+signal.dedupeKey));
   let created=0,reopened=0,updated=0,resolved=0;
   for(const signal of signals){const result=await activate(signal,now);if(result==="created")created++;else if(result==="reopened")reopened++;else updated++;}
-  const open=await db.workspaceIncident.findMany({where:{status:"OPEN",sourceType:{in:["SOCIAL_ACCOUNT","SOCIAL_PUBLISH_TARGET"]}},select:{id:true,workspaceId:true,dedupeKey:true},take:2000});
+  const scannedAccounts=new Set(accounts.map(account=>account.id));
+  const scannedTargets=new Set(targets.map(target=>target.id));
+  const open=await db.workspaceIncident.findMany({where:{status:"OPEN",sourceType:{in:["SOCIAL_ACCOUNT","SOCIAL_PUBLISH_TARGET"]}},select:{id:true,workspaceId:true,dedupeKey:true,sourceType:true,sourceId:true},take:2000});
   for(const incident of open){
-    if(activeKeys.has(incident.workspaceId+"|"+incident.dedupeKey))continue;
+    const sourceWasScanned=incident.sourceType==="SOCIAL_ACCOUNT"?scannedAccounts.has(incident.sourceId):scannedTargets.has(incident.sourceId);
+    if(!sourceWasScanned||activeKeys.has(incident.workspaceId+"|"+incident.dedupeKey))continue;
     const changed=await db.workspaceIncident.updateMany({where:{id:incident.id,workspaceId:incident.workspaceId,status:"OPEN"},data:{status:"RESOLVED",resolvedAt:now,resolutionMessage:"The latest social publishing worker scan no longer detects this condition."}});
     if(changed.count){
       resolved++;
