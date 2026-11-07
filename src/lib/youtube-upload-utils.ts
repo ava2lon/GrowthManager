@@ -4,6 +4,7 @@ export type YouTubeVideoMetadata = {
   privacyStatus: "private" | "unlisted" | "public";
   categoryId?: string;
   tags?: string[];
+  publishAt?: string;
 };
 
 const ALLOWED_SESSION_HOSTS = new Set(["www.googleapis.com", "youtube.googleapis.com"]);
@@ -24,9 +25,21 @@ export function validateYouTubeMetadata(value: unknown, fallbackTitle: string): 
   if (tags.some(tag => tag.length > 30) || tags.join(",").length > 500) {
     throw new Error("YOUTUBE_TAGS_INVALID");
   }
+  let publishAt: string | undefined;
+  if (raw.publishAt !== undefined && raw.publishAt !== null && raw.publishAt !== "") {
+    if (typeof raw.publishAt !== "string" || !/^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d{1,3})?(?:Z|[+-]\\d{2}:\\d{2})$/.test(raw.publishAt)) {
+      throw new Error("YOUTUBE_SCHEDULE_TIME_INVALID");
+    }
+    const scheduled = new Date(raw.publishAt);
+    if (!Number.isFinite(scheduled.getTime()) || scheduled.getTime() < Date.now() + 15 * 60_000) {
+      throw new Error("YOUTUBE_SCHEDULE_MUST_BE_15_MINUTES_AHEAD");
+    }
+    if (privacyStatus !== "private") throw new Error("YOUTUBE_SCHEDULE_REQUIRES_PRIVATE");
+    publishAt = scheduled.toISOString();
+  }
   const categoryId = typeof raw.categoryId === "string" && /^\d{1,3}$/.test(raw.categoryId)
     ? raw.categoryId : undefined;
-  return {title, description, privacyStatus, ...(categoryId ? {categoryId} : {}), ...(tags.length ? {tags} : {})};
+  return {title, description, privacyStatus, ...(categoryId ? {categoryId} : {}), ...(tags.length ? {tags} : {}), ...(publishAt ? {publishAt} : {})};
 }
 
 export function validateYouTubeSessionUrl(value: string): URL {
