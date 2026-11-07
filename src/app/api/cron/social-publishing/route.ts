@@ -24,7 +24,7 @@ export async function GET(request:Request){
   const now=new Date();
   const staleBefore=new Date(now.getTime()-3*60_000);
   const stale=await db.socialPostTarget.findMany({
-    where:{provider:{in:["FACEBOOK","INSTAGRAM","TIKTOK"]},status:"PUBLISHING",updatedAt:{lt:staleBefore}},
+    where:{provider:{in:["FACEBOOK","INSTAGRAM","TIKTOK","PINTEREST"]},status:"PUBLISHING",updatedAt:{lt:staleBefore}},
     select:{id:true,workspaceId:true,contentPostId:true,provider:true},
     take:50,
   });
