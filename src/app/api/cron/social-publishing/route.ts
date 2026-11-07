@@ -15,6 +15,7 @@ import {refreshMetaAnalytics} from "@/lib/meta-analytics";
 import {refreshLinkedInAnalytics} from "@/lib/linkedin-analytics";
 import {refreshTikTokAccountAnalytics,refreshTikTokVideoAnalytics,failedTikTokAnalyticsMetrics} from "@/lib/tiktok-analytics";
 import {refreshYouTubeChannelAnalytics,refreshYouTubeVideoAnalytics,failedYouTubeAnalyticsMetrics} from "@/lib/youtube-analytics";
+import {refreshXAnalytics} from "@/lib/x-analytics";
 
 export const runtime="nodejs";
 export const dynamic="force-dynamic";
@@ -235,6 +236,29 @@ export async function GET(request:Request){
   let youtubeAnalyticsVideosRefreshed=0,youtubeAnalyticsVideosFailed=0;
   if(youtubeVideoDue){try{await refreshYouTubeVideoAnalytics({workspaceId:youtubeVideoDue.workspaceId,targetId:youtubeVideoDue.id,asOf:now});youtubeAnalyticsVideosRefreshed++;}catch(error){youtubeAnalyticsVideosFailed++;const metrics=failedYouTubeAnalyticsMetrics(error);await db.youTubeAnalyticsSnapshot.upsert({where:{workspaceId_socialAccountId_subjectType_subjectId_reportDate:{workspaceId:youtubeVideoDue.workspaceId,socialAccountId:youtubeVideoDue.socialAccountId,subjectType:"VIDEO",subjectId:youtubeVideoDue.providerPostId!,reportDate:analyticsDay}},create:{workspaceId:youtubeVideoDue.workspaceId,socialAccountId:youtubeVideoDue.socialAccountId,subjectType:"VIDEO",subjectId:youtubeVideoDue.providerPostId!,targetId:youtubeVideoDue.id,reportDate:analyticsDay,startDate:new Date(analyticsDay.getTime()-29*86400000),endDate:new Date(analyticsDay.getTime()-2*86400000),metrics,rawResponse:{},fetchedAt:now},update:{targetId:youtubeVideoDue.id,metrics,rawResponse:{},fetchedAt:now}});}}
 
+  // X account snapshots: one connected user account per invocation.
+  // The profile endpoint supplies the public follower count used by Audience Growth.
+  const xAnalyticsDue=await db.socialAccount.findFirst({
+    where:{provider:"X",status:"CONNECTED",providerUserId:{not:null},credentialsEncrypted:{not:null},scopes:{has:"users.read"},xAnalyticsSnapshots:{none:{subjectType:"ACCOUNT",reportDate:analyticsDay}}},
+    select:{id:true,workspaceId:true,providerUserId:true},
+    orderBy:{updatedAt:"asc"},
+  });
+  let xAnalyticsAccountsRefreshed=0,xAnalyticsAccountsFailed=0;
+  if(xAnalyticsDue){
+    try{
+      await refreshXAnalytics({workspaceId:xAnalyticsDue.workspaceId,accountId:xAnalyticsDue.id,asOf:now});
+      xAnalyticsAccountsRefreshed++;
+    }catch(error){
+      xAnalyticsAccountsFailed++;
+      const code=error instanceof Error&&/^[A-Z0-9_]{1,100}$/.test(error.message)?error.message:"X_ANALYTICS_REFRESH_FAILED";
+      await db.xAnalyticsSnapshot.upsert({
+        where:{workspaceId_socialAccountId_subjectType_subjectId_reportDate:{workspaceId:xAnalyticsDue.workspaceId,socialAccountId:xAnalyticsDue.id,subjectType:"ACCOUNT",subjectId:xAnalyticsDue.providerUserId!,reportDate:analyticsDay}},
+        create:{workspaceId:xAnalyticsDue.workspaceId,socialAccountId:xAnalyticsDue.id,subjectType:"ACCOUNT",subjectId:xAnalyticsDue.providerUserId!,reportDate:analyticsDay,startDate:analyticsDay,endDate:analyticsDay,metrics:{status:"FAILED",errorCode:code},rawResponse:{},fetchedAt:now},
+        update:{startDate:analyticsDay,endDate:analyticsDay,metrics:{status:"FAILED",errorCode:code},rawResponse:{},fetchedAt:now},
+      });
+    }
+  }
+
   const due=await db.socialPostTarget.findMany({
     where:{provider:{in:["FACEBOOK","INSTAGRAM"]},status:"SCHEDULED",contentPost:{scheduledAt:{lte:now}}},
     select:{id:true,workspaceId:true,provider:true},
@@ -275,5 +299,5 @@ export async function GET(request:Request){
   }
   const incidents=await synchronizeSocialIncidents();
   const incidentEmailDelivery=await dispatchSocialIncidentEmails(3);
-  return NextResponse.json({incidents,incidentEmailDelivery,due:due.length,x:{scheduledChecked:xDue.length,processingChecked:xProcessingDue.length,published:xPublished,failed:xFailed,unknown:xUnknown,processing:xProcessing,skipped:xSkipped},published,failed,unknown,skipped,recoveredUnknown,pinterest:{checked:pinterestDue.length,published:pinterestPublished,failed:pinterestFailed,unknown:pinterestUnknown,skipped:pinterestSkipped,analyticsChecked:pinterestAnalyticsDue.length,analyticsRefreshed:pinterestAnalyticsRefreshed,analyticsFailed:pinterestAnalyticsFailed,pinAnalyticsChecked:pinAnalyticsTarget?1:0,pinAnalyticsRefreshed:pinterestPinAnalyticsRefreshed,pinAnalyticsFailed:pinterestPinAnalyticsFailed},reels:{checked:processing.length,published:reelsPublished,failed:reelsFailed,processing:reelsProcessing,unknown:reelsUnknown},tiktok:{checked:tiktokProcessing.length,uploaded:tiktokUploaded,published:tiktokPublished,failed:tiktokFailed,analytics:{accountsRefreshed:tikTokAccountsRefreshed,accountsFailed:tikTokAccountsFailed,videosRefreshed:tikTokVideosRefreshed,videosFailed:tikTokVideosFailed}},youtube:{checked:youtubeProcessing.length,published:youtubePublished,scheduled:youtubeScheduled,failed:youtubeFailed,processing:youtubeProcessingCount,recoveredInitializations:recoveredYouTubeStarts,analytics:{channelsRefreshed:youtubeAnalyticsAccountsRefreshed,channelsFailed:youtubeAnalyticsAccountsFailed,videosRefreshed:youtubeAnalyticsVideosRefreshed,videosFailed:youtubeAnalyticsVideosFailed}}});
+  return NextResponse.json({incidents,incidentEmailDelivery,due:due.length,x:{scheduledChecked:xDue.length,processingChecked:xProcessingDue.length,published:xPublished,failed:xFailed,unknown:xUnknown,processing:xProcessing,skipped:xSkipped,analytics:{accountsRefreshed:xAnalyticsAccountsRefreshed,accountsFailed:xAnalyticsAccountsFailed}},published,failed,unknown,skipped,recoveredUnknown,pinterest:{checked:pinterestDue.length,published:pinterestPublished,failed:pinterestFailed,unknown:pinterestUnknown,skipped:pinterestSkipped,analyticsChecked:pinterestAnalyticsDue.length,analyticsRefreshed:pinterestAnalyticsRefreshed,analyticsFailed:pinterestAnalyticsFailed,pinAnalyticsChecked:pinAnalyticsTarget?1:0,pinAnalyticsRefreshed:pinterestPinAnalyticsRefreshed,pinAnalyticsFailed:pinterestPinAnalyticsFailed},reels:{checked:processing.length,published:reelsPublished,failed:reelsFailed,processing:reelsProcessing,unknown:reelsUnknown},tiktok:{checked:tiktokProcessing.length,uploaded:tiktokUploaded,published:tiktokPublished,failed:tiktokFailed,analytics:{accountsRefreshed:tikTokAccountsRefreshed,accountsFailed:tikTokAccountsFailed,videosRefreshed:tikTokVideosRefreshed,videosFailed:tikTokVideosFailed}},youtube:{checked:youtubeProcessing.length,published:youtubePublished,scheduled:youtubeScheduled,failed:youtubeFailed,processing:youtubeProcessingCount,recoveredInitializations:recoveredYouTubeStarts,analytics:{channelsRefreshed:youtubeAnalyticsAccountsRefreshed,channelsFailed:youtubeAnalyticsAccountsFailed,videosRefreshed:youtubeAnalyticsVideosRefreshed,videosFailed:youtubeAnalyticsVideosFailed}}});
 }
