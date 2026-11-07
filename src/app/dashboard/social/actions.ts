@@ -18,6 +18,7 @@ import {refreshPinterestAccountAnalytics} from "@/lib/pinterest-analytics";
 import {refreshPinterestPinAnalytics} from "@/lib/pinterest-pin-analytics";
 import {refreshMetaAnalytics} from "@/lib/meta-analytics";
 import {refreshLinkedInAnalytics} from "@/lib/linkedin-analytics";
+import {refreshTikTokAccountAnalytics,refreshTikTokVideoAnalytics} from "@/lib/tiktok-analytics";
 
 function readMetadata(value: unknown): Record<string, unknown> {
   if (!value || typeof value !== "object" || Array.isArray(value)) return {};
@@ -1461,4 +1462,17 @@ export async function refreshLinkedInAnalyticsAction(formData:FormData){
  await refreshLinkedInAnalytics({workspaceId:context.workspace.id,accountId,...(targetId?{targetId}:{})});
  revalidatePath("/dashboard/social");
  redirect("/dashboard/social?linkedinAnalytics=refreshed");
+}
+
+
+export async function refreshTikTokAnalyticsAction(formData:FormData){
+ const context=await requireWorkspaceRole("MEMBER");
+ const accountId=String(formData.get("accountId")??"").trim();
+ const targetId=String(formData.get("targetId")??"").trim();
+ if((!accountId&&!targetId)||accountId.length>128||targetId.length>128)throw new Error("Invalid TikTok analytics target.");
+ await enforceSocialRateLimit(context.workspace.id,context.userId,"tiktok-analytics");
+ if(targetId)await refreshTikTokVideoAnalytics({workspaceId:context.workspace.id,targetId});
+ else await refreshTikTokAccountAnalytics({workspaceId:context.workspace.id,accountId});
+ revalidatePath("/dashboard/social");
+ redirect("/dashboard/social?tiktokAnalytics=refreshed");
 }
