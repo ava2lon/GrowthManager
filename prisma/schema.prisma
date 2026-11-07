@@ -85,6 +85,7 @@ model User {
   notificationPreferences WorkspaceNotificationPreference[]
   contentReviewEmailDeliveries ContentReviewEmailDelivery[]
   contentReviewEmailDigests ContentReviewEmailDigest[]
+  socialIncidentEmailDeliveries WorkspaceIncidentEmailDelivery[]
 }
 
 model Workspace {
@@ -110,6 +111,7 @@ model Workspace {
   contentReviewEmailDigests ContentReviewEmailDigest[]
   notificationPreferences WorkspaceNotificationPreference[]
   incidents WorkspaceIncident[]
+  socialIncidentEmailDeliveries WorkspaceIncidentEmailDelivery[]
 }
 
 model WorkspaceInvitation {
@@ -765,6 +767,8 @@ model WorkspaceNotificationPreference {
   quietHoursEnabled        Boolean   @default(false)
   quietHoursStart          String    @default("22:00")
   quietHoursEnd            String    @default("08:00")
+  inAppSocialIncidents     Boolean   @default(true)
+  emailSocialIncidents     Boolean   @default(false)
   digestEnabled            Boolean   @default(false)
   digestFrequency          String    @default("DAILY")
   digestSendTime           String    @default("09:00")
@@ -828,8 +832,37 @@ model WorkspaceIncident {
   workspace          Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
   socialAccount      SocialAccount? @relation(fields: [workspaceId, socialAccountId], references: [workspaceId, id], onDelete: Cascade)
   socialPostTarget   SocialPostTarget? @relation(fields: [workspaceId, socialPostTargetId], references: [workspaceId, id], onDelete: Cascade)
+  emailDeliveries      WorkspaceIncidentEmailDelivery[]
   @@unique([workspaceId, dedupeKey])
+  @@unique([workspaceId, id])
   @@index([workspaceId, status, severity, lastSeenAt])
   @@index([workspaceId, sourceType, sourceId])
   @@index([status, lastSeenAt])
+}
+
+
+model WorkspaceIncidentEmailDelivery {
+  id                  String   @id @default(cuid())
+  workspaceId         String
+  incidentId          String
+  recipientUserId     String
+  recipientEmail      String
+  incidentOccurrence  Int
+  eventType           String
+  status              String   @default("PENDING")
+  attempts            Int      @default(0)
+  nextAttemptAt       DateTime @default(now())
+  lockedAt            DateTime?
+  providerMessageId   String?
+  lastErrorCode       String?
+  sentAt              DateTime?
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+  workspace           Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  incident            WorkspaceIncident @relation(fields: [workspaceId, incidentId], references: [workspaceId, id], onDelete: Cascade)
+  recipient           User @relation(fields: [recipientUserId], references: [id], onDelete: Cascade)
+  @@unique([workspaceId, incidentId, recipientUserId, incidentOccurrence, eventType])
+  @@index([status, nextAttemptAt])
+  @@index([workspaceId, createdAt])
+  @@index([providerMessageId])
 }
