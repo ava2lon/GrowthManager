@@ -39,7 +39,7 @@ export default async function IntegrationsPage({searchParams}: {searchParams: Pr
   const integrations = await db.integration.findMany({
     where: {workspaceId: context.workspace.id},
     orderBy: [{updatedAt:"desc"},{name:"asc"}],
-    select: {id:true,provider:true,name:true,status:true,updatedAt:true,lastValidatedAt:true,lastErrorAt:true,lastErrorCode:true,credentialsEncrypted:true},
+    select: {id:true,provider:true,name:true,status:true,updatedAt:true,lastValidatedAt:true,lastExecutionSyncAt:true,lastErrorAt:true,lastErrorCode:true,credentialsEncrypted:true},
   });
   const byProvider = new Map(integrations.map((item) => [item.provider,item]));
   const canManage = ["OWNER","ADMIN"].includes(context.membership.role);
@@ -57,6 +57,57 @@ export default async function IntegrationsPage({searchParams}: {searchParams: Pr
   let selectedWorkflow: N8nWorkflowDetail | null = null;
   let selectedWorkflowUnavailable = false;
   const n8nIntegration = integrations.find((item) => item.provider === "n8n");
+  const analyticsWindowStart = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+  const analyticsSnapshots = n8nIntegration ? await db.n8nExecutionSnapshot.findMany({
+    where: {
+      workspaceId: context.workspace.id,
+      integrationId: n8nIntegration.id,
+      startedAt: {gte: analyticsWindowStart},
+    },
+    orderBy: {startedAt: "desc"},
+    take: 1000,
+    select: {workflowId: true, status: true, startedAt: true, stoppedAt: true},
+  }) : [];
+  const completedAnalytics = analyticsSnapshots.filter((item) =>
+    item.startedAt && item.stoppedAt && item.stoppedAt >= item.startedAt
+  );
+  const failedAnalyticsCount = analyticsSnapshots.filter((item) =>
+    item.status === "error" || item.status === "crashed"
+  ).length;
+  const successAnalyticsCount = analyticsSnapshots.filter((item) => item.status === "success").length;
+  const runningAnalyticsCount = analyticsSnapshots.filter((item) =>
+    item.status === "running" || item.status === "waiting"
+  ).length;
+  const averageDurationSeconds = completedAnalytics.length
+    ? Math.round(completedAnalytics.reduce((sum, item) =>
+        sum + (item.stoppedAt!.getTime() - item.startedAt!.getTime()) / 1000, 0
+      ) / completedAnalytics.length)
+    : null;
+  const workflowAnalytics = Array.from(
+    analyticsSnapshots.reduce((map, item) => {
+      const current = map.get(item.workflowId) ?? {total: 0, failed: 0};
+      current.total += 1;
+      if (item.status === "error" || item.status === "crashed") current.failed += 1;
+      map.set(item.workflowId, current);
+      return map;
+    }, new Map<string, {total: number; failed: number}>()).entries(),
+  ).map(([workflowId, stats]) => ({workflowId, ...stats}))
+    .sort((a, b) => b.failed - a.failed || b.total - a.total)
+    .slice(0, 5);
+  const dailyAnalytics = Array.from({length: 7}, (_, index) => {
+    const day = new Date(analyticsWindowStart);
+    day.setDate(day.getDate() + index);
+    const key = day.toISOString().slice(0, 10);
+    const total = analyticsSnapshots.filter((item) =>
+      item.startedAt?.toISOString().slice(0, 10) === key
+    ).length;
+    const failed = analyticsSnapshots.filter((item) =>
+      item.startedAt?.toISOString().slice(0, 10) === key &&
+      (item.status === "error" || item.status === "crashed")
+    ).length;
+    return {key, label: day.toLocaleDateString(undefined, {weekday: "short"}), total, failed};
+  });
+  const maxDailyExecutions = Math.max(1, ...dailyAnalytics.map((item) => item.total));
   const storedExecutionSnapshots = n8nIntegration ? await db.n8nExecutionSnapshot.findMany({
     where: {
       workspaceId: context.workspace.id,
@@ -361,6 +412,44 @@ export default async function IntegrationsPage({searchParams}: {searchParams: Pr
             <p className="mt-3 text-xs text-slate-400">Showing {n8nExecutions.executions.length} executions. {n8nExecutions.hasMore ? "Additional history exists; results are capped at 150 per request." : "End of available results."}</p>
           </>
         )}
+      </section>
+
+      <section className="rounded-2xl border border-slate-200 bg-white p-5 sm:p-6">
+        <div className="flex flex-col gap-1">
+          <h2 className="font-semibold text-slate-900">n8n execution analytics</h2>
+          <p className="text-sm text-slate-500">Seven-day view based on persisted execution snapshots. Metrics are limited to the latest 1,000 matching records.</p>
+        </div>
+        <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+          <div className="rounded-xl border border-slate-100 p-4"><p className="text-xs text-slate-500">Executions observed</p><p className="mt-1 text-2xl font-semibold text-slate-900">{analyticsSnapshots.length}</p></div>
+          <div className="rounded-xl border border-slate-100 p-4"><p className="text-xs text-slate-500">Successful</p><p className="mt-1 text-2xl font-semibold text-emerald-700">{successAnalyticsCount}</p></div>
+          <div className="rounded-xl border border-slate-100 p-4"><p className="text-xs text-slate-500">Failed / crashed</p><p className="mt-1 text-2xl font-semibold text-rose-700">{failedAnalyticsCount}</p></div>
+          <div className="rounded-xl border border-slate-100 p-4"><p className="text-xs text-slate-500">Average completed duration</p><p className="mt-1 text-2xl font-semibold text-slate-900">{averageDurationSeconds === null ? "—" : averageDurationSeconds >= 60 ? Math.floor(averageDurationSeconds / 60) + "m " + averageDurationSeconds % 60 + "s" : averageDurationSeconds + "s"}</p></div>
+        </div>
+        <div className="mt-5 grid gap-5 lg:grid-cols-[1.4fr_1fr]">
+          <div className="rounded-xl border border-slate-100 p-4">
+            <div className="flex items-center justify-between gap-2"><h3 className="text-sm font-semibold text-slate-800">Daily execution volume</h3><span className="text-[11px] text-slate-400">Last 7 days</span></div>
+            <div className="mt-4 grid grid-cols-7 items-end gap-2">
+              {dailyAnalytics.map((day) => <div key={day.key} className="flex min-w-0 flex-col items-center gap-2">
+                <span className="text-[10px] tabular-nums text-slate-500">{day.total}</span>
+                <div className="flex h-24 w-full items-end overflow-hidden rounded-md bg-slate-100">
+                  <div className="w-full rounded-t-sm bg-indigo-500" style={{height: Math.max(day.total ? 5 : 0, Math.round(day.total / maxDailyExecutions * 100)) + "%"}}/>
+                </div>
+                <span className="text-[10px] text-slate-500">{day.label}</span>
+                {day.failed > 0 && <span className="text-[9px] text-rose-600">{day.failed} failed</span>}
+              </div>)}
+            </div>
+          </div>
+          <div className="rounded-xl border border-slate-100 p-4">
+            <div className="flex items-center justify-between gap-2"><h3 className="text-sm font-semibold text-slate-800">Workflows needing attention</h3><span className="text-[11px] text-slate-400">Top 5</span></div>
+            {workflowAnalytics.length === 0 ? <p className="mt-4 text-xs text-slate-500">No workflow activity in this period.</p> : <div className="mt-3 divide-y divide-slate-100">
+              {workflowAnalytics.map((workflow) => <div key={workflow.workflowId} className="flex items-center justify-between gap-3 py-2">
+                <div className="min-w-0"><p className="truncate font-mono text-[11px] text-slate-700">{workflow.workflowId}</p><p className="text-[10px] text-slate-400">{workflow.total} executions</p></div>
+                <span className={"shrink-0 rounded-full px-2 py-1 text-[10px] font-semibold " + (workflow.failed ? "bg-rose-50 text-rose-700" : "bg-emerald-50 text-emerald-700")}>{workflow.failed} failed</span>
+              </div>)}
+            </div>}
+          </div>
+        </div>
+        <p className="mt-4 text-xs text-slate-400">Currently running or waiting: {runningAnalyticsCount}. Last scheduled sync: {n8nIntegration?.lastExecutionSyncAt?.toLocaleString() ?? "Not recorded"}. Failed rate: {analyticsSnapshots.length ? Math.round(failedAnalyticsCount / analyticsSnapshots.length * 100) + "%" : "—"}. Snapshot history is workspace-scoped.</p>
       </section>
 
       <section className="rounded-2xl border border-slate-200 bg-white p-5 sm:p-6">
