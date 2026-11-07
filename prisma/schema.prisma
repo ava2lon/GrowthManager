@@ -183,6 +183,10 @@ model SocialPostTarget {
   status         String   @default("DRAFT")
   providerPostId String?
   providerContainerId String?
+  uploadSessionEncrypted String? @db.Text
+  uploadOffset BigInt?
+  uploadTotalBytes BigInt?
+  uploadMetadata Json?
   processingStartedAt DateTime?
   nextCheckAt DateTime?
   errorCode      String?
