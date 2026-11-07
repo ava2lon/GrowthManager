@@ -76,6 +76,25 @@ export async function GET(request:Request){
     }
   }
 
+  const youtubeProcessing=await db.socialPostTarget.findMany({
+    where:{provider:"YOUTUBE",status:{in:["PUBLISHING","PROCESSING"]},OR:[
+      {status:"PUBLISHING",uploadSessionEncrypted:{not:null}},
+      {status:"PROCESSING",providerPostId:{not:null}},
+    ],AND:[{OR:[{nextCheckAt:null},{nextCheckAt:{lte:now}}]}]},
+    select:{id:true,workspaceId:true},orderBy:{nextCheckAt:"asc"},take:1,
+  });
+  let youtubePublished=0,youtubeFailed=0,youtubeProcessingCount=0,youtubeScheduled=0;
+  for(const target of youtubeProcessing){
+    try{
+      const result=await processYouTubeUploadTarget({targetId:target.id,workspaceId:target.workspaceId});
+      if(result.status==="PUBLISHED")youtubePublished++;
+      else if(result.status==="SCHEDULED")youtubeScheduled++;
+      else if(result.status==="FAILED")youtubeFailed++;
+      else if(result.status==="PROCESSING")youtubeProcessingCount++;
+    }catch{youtubeFailed++;}
+  }
+
+
   const processing=await db.socialPostTarget.findMany({
     where:{provider:"INSTAGRAM",status:"PROCESSING",OR:[{nextCheckAt:null},{nextCheckAt:{lte:now}}]},
     select:{id:true,workspaceId:true},orderBy:{nextCheckAt:"asc"},take:10,
@@ -105,23 +124,6 @@ export async function GET(request:Request){
     }catch{tiktokFailed++;}
   }
 
-  const youtubeProcessing=await db.socialPostTarget.findMany({
-    where:{provider:"YOUTUBE",status:{in:["PUBLISHING","PROCESSING"]},OR:[
-      {status:"PUBLISHING",uploadSessionEncrypted:{not:null}},
-      {status:"PROCESSING",providerPostId:{not:null}},
-    ],AND:[{OR:[{nextCheckAt:null},{nextCheckAt:{lte:now}}]}]},
-    select:{id:true,workspaceId:true},orderBy:{nextCheckAt:"asc"},take:1,
-  });
-  let youtubePublished=0,youtubeFailed=0,youtubeProcessingCount=0,youtubeScheduled=0;
-  for(const target of youtubeProcessing){
-    try{
-      const result=await processYouTubeUploadTarget({targetId:target.id,workspaceId:target.workspaceId});
-      if(result.status==="PUBLISHED")youtubePublished++;
-      else if(result.status==="SCHEDULED")youtubeScheduled++;
-      else if(result.status==="FAILED")youtubeFailed++;
-      else if(result.status==="PROCESSING")youtubeProcessingCount++;
-    }catch{youtubeFailed++;}
-  }
 
   const due=await db.socialPostTarget.findMany({
     where:{provider:{in:["FACEBOOK","INSTAGRAM"]},status:"SCHEDULED",contentPost:{scheduledAt:{lte:now}}},
