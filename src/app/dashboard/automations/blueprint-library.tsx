@@ -8,7 +8,6 @@ export default async function AutomationBlueprintLibrary(){
  const canManage=["OWNER","ADMIN"].includes(context.membership.role);
  const saved=await db.automation.findMany({where:{workspaceId:context.workspace.id},orderBy:{createdAt:"desc"},take:50,select:{id:true,name:true,description:true,enabled:true,createdAt:true}});
  const savedNames=new Set(saved.map(item=>item.name));
- const categories=[...new Set(automationBlueprintTemplates.map(item=>item.category))];
  return <div className="space-y-5">
   <section className="rounded-2xl border border-slate-200 bg-white p-5 sm:p-6">
    <div className="flex flex-wrap items-start justify-between gap-3"><div><h2 className="font-semibold text-slate-900">Automation blueprint library</h2><p className="mt-1 text-xs text-slate-500">Start with reviewed operational patterns, then implement and activate their workflows in your connected n8n instance.</p></div><span className="rounded-full bg-slate-100 px-3 py-1 text-xs text-slate-600">{saved.length}/50 saved</span></div>
