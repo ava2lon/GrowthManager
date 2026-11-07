@@ -152,6 +152,7 @@ model SocialAccount {
   publishTargets SocialPostTarget[]
   pinterestAnalyticsSnapshots PinterestAnalyticsSnapshot[]
   metaAnalyticsSnapshots MetaAnalyticsSnapshot[]
+  linkedinAnalyticsSnapshots LinkedInAnalyticsSnapshot[]
   @@unique([workspaceId, provider, providerUserId])
   @@unique([workspaceId, id])
   @@index([workspaceId, brandId, provider])
@@ -200,6 +201,7 @@ model SocialPostTarget {
   attempts       SocialPublishAttempt[]
   pinterestAnalyticsSnapshots PinterestPinAnalyticsSnapshot[]
   metaAnalyticsSnapshots MetaAnalyticsSnapshot[]
+  linkedinAnalyticsSnapshots LinkedInAnalyticsSnapshot[]
   @@unique([workspaceId, id])
   @@unique([contentPostId, socialAccountId])
   @@index([workspaceId, status, createdAt])
@@ -500,4 +502,26 @@ model MetaAnalyticsSnapshot {
   @@index([workspaceId, reportDate], map: "meta_analytics_workspace_date_idx")
   @@index([workspaceId, socialAccountId, subjectType, fetchedAt], map: "meta_analytics_account_type_fetched_idx")
   @@index([targetId], map: "meta_analytics_target_idx")
+}
+
+
+model LinkedInAnalyticsSnapshot {
+  id String @id @default(cuid())
+  workspaceId String
+  socialAccountId String
+  subjectType String
+  subjectId String
+  targetId String?
+  reportDate DateTime @db.Date
+  startDate DateTime @db.Date
+  endDate DateTime @db.Date
+  metrics Json
+  rawResponse Json
+  fetchedAt DateTime @default(now())
+  socialAccount SocialAccount @relation(fields: [workspaceId, socialAccountId], references: [workspaceId, id], onDelete: Cascade)
+  target SocialPostTarget? @relation(fields: [targetId], references: [id], onDelete: Cascade)
+  @@unique([workspaceId, socialAccountId, subjectType, subjectId, reportDate], map: "linkedin_analytics_subject_report_uq")
+  @@index([workspaceId, reportDate], map: "linkedin_analytics_workspace_date_idx")
+  @@index([workspaceId, socialAccountId, subjectType, fetchedAt], map: "linkedin_analytics_account_type_fetched_idx")
+  @@index([targetId], map: "linkedin_analytics_target_idx")
 }
