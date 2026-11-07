@@ -67,7 +67,7 @@ export async function POST(request: Request) {
   if (!brand) return NextResponse.json({error: "Selected brand is unavailable in this workspace."}, {status: 404});
 
   const campaign = campaignId ? await db.campaign.findFirst({
-    where: {id: campaignId, workspaceId: context.workspace.id, OR: [{brandId: brand.id}, {brandId: null}]},
+    where: {id: campaignId, workspaceId: context.workspace.id, status: {in: ["PLANNING", "ACTIVE"]}, OR: [{brandId: brand.id}, {brandId: null}]},
     select: {id: true, name: true, objective: true},
   }) : null;
   if (campaignId && !campaign) return NextResponse.json({error: "Selected campaign is unavailable for this brand."}, {status: 404});
@@ -100,7 +100,7 @@ export async function POST(request: Request) {
     requiredSections: ["strategic angle and measurable KPIs", "three content pillars", "two-week publishing plan", "platform-native copy variations", "creative direction and accessibility guidance", "test hypotheses and decision rules", "risks, missing inputs and assumptions"],
   });
 
-  let generated: Record<string, unknown>;
+  let generated: Record<string, unknown>;\n  let tokenUsage: {prompt_tokens?: number; completion_tokens?: number; total_tokens?: number} = {};
   try {
     const baseUrl = (process.env.OPENAI_BASE_URL || "https://api.openai.com/v1").replace(/\/$/, "");
     const response = await fetch(baseUrl + "/chat/completions", {
@@ -108,7 +108,7 @@ export async function POST(request: Request) {
       headers: {"Authorization": "Bearer " + apiKey, "Content-Type": "application/json"},
       body: JSON.stringify({
         model,
-        temperature: 0.7,
+        temperature: 0.7,\n        max_tokens: 5000,
         response_format: {type: "json_object"},
         messages: [{role: "system", content: systemPrompt}, {role: "user", content: userPrompt}],
       }),
@@ -119,7 +119,7 @@ export async function POST(request: Request) {
       const status = response.status;
       return NextResponse.json({error: status === 429 ? "AI provider rate limit reached. Retry later." : status === 401 || status === 403 ? "AI provider credentials were rejected." : "AI provider request failed."}, {status: status === 429 ? 429 : 502});
     }
-    const payload = await response.json() as {choices?: Array<{message?: {content?: string}}>};
+    const payload = await response.json() as {choices?: Array<{message?: {content?: string}}> ; usage?: {prompt_tokens?: number; completion_tokens?: number; total_tokens?: number}};\n    tokenUsage = payload.usage ?? {};
     const content = payload.choices?.[0]?.message?.content;
     if (typeof content !== "string" || !content.trim()) throw new Error("EMPTY_AI_RESPONSE");
     const parsed: unknown = JSON.parse(content);
@@ -147,11 +147,11 @@ export async function POST(request: Request) {
         action: "ai.content_strategy_generated",
         entityType: "content_post",
         entityId: post.id,
-        metadata: {brandId: brand.id, campaignId: campaign?.id ?? null, model, platforms: selectedPlatforms, savedAs: "DRAFT"},
+        metadata: {brandId: brand.id, campaignId: campaign?.id ?? null, model, platforms: selectedPlatforms, savedAs: "DRAFT", promptTokens: tokenUsage.prompt_tokens ?? null, completionTokens: tokenUsage.completion_tokens ?? null, totalTokens: tokenUsage.total_tokens ?? null},
       },
     });
     return post;
   });
 
-  return NextResponse.json({generation: generated, draft: saved, platformSelection: selectedPlatforms});
+  return NextResponse.json({generation: generated, draft: saved, platformSelection: selectedPlatforms, usage: tokenUsage});
 }
