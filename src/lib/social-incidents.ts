@@ -88,7 +88,7 @@ export async function synchronizeSocialIncidents():Promise<{created:number;reope
   for(const signal of signals){const result=await activate(signal,now);if(result==="created")created++;else if(result==="reopened")reopened++;else updated++;}
   const scannedAccounts=new Set(accounts.map(account=>account.id));
   const scannedTargets=new Set(targets.map(target=>target.id));
-  const open=await db.workspaceIncident.findMany({where:{status:{in:["OPEN","ACKNOWLEDGED"]},sourceType:{in:["SOCIAL_ACCOUNT","SOCIAL_PUBLISH_TARGET"]}},select:{id:true,workspaceId:true,dedupeKey:true,sourceType:true,sourceId:true,occurrenceCount:true,message:true,severity:true},take:2000});
+  const open=await db.workspaceIncident.findMany({where:{status:{in:["OPEN","ACKNOWLEDGED"]},sourceType:{in:["SOCIAL_ACCOUNT","SOCIAL_PUBLISH_TARGET"]}},select:{id:true,workspaceId:true,dedupeKey:true,sourceType:true,sourceId:true,occurrenceCount:true,message:true,severity:true,category:true},take:2000});
   for(const incident of open){
     const sourceWasScanned=incident.sourceType==="SOCIAL_ACCOUNT"?scannedAccounts.has(incident.sourceId):scannedTargets.has(incident.sourceId);
     if(!sourceWasScanned||activeKeys.has(incident.workspaceId+"|"+incident.dedupeKey))continue;
@@ -96,7 +96,7 @@ export async function synchronizeSocialIncidents():Promise<{created:number;reope
     if(changed.count){
       resolved++;
       await db.$transaction(async tx=>{
-        await tx.activityLog.create({data:{workspaceId:incident.workspaceId,action:"social.incident_auto_resolved",entityType:"workspace_incident",entityId:incident.id,metadata:{category:incident.dedupeKey.split(":").slice(-1)[0]??"SOCIAL_INCIDENT"}}});
+        await tx.activityLog.create({data:{workspaceId:incident.workspaceId,action:"social.incident_auto_resolved",entityType:"workspace_incident",entityId:incident.id,metadata:{category:incident.category,severity:incident.severity}}});
         const admins=await tx.workspaceMembership.findMany({where:{workspaceId:incident.workspaceId,role:{in:["OWNER","ADMIN"]}},select:{userId:true,user:{select:{email:true}}}});
         await tx.activityLog.create({data:{workspaceId:incident.workspaceId,action:"social.incident_escalated",entityType:"workspace_incident",entityId:incident.id,metadata:{category:incident.category,severity:incident.severity,escalationAfterMinutes:30}}});
       const prefs=await tx.workspaceNotificationPreference.findMany({where:{workspaceId:incident.workspaceId,userId:{in:admins.map(member=>member.userId)}},select:{userId:true,inAppSocialIncidents:true,emailSocialIncidents:true}});
