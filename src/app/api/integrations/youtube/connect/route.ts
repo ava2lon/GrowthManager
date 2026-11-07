@@ -12,6 +12,7 @@ const COOKIE = "gm_youtube_oauth_state";
 const SCOPES = [
   "https://www.googleapis.com/auth/youtube.upload",
   "https://www.googleapis.com/auth/youtube.readonly",
+  ...(process.env.YOUTUBE_ENABLE_ANALYTICS_SCOPE === "true" ? ["https://www.googleapis.com/auth/yt-analytics.readonly"] : []),
 ];
 
 function sign(value: string) {
