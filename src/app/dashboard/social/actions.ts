@@ -618,6 +618,23 @@ export async function createLinkedInDraft(formData:FormData){
  revalidatePath("/dashboard/social");return post.id;
 }
 
+const RETRYABLE_LINKEDIN_ERRORS=new Set(["LINKEDIN_REAUTHORIZATION_REQUIRED","LINKEDIN_REFRESH_UNAVAILABLE","LINKEDIN_REFRESH_REJECTED","LINKEDIN_AUTH_FAILED","LINKEDIN_PERMISSION_DENIED","LINKEDIN_PUBLISH_SCOPE_MISSING","LINKEDIN_ORGANIZATION_ROLE_REVOKED","LINKEDIN_ORGANIZATION_ACCESS_UNVERIFIED","LINKEDIN_PROVIDER_UNAVAILABLE","LINKEDIN_NOT_CONFIGURED","LINKEDIN_CREDENTIAL_DECRYPTION_FAILED","LINKEDIN_TOKEN_MISSING"]);
+export async function retryLinkedInPublish(formData:FormData){
+ const context=await requireWorkspaceRole("MEMBER"),targetId=String(formData.get("targetId")??"").trim();
+ if(!targetId||targetId.length>128)throw new Error("Invalid LinkedIn publishing target.");
+ const target=await db.socialPostTarget.findFirst({where:{id:targetId,workspaceId:context.workspace.id,provider:"LINKEDIN",status:"FAILED"},select:{id:true,contentPostId:true,errorCode:true,socialAccount:{select:{id:true,status:true,scopes:true,metadata:true}}}});
+ if(!target||!RETRYABLE_LINKEDIN_ERRORS.has(target.errorCode??""))throw new Error("This LinkedIn failure is not eligible for a safe retry. Unknown publishing outcomes must be verified on LinkedIn and are never retried automatically.");
+ const metadata=readMetadata(target.socialAccount.metadata),required=metadata.accountType==="ORGANIZATION"?"w_organization_social":"w_member_social";
+ if(target.socialAccount.status!=="CONNECTED"||!target.socialAccount.scopes.includes(required))throw new Error("Reconnect the LinkedIn account and restore its required publishing permissions before retrying.");
+ await db.$transaction(async tx=>{
+  const changed=await tx.socialPostTarget.updateMany({where:{id:target.id,workspaceId:context.workspace.id,provider:"LINKEDIN",status:"FAILED",errorCode:target.errorCode},data:{status:"DRAFT",providerPostId:null,errorCode:null,publishedAt:null}});
+  if(changed.count!==1)throw new Error("This LinkedIn target changed concurrently. Refresh and retry.");
+  await tx.contentPost.updateMany({where:{id:target.contentPostId,workspaceId:context.workspace.id,status:"FAILED"},data:{status:"DRAFT",publishedAt:null}});
+  await tx.activityLog.create({data:{workspaceId:context.workspace.id,userId:context.userId,action:"social_post.retry_authorized",entityType:"ContentPost",entityId:target.contentPostId,metadata:{provider:"LINKEDIN",targetId:target.id,previousErrorCode:target.errorCode}}});
+ });
+ revalidatePath("/dashboard/social");
+}
+
 export async function publishLinkedInDraft(formData:FormData){
  const context=await requireWorkspaceRole("MEMBER"),targetId=String(formData.get("targetId")??"").trim();
  if(!targetId||targetId.length>128)throw new Error("Invalid LinkedIn publishing target.");
