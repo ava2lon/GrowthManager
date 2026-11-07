@@ -36,6 +36,7 @@ async function activate(signal:Signal,now:Date):Promise<"created"|"reopened"|"up
       incidentId=created.id;occurrence=created.occurrenceCount;result="created";
     }
     if(result!=="updated"){
+      await tx.activityLog.create({data:{workspaceId:signal.workspaceId,action:result==="reopened"?"social.incident_reopened":"social.incident_created",entityType:"workspace_incident",entityId:incidentId,metadata:{category:signal.category,severity:signal.severity,sourceType:signal.sourceType,occurrence}}});
       const admins=await tx.workspaceMembership.findMany({
         where:{workspaceId:signal.workspaceId,role:{in:["OWNER","ADMIN"]}},
         select:{userId:true,user:{select:{email:true}}},
@@ -95,8 +96,10 @@ export async function synchronizeSocialIncidents():Promise<{created:number;reope
     if(changed.count){
       resolved++;
       await db.$transaction(async tx=>{
+        await tx.activityLog.create({data:{workspaceId:incident.workspaceId,action:"social.incident_auto_resolved",entityType:"workspace_incident",entityId:incident.id,metadata:{category:incident.dedupeKey.split(":").slice(-1)[0]??"SOCIAL_INCIDENT"}}});
         const admins=await tx.workspaceMembership.findMany({where:{workspaceId:incident.workspaceId,role:{in:["OWNER","ADMIN"]}},select:{userId:true,user:{select:{email:true}}}});
-        const prefs=await tx.workspaceNotificationPreference.findMany({where:{workspaceId:incident.workspaceId,userId:{in:admins.map(member=>member.userId)}},select:{userId:true,inAppSocialIncidents:true,emailSocialIncidents:true}});
+        await tx.activityLog.create({data:{workspaceId:incident.workspaceId,action:"social.incident_escalated",entityType:"workspace_incident",entityId:incident.id,metadata:{category:incident.category,severity:incident.severity,escalationAfterMinutes:30}}});
+      const prefs=await tx.workspaceNotificationPreference.findMany({where:{workspaceId:incident.workspaceId,userId:{in:admins.map(member=>member.userId)}},select:{userId:true,inAppSocialIncidents:true,emailSocialIncidents:true}});
         const byUser=new Map(prefs.map(item=>[item.userId,item]));
         const inApp=admins.filter(member=>byUser.get(member.userId)?.inAppSocialIncidents??true);
         if(inApp.length)await tx.workspaceNotification.createMany({data:inApp.map(member=>({workspaceId:incident.workspaceId,userId:member.userId,type:"SOCIAL_INCIDENT_RESOLVED" as const,title:"Social incident resolved",message:"A previously detected social account or publishing issue has recovered.",href:"/dashboard/social"}))});
