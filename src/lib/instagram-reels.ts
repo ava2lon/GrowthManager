@@ -17,7 +17,7 @@ async function graph(url:URL,body?:URLSearchParams){
  const r=await fetch(url,{method:body?"POST":"GET",headers:body?{"Content-Type":"application/x-www-form-urlencoded"}:undefined,body:body?.toString(),cache:"no-store",redirect:"error",signal:AbortSignal.timeout(20000)});
  const j=await r.json().catch(()=>null) as Graph|null;if(!r.ok||!j)throw new Error(j?.error?.code===190?"META_AUTH_FAILED":j?.error?.code===10?"META_PERMISSION_DENIED":r.status===429?"META_RATE_LIMITED":"META_GRAPH_REQUEST_FAILED");return j;
 }
-function api(version:string,id:string){return new URL("https://graph.facebook.com/"+version+"/"+encodeURIComponent(id));}
+function api(version:string,id:string){return new URL("https://graph.facebook.com/"+version+"/"+id.split("/").map(encodeURIComponent).join("/"));}
 async function accountContext(targetId:string,workspaceId:string){
  const t=await db.socialPostTarget.findFirst({where:{id:targetId,workspaceId,provider:"INSTAGRAM"},include:{contentPost:{select:{id:true,workspaceId:true,body:true,brandId:true,mediaAssets:{orderBy:{position:"asc"},select:{mediaAsset:{select:{id:true,status:true,mimeType:true,bucket:true,objectPath:true,workspaceId:true,brandId:true,sizeBytes:true,durationMs:true,width:true,height:true}}}}}},socialAccount:{select:{id:true,workspaceId:true,brandId:true,status:true,scopes:true,credentialsEncrypted:true,metadata:true}}}});
  if(!t||t.contentPost.workspaceId!==workspaceId||t.socialAccount.workspaceId!==workspaceId||t.contentPost.brandId!==t.socialAccount.brandId||t.socialAccount.status!=="CONNECTED"||!t.socialAccount.credentialsEncrypted) return null;
