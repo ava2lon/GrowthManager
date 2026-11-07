@@ -94,7 +94,7 @@ export async function dispatchSocialIncidentEmails(batchSize=10):Promise<{claime
     try{
       const response=await fetch("https://api.resend.com/emails",{
         method:"POST",headers:{Authorization:"Bearer "+apiKey,"Content-Type":"application/json",Accept:"application/json","Idempotency-Key":"growthmanager-social-incident-"+item.id},
-        body:JSON.stringify({from,to:[item.recipientEmail],subject,html,text:[heading,"Workspace: "+item.incident.workspace.name,"Severity: "+item.incident.severity,"Category: "+item.incident.category,"",item.incident.message,"",destination].join("\n")},
+        body:JSON.stringify({from,to:[item.recipientEmail],subject,html,text:[heading,"Workspace: "+item.incident.workspace.name,"Severity: "+item.incident.severity,"Category: "+item.incident.category,"",item.incident.message,"",destination].join("\n")}),
         cache:"no-store",redirect:"error",signal:AbortSignal.timeout(8_000),
       });
       if(!response.ok){
