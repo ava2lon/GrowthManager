@@ -4,6 +4,7 @@ import {db} from "@/lib/db";
 import {publishFacebookTarget,publishInstagramTarget} from "@/lib/social-publishing";
 import {startInstagramReelTarget,processInstagramReelTarget} from "@/lib/instagram-reels";
 import {processTikTokInboxTarget} from "@/lib/tiktok-upload";
+import {processYouTubeUploadTarget} from "@/lib/youtube-upload";
 
 export const runtime="nodejs";
 export const dynamic="force-dynamic";
@@ -76,6 +77,20 @@ export async function GET(request:Request){
     }catch{tiktokFailed++;}
   }
 
+  const youtubeProcessing=await db.socialPostTarget.findMany({
+    where:{provider:"YOUTUBE",status:"PUBLISHING",uploadSessionEncrypted:{not:null},OR:[{nextCheckAt:null},{nextCheckAt:{lte:now}}]},
+    select:{id:true,workspaceId:true},orderBy:{nextCheckAt:"asc"},take:10,
+  });
+  let youtubePublished=0,youtubeFailed=0,youtubeProcessingCount=0;
+  for(const target of youtubeProcessing){
+    try{
+      const result=await processYouTubeUploadTarget({targetId:target.id,workspaceId:target.workspaceId});
+      if(result.status==="PUBLISHED")youtubePublished++;
+      else if(result.status==="FAILED")youtubeFailed++;
+      else if(result.status==="PROCESSING")youtubeProcessingCount++;
+    }catch{youtubeFailed++;}
+  }
+
   const due=await db.socialPostTarget.findMany({
     where:{provider:{in:["FACEBOOK","INSTAGRAM"]},status:"SCHEDULED",contentPost:{scheduledAt:{lte:now}}},
     select:{id:true,workspaceId:true,provider:true},
@@ -102,5 +117,5 @@ export async function GET(request:Request){
       failed++;
     }
   }
-  return NextResponse.json({due:due.length,published,failed,unknown,skipped,recoveredUnknown,reels:{checked:processing.length,published:reelsPublished,failed:reelsFailed,processing:reelsProcessing,unknown:reelsUnknown},tiktok:{checked:tiktokProcessing.length,uploaded:tiktokUploaded,published:tiktokPublished,failed:tiktokFailed}});
+  return NextResponse.json({due:due.length,published,failed,unknown,skipped,recoveredUnknown,reels:{checked:processing.length,published:reelsPublished,failed:reelsFailed,processing:reelsProcessing,unknown:reelsUnknown},tiktok:{checked:tiktokProcessing.length,uploaded:tiktokUploaded,published:tiktokPublished,failed:tiktokFailed},youtube:{checked:youtubeProcessing.length,published:youtubePublished,failed:youtubeFailed,processing:youtubeProcessingCount}});
 }
