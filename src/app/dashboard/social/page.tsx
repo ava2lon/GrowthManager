@@ -1,5 +1,6 @@
 import SocialEditorialCalendar from "./editorial-calendar";
 import SocialPublishingQueue from "./publishing-queue";
+import SocialIntegrationHealthCenter from "./integration-health-center";
 import {TikTokInboxUploadButton} from "./tiktok-upload-button";
 import {YouTubeUploadButton} from "./youtube-upload-button";
 import {requireWorkspaceContext} from "@/lib/workspace";
@@ -182,6 +183,7 @@ export default async function SocialPage({searchParams}:{searchParams:Promise<{m
   const pinterestTopPins=[...pinterestPerformanceRows].filter(row=>row.impressions!==null||row.engagements!==null||row.outboundClicks!==null).sort((a,b)=>(b.outboundClicks??-1)-(a.outboundClicks??-1)||(b.engagements??-1)-(a.engagements??-1)).slice(0,5);
   const brandNames = new Map(brands.map((brand)=>[brand.id,brand.name]));
   const connected = accounts.filter((account)=>account.status==="CONNECTED").length;
+  const healthAccounts=accounts.map(account=>({id:account.id,provider:account.provider,accountName:account.accountName,status:account.status,connectedAt:account.connectedAt,lastValidatedAt:account.lastValidatedAt,lastErrorCode:account.lastErrorCode,tokenExpiresAt:account.tokenExpiresAt,scopes:account.scopes}));
 
   return (
     <div className="mx-auto max-w-6xl space-y-8">
@@ -197,6 +199,8 @@ export default async function SocialPage({searchParams}:{searchParams:Promise<{m
         <div className="rounded-2xl border border-slate-200 bg-white p-5"><p className="text-xs text-slate-500">Tracked accounts</p><p className="mt-2 text-2xl font-semibold text-slate-950">{accounts.length}</p></div>
         <div className="rounded-2xl border border-slate-200 bg-white p-5"><p className="text-xs text-slate-500">Active brands</p><p className="mt-2 text-2xl font-semibold text-slate-950">{brands.length}</p></div>
       </section>
+
+      <SocialIntegrationHealthCenter accounts={healthAccounts}/>
 
       <section className="rounded-2xl border border-slate-200 bg-white p-5 sm:p-6">
         <div className="flex items-center justify-between gap-3"><div><h2 className="font-semibold text-slate-900">Connected accounts</h2><p className="mt-1 text-sm text-slate-500">Account inventory scoped to {workspace.name}.</p></div><span className="rounded-full bg-slate-100 px-3 py-1 text-xs text-slate-600">{accounts.length} total</span></div>
