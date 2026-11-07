@@ -21,7 +21,7 @@ import {refreshLinkedInAnalytics} from "@/lib/linkedin-analytics";
 import {refreshTikTokAccountAnalytics,refreshTikTokVideoAnalytics} from "@/lib/tiktok-analytics";
 import {refreshYouTubeChannelAnalytics,refreshYouTubeVideoAnalytics} from "@/lib/youtube-analytics";
 import {refreshXAnalytics} from "@/lib/x-analytics";
-import {publishXTarget} from "@/lib/x-publishing";
+import {publishXTarget,deleteXPublishedTarget} from "@/lib/x-publishing";
 
 function readMetadata(value: unknown): Record<string, unknown> {
   if (!value || typeof value !== "object" || Array.isArray(value)) return {};
@@ -1558,5 +1558,57 @@ export async function retryXPublish(formData:FormData){
   await tx.contentPost.updateMany({where:{id:target.contentPostId,workspaceId:context.workspace.id,status:"FAILED"},data:{status:"DRAFT",publishedAt:null}});
   await tx.activityLog.create({data:{workspaceId:context.workspace.id,userId:context.userId,action:"social_post.retry_authorized",entityType:"ContentPost",entityId:target.contentPostId,metadata:{provider:"X",targetId:target.id,previousErrorCode:target.errorCode}}});
  });
+ revalidatePath("/dashboard/social");
+}
+
+
+export async function updateXDraft(formData:FormData){
+ const context=await requireWorkspaceRole("MEMBER");
+ const contentPostId=String(formData.get("contentPostId")??"").trim();
+ const body=String(formData.get("body")??"").trim();
+ const rawSchedule=String(formData.get("scheduledAt")??"").trim();
+ if(!contentPostId||contentPostId.length>128||!body||body.length>280)throw new Error("Provide a valid X draft and post text up to 280 characters.");
+ let scheduledAt:Date|null=null;
+ if(rawSchedule){
+  if(!/^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}$/.test(rawSchedule))throw new Error("Choose a valid schedule date and time in UTC.");
+  scheduledAt=new Date(rawSchedule+"Z");
+  if(!Number.isFinite(scheduledAt.getTime())||scheduledAt.getTime()<Date.now()+15*60_000||scheduledAt.getTime()>Date.now()+365*24*60*60_000)throw new Error("Schedule must be 15 minutes to 1 year in the future (UTC).");
+ }
+ await enforceSocialRateLimit(context.workspace.id,context.userId,"publish");
+ await db.$transaction(async tx=>{
+  const post=await tx.contentPost.findFirst({where:{id:contentPostId,workspaceId:context.workspace.id,publishTargets:{some:{provider:"X"}}},select:{id:true,brandId:true,publishTargets:{select:{id:true,provider:true,status:true}}}});
+  if(!post||post.publishTargets.some(target=>target.provider!=="X"||!["DRAFT","SCHEDULED"].includes(target.status))||post.publishTargets.length===0)throw new Error("Only unpublished X-only drafts and schedules can be edited.");
+  const changed=await tx.contentPost.updateMany({where:{id:post.id,workspaceId:context.workspace.id,status:{in:["DRAFT","SCHEDULED"]}},data:{body,status:scheduledAt?"SCHEDULED":"DRAFT",scheduledAt}});
+  if(changed.count!==1)throw new Error("This X draft changed concurrently. Refresh and retry.");
+  const targets=await tx.socialPostTarget.updateMany({where:{workspaceId:context.workspace.id,contentPostId:post.id,provider:"X",status:{in:["DRAFT","SCHEDULED"]}},data:{status:scheduledAt?"SCHEDULED":"DRAFT",errorCode:null,nextCheckAt:null}});
+  if(targets.count!==post.publishTargets.length)throw new Error("One or more X targets changed concurrently. Refresh and verify the draft.");
+  await tx.activityLog.create({data:{workspaceId:context.workspace.id,userId:context.userId,action:"social_post.draft_updated",entityType:"ContentPost",entityId:post.id,metadata:{provider:"X",targetCount:targets.count,scheduledAt:scheduledAt?.toISOString()??null}}});
+ });
+ revalidatePath("/dashboard/social");
+}
+
+export async function cancelXSchedule(formData:FormData){
+ const context=await requireWorkspaceRole("MEMBER");
+ const targetId=String(formData.get("targetId")??"").trim();
+ if(!targetId||targetId.length>128)throw new Error("Invalid X publishing target.");
+ await enforceSocialRateLimit(context.workspace.id,context.userId,"publish");
+ await db.$transaction(async tx=>{
+  const target=await tx.socialPostTarget.findFirst({where:{id:targetId,workspaceId:context.workspace.id,provider:"X",status:"SCHEDULED"},select:{id:true,contentPostId:true}});
+  if(!target)throw new Error("This X schedule is already processing or unavailable.");
+  const changed=await tx.socialPostTarget.updateMany({where:{id:target.id,workspaceId:context.workspace.id,provider:"X",status:"SCHEDULED"},data:{status:"DRAFT",errorCode:null,nextCheckAt:null}});
+  if(changed.count!==1)throw new Error("This X post started publishing. Refresh to see its latest status.");
+  const remaining=await tx.socialPostTarget.count({where:{workspaceId:context.workspace.id,contentPostId:target.contentPostId,status:"SCHEDULED"}});
+  await tx.contentPost.updateMany({where:{id:target.contentPostId,workspaceId:context.workspace.id,status:"SCHEDULED"},data:{status:remaining>0?"SCHEDULED":"DRAFT",scheduledAt:remaining>0?undefined:null}});
+  await tx.activityLog.create({data:{workspaceId:context.workspace.id,userId:context.userId,action:"social_post.schedule_cancelled",entityType:"ContentPost",entityId:target.contentPostId,metadata:{provider:"X",targetId:target.id}}});
+ });
+ revalidatePath("/dashboard/social");
+}
+
+export async function deleteXPost(formData:FormData){
+ const context=await requireWorkspaceRole("MEMBER");
+ const targetId=String(formData.get("targetId")??"").trim();
+ if(!targetId||targetId.length>128)throw new Error("Invalid X publishing target.");
+ await enforceSocialRateLimit(context.workspace.id,context.userId,"publish");
+ await deleteXPublishedTarget({targetId,workspaceId:context.workspace.id,actorUserId:context.userId});
  revalidatePath("/dashboard/social");
 }
