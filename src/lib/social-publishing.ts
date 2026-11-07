@@ -82,7 +82,7 @@ export async function publishFacebookTarget(input:{targetId:string;workspaceId:s
   const claim=await db.socialPostTarget.updateMany({
     where:{
       id:target.id,workspaceId:input.workspaceId,status:{in:allowed},
-      ...(allowed.includes("SCHEDULED") ? {contentPost:{scheduledAt:{lte:new Date()}}} : {}),
+      ...(target.status === "SCHEDULED" ? {contentPost:{scheduledAt:{lte:new Date()}}} : {}),
     },
     data:{status:"PUBLISHING",errorCode:null},
   });
@@ -207,7 +207,7 @@ export async function publishInstagramTarget(input:{targetId:string;workspaceId:
   const claim=await db.socialPostTarget.updateMany({
     where:{
       id:target.id,workspaceId:input.workspaceId,status:{in:allowed},
-      ...(allowed.includes("SCHEDULED") ? {contentPost:{scheduledAt:{lte:new Date()}}} : {}),
+      ...(target.status === "SCHEDULED" ? {contentPost:{scheduledAt:{lte:new Date()}}} : {}),
     },
     data:{status:"PUBLISHING",errorCode:null},
   });
