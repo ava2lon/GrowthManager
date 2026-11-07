@@ -418,9 +418,9 @@ export async function scheduleFacebookDraft(formData: FormData) {
   }
   const target = await db.socialPostTarget.findFirst({
     where:{id:targetId,workspaceId:context.workspace.id,provider:"FACEBOOK",status:"DRAFT"},
-    include:{contentPost:{select:{id:true,brandId:true,status:true,mediaAssets:{select:{id:true}}}},socialAccount:{select:{id:true,brandId:true,status:true,scopes:true}}},
+    include:{contentPost:{select:{id:true,brandId:true,status:true}},socialAccount:{select:{id:true,brandId:true,status:true,scopes:true}}},
   });
-  if (!target || target.contentPost.mediaAssets.length>0 || target.contentPost.brandId!==target.socialAccount.brandId || target.socialAccount.status!=="CONNECTED" ||
+  if (!target || target.contentPost.brandId!==target.socialAccount.brandId || target.socialAccount.status!=="CONNECTED" ||
       !target.socialAccount.scopes.includes("pages_manage_posts")) {
     throw new Error("This draft or connected Facebook Page is no longer eligible for scheduling.");
   }
@@ -455,10 +455,9 @@ export async function scheduleFacebookDraftTargets(formData: FormData) {
   }
   const post = await db.contentPost.findFirst({
     where: {id: contentPostId, workspaceId: context.workspace.id},
-    select: {id: true, brandId: true, status: true, mediaAssets:{select:{id:true}}},
+    select: {id: true, brandId: true, status: true},
   });
   if (!post) throw new Error("Draft not found in the active workspace.");
-  if (post.mediaAssets.length>0) throw new Error("Media-attached posts cannot be scheduled until provider media publishing is enabled.");
   const targets = await db.socialPostTarget.findMany({
     where: {workspaceId: context.workspace.id, contentPostId: post.id, provider: "FACEBOOK", status: "DRAFT"},
     include: {socialAccount: {select: {id: true, brandId: true, status: true, scopes: true}}},
