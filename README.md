@@ -196,3 +196,18 @@ Before enabling production uploads, configure YouTube Data API v3 and complete t
 #### YouTube upload operational limits
 
 The YouTube Data API resumable protocol uses a session URI returned by `videos.insert`, HTTP 308 responses with a committed `Range` header, and 201 when the upload completes. GrowthManager uses 8 MiB chunks (a multiple of Google's 256 KiB chunk alignment), persists the encrypted session URI, and asks Google for the authoritative committed byte offset before every continuation. The default YouTube API project quota currently allows 100 video uploads per day; verify the actual quota in Google Cloud Console before enabling high-volume workspace usage. See Google's [resumable upload protocol](https://developers.google.com/youtube/v3/guides/using_resumable_upload_protocol) and [videos.insert reference](https://developers.google.com/youtube/v3/docs/videos/insert).
+
+
+## LinkedIn OAuth and text publishing
+
+GrowthManager supports LinkedIn member-profile and eligible organization Page connections through LinkedIn OAuth 2.0. Register the callback URL exactly as:
+
+`https://growthmanager.vercel.app/api/integrations/linkedin/callback`
+
+Configure `LINKEDIN_CLIENT_ID`, `LINKEDIN_CLIENT_SECRET`, `LINKEDIN_REDIRECT_URI`, and `LINKEDIN_API_VERSION`. The current example uses API version `202610`; use a currently supported monthly version from LinkedIn's versioning documentation when configuring the application.
+
+The OAuth flow requests OpenID Connect identity, member posting, organization posting, and organization administration read scopes. LinkedIn grants only the products and permissions approved for the developer application. GrowthManager always stores the member identity; organization Pages are discovered only when the relevant organization permissions are granted and the authenticated member has an approved eligible Page role. The member's organization role is rechecked before every organization post. A missing Community Management API product or role does not prevent member-profile connection.
+
+The current publishing phase supports text-only organic posts through `POST /rest/posts`, using the required `Linkedin-Version` and `X-Restli-Protocol-Version: 2.0.0` headers. Posts are published immediately; scheduling, images, videos, documents, analytics, and comments remain staged. An ambiguous provider response is marked `UNKNOWN` and is not blindly retried. LinkedIn access tokens expire; when an access token expires GrowthManager requires the workspace administrator to reconnect the identity rather than assuming refresh-token access is enabled.
+
+Credentials are encrypted at rest with workspace/account-bound AES-GCM. OAuth state is HMAC-signed, short-lived, cookie-bound, and checked against the current authenticated workspace administrator. Account health checks and publishing actions remain workspace-scoped and audited.
