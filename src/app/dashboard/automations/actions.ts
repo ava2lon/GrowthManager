@@ -231,3 +231,87 @@ export async function retryAutomationAlertDelivery(formData: FormData) {
   revalidatePath("/dashboard/automations");
 }
 
+
+
+export async function createAutomationBlueprint(formData: FormData) {
+  const context = await requireWorkspaceRole("ADMIN");
+  const templateId = String(formData.get("templateId") ?? "");
+  const {automationBlueprintTemplates} = await import("./templates");
+  const template = automationBlueprintTemplates.find((item) => item.id === templateId);
+  if (!template) throw new Error("Unknown automation blueprint template.");
+
+  const limit = await consumeRateLimit("automation-blueprint-create:" + context.workspace.id + ":" + context.userId, 20, 3600);
+  if (!limit.allowed || (process.env.NODE_ENV === "production" && !limit.configured)) {
+    throw new Error("Blueprint creation limit reached or request protection is unavailable.");
+  }
+  const count = await db.automation.count({where: {workspaceId: context.workspace.id}});
+  if (count >= 50) throw new Error("This workspace has reached the 50-blueprint limit.");
+
+  const existing = await db.automation.findFirst({
+    where: {workspaceId: context.workspace.id, name: template.name},
+    select: {id: true},
+  });
+  if (existing) throw new Error("This blueprint is already saved in the workspace.");
+
+  const definition = {
+    schemaVersion: 1,
+    kind: "GROWTHMANAGER_AUTOMATION_BLUEPRINT",
+    templateId: template.id,
+    category: template.category,
+    trigger: template.trigger,
+    steps: [...template.steps],
+    integrations: [...template.integrations],
+    cautions: template.cautions,
+    executionMode: "PLANNING_ONLY",
+  };
+  const created = await db.automation.create({
+    data: {
+      workspaceId: context.workspace.id,
+      name: template.name,
+      description: template.description,
+      enabled: false,
+      definition,
+    },
+    select: {id: true, name: true},
+  });
+  await db.activityLog.create({
+    data: {
+      workspaceId: context.workspace.id,
+      userId: context.userId,
+      action: "automation.blueprint_created",
+      entityType: "automation_blueprint",
+      entityId: created.id,
+      metadata: {templateId: template.id, category: template.category},
+    },
+  });
+  revalidatePath("/dashboard/automations");
+}
+
+export async function deleteAutomationBlueprint(formData: FormData) {
+  const context = await requireWorkspaceRole("ADMIN");
+  const automationId = String(formData.get("automationId") ?? "");
+  if (!automationId || automationId.length > 128) throw new Error("Invalid blueprint.");
+
+  await db.$transaction(async (tx) => {
+    const blueprint = await tx.automation.findFirst({
+      where: {id: automationId, workspaceId: context.workspace.id, enabled: false},
+      select: {id: true, name: true},
+    });
+    if (!blueprint) throw new Error("Blueprint not found or cannot be deleted.");
+    const removed = await tx.automation.deleteMany({
+      where: {id: blueprint.id, workspaceId: context.workspace.id, enabled: false},
+    });
+    if (removed.count !== 1) throw new Error("Blueprint changed concurrently. Refresh and retry.");
+    await tx.activityLog.create({
+      data: {
+        workspaceId: context.workspace.id,
+        userId: context.userId,
+        action: "automation.blueprint_deleted",
+        entityType: "automation_blueprint",
+        entityId: blueprint.id,
+        metadata: {name: blueprint.name},
+      },
+    });
+  });
+  revalidatePath("/dashboard/automations");
+}
