@@ -1359,6 +1359,35 @@ export async function createPinterestDraft(formData:FormData){
  });
  revalidatePath("/dashboard/social");return post.id;
 }
+export async function cancelPinterestSchedule(formData:FormData){
+ const context=await requireWorkspaceRole("MEMBER"),targetId=String(formData.get("targetId")??"").trim();
+ if(!targetId||targetId.length>128)throw new Error("Invalid Pinterest publishing target.");
+ await db.$transaction(async tx=>{
+  const target=await tx.socialPostTarget.findFirst({where:{id:targetId,workspaceId:context.workspace.id,provider:"PINTEREST",status:"SCHEDULED"},select:{id:true,contentPostId:true}});
+  if(!target)throw new Error("This Pinterest schedule is already processing or unavailable.");
+  const changed=await tx.socialPostTarget.updateMany({where:{id:target.id,workspaceId:context.workspace.id,provider:"PINTEREST",status:"SCHEDULED"},data:{status:"DRAFT",errorCode:null}});
+  if(changed.count!==1)throw new Error("This Pin started publishing. Refresh to see its latest status.");
+  await tx.contentPost.updateMany({where:{id:target.contentPostId,workspaceId:context.workspace.id,status:"SCHEDULED"},data:{status:"DRAFT",scheduledAt:null}});
+  await tx.activityLog.create({data:{workspaceId:context.workspace.id,userId:context.userId,action:"social_post.schedule_cancelled",entityType:"ContentPost",entityId:target.contentPostId,metadata:{provider:"PINTEREST",targetId:target.id}}});
+ });
+ revalidatePath("/dashboard/social");
+}
+export async function reschedulePinterestPin(formData:FormData){
+ const context=await requireWorkspaceRole("MEMBER"),targetId=String(formData.get("targetId")??"").trim(),raw=String(formData.get("scheduledAt")??"").trim();
+ if(!targetId||targetId.length>128)throw new Error("Invalid Pinterest publishing target.");
+ if(!/^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}$/.test(raw))throw new Error("Choose a valid schedule time.");
+ const scheduledAt=new Date(raw+"Z");
+ if(!Number.isFinite(scheduledAt.getTime())||scheduledAt.getTime()<Date.now()+15*60_000)throw new Error("Schedule time must be at least 15 minutes in the future (UTC).");
+ await db.$transaction(async tx=>{
+  const target=await tx.socialPostTarget.findFirst({where:{id:targetId,workspaceId:context.workspace.id,provider:"PINTEREST",status:"SCHEDULED"},select:{id:true,contentPostId:true}});
+  if(!target)throw new Error("Only a pending Pinterest schedule can be rescheduled.");
+  const changed=await tx.contentPost.updateMany({where:{id:target.contentPostId,workspaceId:context.workspace.id,status:"SCHEDULED"},data:{scheduledAt}});
+  if(changed.count!==1)throw new Error("The Pinterest schedule changed concurrently. Refresh and retry.");
+  await tx.activityLog.create({data:{workspaceId:context.workspace.id,userId:context.userId,action:"social_post.schedule_rescheduled",entityType:"ContentPost",entityId:target.contentPostId,metadata:{provider:"PINTEREST",targetId:target.id,scheduledAt:scheduledAt.toISOString()}}});
+ });
+ revalidatePath("/dashboard/social");
+}
+
 export async function publishPinterestDraft(formData:FormData){
  const context=await requireWorkspaceRole("MEMBER"),targetId=String(formData.get("targetId")??"").trim();
  if(!targetId||targetId.length>128)throw new Error("Invalid Pinterest publishing target.");
