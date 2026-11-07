@@ -21,6 +21,7 @@ import {refreshLinkedInAnalytics} from "@/lib/linkedin-analytics";
 import {refreshTikTokAccountAnalytics,refreshTikTokVideoAnalytics} from "@/lib/tiktok-analytics";
 import {refreshYouTubeChannelAnalytics,refreshYouTubeVideoAnalytics} from "@/lib/youtube-analytics";
 import {refreshXAnalytics} from "@/lib/x-analytics";
+import {publishXTarget} from "@/lib/x-publishing";
 
 function readMetadata(value: unknown): Record<string, unknown> {
   if (!value || typeof value !== "object" || Array.isArray(value)) return {};
@@ -1502,4 +1503,52 @@ export async function refreshXAnalyticsAction(formData:FormData){
  await refreshXAnalytics({workspaceId:context.workspace.id,accountId,...(targetId?{targetId}:{})});
  revalidatePath("/dashboard/social");
  redirect("/dashboard/social?xAnalytics=refreshed");
+}
+
+
+export async function createXDraft(formData:FormData){
+ const context=await requireWorkspaceRole("MEMBER");
+ const accountIds=[...new Set(formData.getAll("accountIds").map(v=>String(v).trim()).filter(Boolean))];
+ const body=String(formData.get("body")??"").trim();
+ const rawSchedule=String(formData.get("scheduledAt")??"").trim();
+ if(accountIds.length<1||accountIds.length>10||accountIds.some(id=>id.length>128)||!body||body.length>280)throw new Error("Select 1–10 X accounts and enter post text up to 280 characters.");
+ let scheduledAt:Date|null=null;
+ if(rawSchedule){if(!/[zZ]$|[+-][0-9]{2}:[0-9]{2}$/.test(rawSchedule)||!Number.isFinite(Date.parse(rawSchedule)))throw new Error("Schedule must be a timezone-qualified ISO 8601 date.");scheduledAt=new Date(rawSchedule);if(scheduledAt.getTime()<Date.now()+15*60_000||scheduledAt.getTime()>Date.now()+365*24*60*60_000)throw new Error("Schedule must be 15 minutes to 1 year in the future.");}
+ const accounts=await db.socialAccount.findMany({where:{id:{in:accountIds},workspaceId:context.workspace.id,provider:"X",status:"CONNECTED"},select:{id:true,brandId:true,scopes:true}});
+ if(accounts.length!==accountIds.length||new Set(accounts.map(a=>a.brandId)).size!==1||accounts.some(a=>!a.scopes.includes("tweet.write")))throw new Error("Every selected X account must be connected with tweet.write permission and assigned to the same brand.");
+ const brand=await db.brand.findFirst({where:{id:accounts[0].brandId,workspaceId:context.workspace.id,status:"ACTIVE"},select:{id:true}});
+ if(!brand)throw new Error("The selected X accounts must belong to an active brand.");
+ await enforcePublishLimit(context.workspace.id,context.userId);
+ const post=await db.$transaction(async tx=>{
+  const created=await tx.contentPost.create({data:{workspaceId:context.workspace.id,brandId:brand.id,body,status:scheduledAt?"SCHEDULED":"DRAFT",scheduledAt},select:{id:true}});
+  await tx.socialPostTarget.createMany({data:accounts.map(a=>({workspaceId:context.workspace.id,contentPostId:created.id,socialAccountId:a.id,provider:"X",status:scheduledAt?"SCHEDULED":"DRAFT"}))});
+  await tx.activityLog.create({data:{workspaceId:context.workspace.id,userId:context.userId,action:"social_post.draft_created",entityType:"ContentPost",entityId:created.id,metadata:{provider:"X",targetCount:accounts.length,scheduledAt:scheduledAt?.toISOString()??null,mediaCount:0}}});
+  return created;
+ });
+ revalidatePath("/dashboard/social");return post.id;
+}
+
+export async function publishXDraft(formData:FormData){
+ const context=await requireWorkspaceRole("MEMBER"),targetId=String(formData.get("targetId")??"").trim();
+ if(!targetId||targetId.length>128)throw new Error("Invalid X publishing target.");
+ await enforcePublishLimit(context.workspace.id,context.userId);
+ const result=await publishXTarget({targetId,workspaceId:context.workspace.id,actorUserId:context.userId,allowedStatuses:["DRAFT"]});
+ revalidatePath("/dashboard/social");
+ if(result.status!=="PUBLISHED")throw new Error(result.status==="UNKNOWN"?"X's response could not be confirmed. Verify the account's posts before attempting another publication.":result.status==="SKIPPED"?"This X draft is no longer eligible for publishing.":result.errorCode==="X_PUBLISH_SCOPE_MISSING"?"Reconnect X with publishing permission.":"X rejected the post or the account is not eligible ("+(result.errorCode??"X_PUBLISH_FAILED")+").");
+}
+
+export async function retryXPublish(formData:FormData){
+ const context=await requireWorkspaceRole("MEMBER"),targetId=String(formData.get("targetId")??"").trim();
+ if(!targetId||targetId.length>128)throw new Error("Invalid X publishing target.");
+ const retryable=new Set(["X_REAUTHORIZATION_REQUIRED","X_REFRESH_UNAVAILABLE","X_REFRESH_REJECTED","X_RATE_LIMITED","X_PERMISSION_DENIED","X_PUBLISH_REJECTED","X_PUBLISH_SCOPE_MISSING","X_NOT_CONFIGURED","X_CREDENTIAL_DECRYPTION_FAILED"]);
+ const target=await db.socialPostTarget.findFirst({where:{id:targetId,workspaceId:context.workspace.id,provider:"X",status:"FAILED"},select:{id:true,contentPostId:true,errorCode:true,socialAccount:{select:{status:true,scopes:true}}}});
+ if(!target||!retryable.has(target.errorCode??""))throw new Error("This X failure is not eligible for a safe retry. Unknown outcomes must be verified on X and are never retried.");
+ if(target.socialAccount.status!=="CONNECTED"||!target.socialAccount.scopes.includes("tweet.write"))throw new Error("Reconnect X with tweet.write permission before retrying.");
+ await db.$transaction(async tx=>{
+  const changed=await tx.socialPostTarget.updateMany({where:{id:target.id,workspaceId:context.workspace.id,provider:"X",status:"FAILED",errorCode:target.errorCode},data:{status:"DRAFT",providerPostId:null,errorCode:null,publishedAt:null}});
+  if(changed.count!==1)throw new Error("This X target changed concurrently. Refresh and retry.");
+  await tx.contentPost.updateMany({where:{id:target.contentPostId,workspaceId:context.workspace.id,status:"FAILED"},data:{status:"DRAFT",publishedAt:null}});
+  await tx.activityLog.create({data:{workspaceId:context.workspace.id,userId:context.userId,action:"social_post.retry_authorized",entityType:"ContentPost",entityId:target.contentPostId,metadata:{provider:"X",targetId:target.id,previousErrorCode:target.errorCode}}});
+ });
+ revalidatePath("/dashboard/social");
 }
