@@ -84,7 +84,7 @@ export default async function AnalyticsPage({searchParams}:{searchParams:Promise
     const measured=measuredByProvider[provider.key];
     return {key:provider.key,label:provider.label,published:targets.length,measured:targets.filter(item=>measured.has(item.id)).length,connected:connectedAccounts.some(account=>account.provider===provider.key)};
   });
-  const exportRows=publishedTargets.map(target=>({provider:target.provider,title:target.contentPost.title||target.contentPost.body.slice(0,180).replace(/\\s+/g," "),publishedAt:target.publishedAt?.toISOString()??"",analyticsSnapshotAvailable:measuredByProvider[target.provider]?.has(target.id)??false}));
+  const exportRows=publishedTargets.map(target=>({provider:target.provider,title:target.contentPost.title||target.contentPost.body.slice(0,180),publishedAt:target.publishedAt?.toISOString()??"",analyticsSnapshotAvailable:measuredByProvider[target.provider]?.has(target.id)??false}));
   const totalPublished=publishedTargets.length;
   const totalMeasured=rows.reduce((sum,row)=>sum+row.measured,0);
   const latestPublished=publishedTargets.find(item=>item.publishedAt)?.publishedAt??null;
