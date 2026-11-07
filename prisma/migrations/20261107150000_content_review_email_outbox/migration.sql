@@ -13,6 +13,7 @@ CREATE TABLE "ContentReviewEmailDelivery" (
   "providerMessageId" TEXT,
   "lastErrorCode" TEXT,
   "sentAt" TIMESTAMP(3),
+  "lastProviderEventAt" TIMESTAMP(3),
   "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
   "updatedAt" TIMESTAMP(3) NOT NULL,
   CONSTRAINT "ContentReviewEmailDelivery_pkey" PRIMARY KEY ("id")
