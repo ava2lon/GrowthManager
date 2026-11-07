@@ -4,14 +4,28 @@ import {YouTubeUploadButton} from "./youtube-upload-button";
 import {requireWorkspaceContext} from "@/lib/workspace";
 import {db} from "@/lib/db";
 import {socialProviders} from "@/lib/integration-providers";
-import {checkSocialAccountHealth, checkTikTokAccountHealth, checkYouTubeAccountHealth, checkLinkedInAccountHealth, checkPinterestAccountHealth, loadMorePinterestBoards, cancelPinterestSchedule, reschedulePinterestPin, createPinterestDraft, publishPinterestDraft, retryPinterestPublish, refreshPinterestAnalytics, refreshPinterestPinAnalyticsAction, createLinkedInDraft, publishLinkedInDraft, retryLinkedInPublish, disconnectSocialAccount, refreshMetaAuthorization, createFacebookDraft, publishFacebookDraft, scheduleFacebookDraftTargets, createInstagramDraft, publishInstagramDraft, createInstagramReelDraft, publishInstagramReelDraft, scheduleInstagramDraftTargets, createTikTokDraft, createYouTubeDraft, retryYouTubeUpload, cancelFacebookSchedule} from "@/app/dashboard/social/actions";
+import {checkSocialAccountHealth, checkTikTokAccountHealth, checkYouTubeAccountHealth, checkLinkedInAccountHealth, checkPinterestAccountHealth, loadMorePinterestBoards, cancelPinterestSchedule, reschedulePinterestPin, createPinterestDraft, publishPinterestDraft, retryPinterestPublish, refreshPinterestAnalytics, refreshPinterestPinAnalyticsAction, refreshMetaAnalyticsAction, createLinkedInDraft, publishLinkedInDraft, retryLinkedInPublish, disconnectSocialAccount, refreshMetaAuthorization, createFacebookDraft, publishFacebookDraft, scheduleFacebookDraftTargets, createInstagramDraft, publishInstagramDraft, createInstagramReelDraft, publishInstagramReelDraft, scheduleInstagramDraftTargets, createTikTokDraft, createYouTubeDraft, retryYouTubeUpload, cancelFacebookSchedule} from "@/app/dashboard/social/actions";
+
+
+function metaMetricEntries(value:unknown):Array<{name:string;value:string}>{
+  const root=value&&typeof value==="object"&&!Array.isArray(value)?value as Record<string,unknown>:{};
+  const data=Array.isArray(root.data)?root.data:[];
+  return data.flatMap(item=>{
+    if(!item||typeof item!=="object"||Array.isArray(item))return [];
+    const metric=item as Record<string,unknown>;let v:unknown=metric.total_value&&typeof metric.total_value==="object"?(metric.total_value as Record<string,unknown>).value:undefined;
+    if(v===undefined&&Array.isArray(metric.values)&&metric.values.length){const last=metric.values[metric.values.length-1];if(last&&typeof last==="object")v=(last as Record<string,unknown>).value;}
+    if(v===undefined||v===null)return [];
+    const rendered=typeof v==="number"?new Intl.NumberFormat().format(v):typeof v==="string"?v:JSON.stringify(v);
+    return [{name:typeof metric.name==="string"?metric.name:"metric",value:rendered}];
+  });
+}
 
 const capabilityLabels: Record<string,string> = {
   PROFILE_READ:"Profile", PUBLISH_TEXT:"Text publishing", PUBLISH_MEDIA:"Media publishing",
   ANALYTICS:"Analytics", COMMENTS_READ:"Comments", MESSAGING:"Messaging",
 };
 
-export default async function SocialPage({searchParams}:{searchParams:Promise<{month?:string;linkedin?:string;pinterest?:string;pinterestPublish?:string;pinterestAnalytics?:string;pinterestPinAnalytics?:string;accountId?:string;reportDate?:string}>}) {
+export default async function SocialPage({searchParams}:{searchParams:Promise<{month?:string;linkedin?:string;pinterest?:string;pinterestPublish?:string;pinterestAnalytics?:string;pinterestPinAnalytics?:string;metaAnalytics?:string;accountId?:string;reportDate?:string}>}) {
   const params=await searchParams;
   const requestedMonth=typeof params.month==="string"&&/^\d{4}-\d{2}$/.test(params.month)?params.month:new Date().toISOString().slice(0,7);
   const monthDate=new Date(requestedMonth+"-01T00:00:00Z");
@@ -40,6 +54,11 @@ export default async function SocialPage({searchParams}:{searchParams:Promise<{m
   const youtubeAccounts=accounts.filter((account)=>account.provider==="YOUTUBE"&&account.status==="CONNECTED"&&account.scopes.includes("https://www.googleapis.com/auth/youtube.upload"));
   const linkedinAccounts=accounts.filter((account)=>account.provider==="LINKEDIN"&&account.status==="CONNECTED");
   const pinterestAccounts=accounts.filter((account)=>account.provider==="PINTEREST"&&account.status==="CONNECTED"&&account.scopes.includes("pins:write")&&brands.some(brand=>brand.id===account.brandId));
+  const metaAccounts=accounts.filter(account=>(account.provider==="FACEBOOK"||account.provider==="INSTAGRAM")&&account.status==="CONNECTED");
+  const metaAnalyticsSnapshots=metaAccounts.length?await db.metaAnalyticsSnapshot.findMany({where:{workspaceId:workspace.id,socialAccountId:{in:metaAccounts.map(account=>account.id)}},orderBy:{fetchedAt:"desc"},distinct:["socialAccountId","subjectType","subjectId"],take:100,select:{id:true,socialAccountId:true,subjectType:true,subjectId:true,reportDate:true,fetchedAt:true,metrics:true}}):[];
+  const metaAccountSnapshots=metaAnalyticsSnapshots.filter(snapshot=>snapshot.subjectType==="ACCOUNT");
+  const metaMediaSnapshots=metaAnalyticsSnapshots.filter(snapshot=>snapshot.subjectType==="MEDIA").slice(0,20);
+
   const pinterestAnalyticsSnapshots=pinterestAccounts.length?await db.pinterestAnalyticsSnapshot.findMany({where:{workspaceId:workspace.id,socialAccountId:{in:pinterestAccounts.map(account=>account.id)}},orderBy:{fetchedAt:"desc"},distinct:["socialAccountId"],select:{id:true,socialAccountId:true,startDate:true,endDate:true,fetchedAt:true,metrics:true}}):[];
   const pinterestReadableAccounts=pinterestAccounts.filter(account=>account.scopes.includes("pins:read"));
   const pinterestPublishedTargets=pinterestReadableAccounts.length?await db.socialPostTarget.findMany({
@@ -141,6 +160,24 @@ export default async function SocialPage({searchParams}:{searchParams:Promise<{m
         <div className="mt-4 overflow-x-auto"><table className="w-full min-w-[700px] text-left text-sm"><thead className="text-xs text-slate-500"><tr><th className="py-2 pr-3">Platform</th><th className="py-2 pr-3">Published</th><th className="py-2 pr-3">Analytics tracked</th><th className="py-2 pr-3">Impressions</th><th className="py-2 pr-3">Engagements</th><th className="py-2 pr-3">Outbound clicks</th><th className="py-2 pr-3">Saves</th><th className="py-2 pr-3">Latest sync</th></tr></thead><tbody className="divide-y divide-slate-100">{crossPlatformSummary.map(row=><tr key={row.provider}><td className="py-3 pr-3 font-medium text-slate-900">{row.provider==="FACEBOOK"?"Facebook":row.provider==="INSTAGRAM"?"Instagram":row.provider==="PINTEREST"?"Pinterest":row.provider==="LINKEDIN"?"LinkedIn":row.provider==="TIKTOK"?"TikTok":"YouTube"}</td><td className="py-3 pr-3">{row.publishedCount}</td><td className="py-3 pr-3">{row.provider==="PINTEREST"?String(row.measuredCount)+"/"+String(row.publishedCount):"Not available"}</td><td className="py-3 pr-3">{row.impressions===null?"—":new Intl.NumberFormat().format(row.impressions)}</td><td className="py-3 pr-3">{row.engagements===null?"—":new Intl.NumberFormat().format(row.engagements)}</td><td className="py-3 pr-3">{row.clicks===null?"—":new Intl.NumberFormat().format(row.clicks)}</td><td className="py-3 pr-3">{row.saves===null?"—":new Intl.NumberFormat().format(row.saves)}</td><td className="py-3 pr-3 text-xs text-slate-500">{row.lastFetchedAt?row.lastFetchedAt.toLocaleDateString():"—"}</td></tr>)}</tbody></table></div>
         <p className="mt-3 text-xs text-slate-500">Pinterest analytics use the latest stored Pin snapshots. Facebook, Instagram, LinkedIn, TikTok, and YouTube currently show publishing counts only; their analytics collectors are not yet connected to this report.</p>
       </section>
+
+      <section className="rounded-2xl border border-slate-200 bg-white p-5 sm:p-6">
+        <div><h2 className="font-semibold text-slate-900">Meta analytics · Facebook and Instagram</h2><p className="mt-1 text-sm text-slate-500">Provider-native Page, account, and published-media insights. Metric names are preserved; unsupported metrics and permission gaps are reported rather than converted into cross-platform estimates.</p></div>
+        {params.metaAnalytics==="refreshed"&&<p className="mt-3 rounded-lg bg-emerald-50 px-3 py-2 text-sm text-emerald-800">Meta analytics refresh completed.</p>}
+        {metaAccounts.length===0?<p className="mt-3 text-sm text-slate-500">Connect a Facebook Page or Instagram professional account to collect Meta insights.</p>:<div className="mt-4 space-y-5">
+          {metaAccounts.map(account=>{
+            const snapshot=metaAccountSnapshots.find(item=>item.socialAccountId===account.id);
+            const metrics=metaMetricEntries(snapshot?.metrics);
+            const failed=snapshot?.metrics&&typeof snapshot.metrics==="object"&&!Array.isArray(snapshot.metrics)?(snapshot.metrics as Record<string,unknown>).errorCode:null:null;
+            return <div key={account.id} className="rounded-xl border border-slate-100 p-4">
+              <div className="flex flex-wrap items-center justify-between gap-3"><div><p className="font-medium text-slate-900">{account.provider==="FACEBOOK"?"Facebook Page":"Instagram professional account"} · {account.accountName}</p><p className="mt-1 text-xs text-slate-500">Latest account snapshot: {snapshot?snapshot.fetchedAt.toLocaleString():"Not collected"}</p></div><form action={refreshMetaAnalyticsAction}><input type="hidden" name="accountId" value={account.id}/><button className="rounded-lg border border-slate-200 px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50">Refresh insights</button></form></div>
+              {failed?<p className="mt-3 text-sm text-rose-700">Provider response: {String(failed)}</p>:metrics.length?<div className="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-4">{metrics.map(metric=><div key={metric.name} className="rounded-lg bg-slate-50 p-3"><p className="text-xs text-slate-500">{metric.name}</p><p className="mt-1 text-lg font-semibold text-slate-900">{metric.value}</p></div>)}</div>:<p className="mt-3 text-sm text-slate-500">No account metrics available yet. Run a refresh; the provider may restrict metrics by account eligibility, permissions, or API version.</p>}
+            </div>;
+          })}
+          {metaMediaSnapshots.length>0&&<div><h3 className="text-sm font-semibold text-slate-800">Published-media snapshots</h3><div className="mt-2 divide-y divide-slate-100">{metaMediaSnapshots.map(snapshot=>{const account=metaAccounts.find(item=>item.id===snapshot.socialAccountId);const metrics=metaMetricEntries(snapshot.metrics);return <div key={snapshot.id} className="flex flex-wrap items-center justify-between gap-3 py-3"><div><p className="text-sm font-medium text-slate-800">{account?.accountName??"Meta account"} · {snapshot.subjectType.toLowerCase()}</p><p className="text-xs text-slate-500">Synced {snapshot.fetchedAt.toLocaleString()}</p>{metrics.length>0&&<p className="mt-1 text-xs text-slate-600">{metrics.map(metric=>metric.name+": "+metric.value).join(" · ")}</p>}</div><form action={refreshMetaAnalyticsAction}><input type="hidden" name="accountId" value={snapshot.socialAccountId}/><input type="hidden" name="targetId" value={snapshot.subjectId}/><button className="rounded-lg border border-slate-200 px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50">Refresh media</button></form></div>})}</div></div>}
+        </div>}
+      </section>
+
       <section className="rounded-2xl border border-rose-100 bg-white p-5 sm:p-6">
         <div><h2 className="font-semibold text-slate-900">Pinterest organic performance</h2><p className="mt-1 text-sm text-slate-500">Account-level organic metrics over Pinterest's supported 90-day reporting window. Uses the existing user_accounts:read permission.</p></div>
         {params.pinterestAnalytics==="refreshed"&&<p className="mt-3 rounded-lg bg-emerald-50 px-3 py-2 text-sm text-emerald-800">Pinterest analytics snapshot refreshed for {params.reportDate??"the latest reporting window"}.</p>}
