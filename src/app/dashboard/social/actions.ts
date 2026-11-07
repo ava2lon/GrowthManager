@@ -12,6 +12,7 @@ import {getFreshYouTubeCredentials} from "@/lib/youtube-auth";
 import {getLinkedInCredentials,linkedinApiHeaders} from "@/lib/linkedin-auth";
 import {publishLinkedInTarget} from "@/lib/linkedin-publishing";
 import {getPinterestCredentials,pinterestApi} from "@/lib/pinterest-auth";
+import {publishPinterestTarget} from "@/lib/pinterest-publishing";
 
 function readMetadata(value: unknown): Record<string, unknown> {
   if (!value || typeof value !== "object" || Array.isArray(value)) return {};
@@ -1289,4 +1290,41 @@ export async function checkPinterestAccountHealth(formData:FormData){
  });
  revalidatePath("/dashboard/social");
  if(failure)throw new Error(failure==="PINTEREST_REAUTHORIZATION_REQUIRED"||failure==="PINTEREST_AUTH_FAILED"?"Pinterest authorization expired or was revoked. Reconnect this account.":failure==="PINTEREST_REQUIRED_SCOPE_MISSING"?"Required Pinterest permissions are missing. Reconnect after enabling the required API access.":"Pinterest could not validate this account. Retry the health check.");
+}
+
+export async function createPinterestDraft(formData:FormData){
+ const context=await requireWorkspaceRole("MEMBER");
+ const boardTarget=String(formData.get("boardTarget")??"").trim(),mediaAssetId=String(formData.get("mediaAssetId")??"").trim();
+ const title=String(formData.get("title")??"").trim(),description=String(formData.get("description")??"").trim(),rawLink=String(formData.get("link")??"").trim();
+ const split=boardTarget.indexOf("|"),accountId=split>0?boardTarget.slice(0,split):"",boardId=split>0?boardTarget.slice(split+1):"";
+ if(!accountId||accountId.length>128||!boardId||boardId.length>128||!mediaAssetId||mediaAssetId.length>128||!title||title.length>100||description.length>500)throw new Error("Choose a Pinterest board and image, add a title up to 100 characters, and keep the description within 500 characters.");
+ let link:string|null=null;
+ if(rawLink){try{const parsed=new URL(rawLink);if(parsed.protocol!=="https:"||parsed.username||parsed.password||parsed.hostname==="localhost"||!parsed.hostname.includes("."))throw new Error();link=parsed.toString()}catch{throw new Error("Destination link must be a valid HTTPS URL.")}}
+ const account=await db.socialAccount.findFirst({where:{id:accountId,workspaceId:context.workspace.id,provider:"PINTEREST",status:"CONNECTED"},select:{id:true,brandId:true,scopes:true,metadata:true}});
+ if(!account||!["user_accounts:read","boards:read","pins:write"].every(scope=>account.scopes.includes(scope)))throw new Error("Connect a Pinterest account with board-read and Pin-write permissions.");
+ const accountMetadata=readMetadata(account.metadata),boards=Array.isArray(accountMetadata.boards)?accountMetadata.boards:[];
+ const board=boards.find(item=>item&&typeof item==="object"&&(item as Record<string,unknown>).id===boardId) as Record<string,unknown>|undefined;
+ if(!board)throw new Error("Select a board discovered for this Pinterest account. Run its health check to refresh boards.");
+ const brand=await db.brand.findFirst({where:{id:account.brandId,workspaceId:context.workspace.id,status:"ACTIVE"},select:{id:true}});
+ if(!brand)throw new Error("The Pinterest account must be assigned to an active brand.");
+ const asset=await db.mediaAsset.findFirst({where:{id:mediaAssetId,workspaceId:context.workspace.id,status:"READY",mimeType:{in:["image/jpeg","image/png"]},OR:[{brandId:null},{brandId:account.brandId}]},select:{id:true,sizeBytes:true}});
+ if(!asset||Number(asset.sizeBytes)>20*1024*1024)throw new Error("Choose a ready JPEG or PNG image no larger than 20 MB assigned to this brand or the workspace.");
+ await enforceSocialRateLimit(context.workspace.id,context.userId,"publish");
+ const post=await db.$transaction(async tx=>{
+  const created=await tx.contentPost.create({data:{workspaceId:context.workspace.id,brandId:brand.id,title,body:description||title,status:"DRAFT"},select:{id:true}});
+  const target=await tx.socialPostTarget.create({data:{workspaceId:context.workspace.id,contentPostId:created.id,socialAccountId:account.id,provider:"PINTEREST",status:"DRAFT",uploadMetadata:{boardId,title,description,link,boardName:typeof board.name==="string"?board.name:"Pinterest board"}},select:{id:true}});
+  await tx.contentPostMedia.create({data:{workspaceId:context.workspace.id,contentPostId:created.id,mediaAssetId:asset.id,position:0}});
+  await tx.activityLog.create({data:{workspaceId:context.workspace.id,userId:context.userId,action:"social_post.draft_created",entityType:"ContentPost",entityId:created.id,metadata:{provider:"PINTEREST",targetId:target.id,accountId:account.id,boardId,mediaCount:1}}});
+  return created;
+ });
+ revalidatePath("/dashboard/social");return post.id;
+}
+export async function publishPinterestDraft(formData:FormData){
+ const context=await requireWorkspaceRole("MEMBER"),targetId=String(formData.get("targetId")??"").trim();
+ if(!targetId||targetId.length>128)throw new Error("Invalid Pinterest publishing target.");
+ await enforceSocialRateLimit(context.workspace.id,context.userId,"publish");
+ const result=await publishPinterestTarget({targetId,workspaceId:context.workspace.id,actorUserId:context.userId});
+ revalidatePath("/dashboard/social");
+ if(result.status==="SKIPPED")throw new Error("This Pinterest target is no longer a publishable draft. Refresh the page.");
+ return result;
 }
