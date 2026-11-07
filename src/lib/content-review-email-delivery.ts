@@ -249,3 +249,194 @@ export async function dispatchContentReviewEmails(batchSize = 10): Promise<Deliv
 
   return result;
 }
+
+
+function digestClock(now: Date, timezone: string) {
+  const parts = new Intl.DateTimeFormat("en-GB", {
+    timeZone: timezone, year: "numeric", month: "2-digit", day: "2-digit",
+    weekday: "short", hour: "2-digit", minute: "2-digit", hourCycle: "h23",
+  }).formatToParts(now);
+  const value = (type: string) => parts.find((part) => part.type === type)?.value || "";
+  return {date: value("year") + "-" + value("month") + "-" + value("day"), weekday: value("weekday"), minute: Number(value("hour")) * 60 + Number(value("minute"))};
+}
+
+function digestPeriodKey(date: string, frequency: string): string {
+  if (frequency !== "WEEKLY") return "DAILY:" + date;
+  const day = new Date(date + "T00:00:00.000Z").getUTCDay();
+  const daysSinceMonday = (day + 6) % 7;
+  const monday = new Date(Date.parse(date + "T00:00:00.000Z") - daysSinceMonday * 86_400_000);
+  return "WEEKLY:" + monday.toISOString().slice(0, 10);
+}
+
+function digestDue(now: Date, timezone: string, frequency: string, sendTime: string): {periodKey: string} | null {
+  const clock = digestClock(now, timezone);
+  const match = /^(\\d{2}):(\\d{2})$/.exec(sendTime);
+  if (!match) return null;
+  const targetMinute = Number(match[1]) * 60 + Number(match[2]);
+  if (clock.minute < targetMinute) return null;
+  if (frequency === "WEEKLY" && clock.weekday !== "Mon") return null;
+  return {periodKey: digestPeriodKey(clock.date, frequency)};
+}
+
+type DigestEvent = {
+  id: string;
+  eventType: string;
+  assignment: {feedback: string | null; contentPost: {title: string | null}; reviewer: {name: string | null}};
+};
+
+export async function dispatchContentReviewEmailDigests(batchSize = 10) {
+  const now = new Date();
+  const candidates = await db.contentReviewEmailDelivery.findMany({
+    where: {status: {in: ["PENDING", "RETRY"]}, nextAttemptAt: {lte: now}, recipientUserId: {not: null}},
+    orderBy: {createdAt: "asc"},
+    take: Math.max(1, Math.min(batchSize * 20, 200)),
+    select: {
+      id: true, workspaceId: true, recipientUserId: true, recipientEmail: true, recipientName: true,
+      eventType: true,
+      assignment: {select: {feedback: true, contentPost: {select: {title: true}}, reviewer: {select: {name: true}}}},
+    },
+  });
+  const groups = new Map<string, typeof candidates>();
+  for (const item of candidates) {
+    const key = item.workspaceId + ":" + item.recipientUserId;
+    groups.set(key, [...(groups.get(key) || []), item]);
+  }
+
+  let queued = 0;
+  let sent = 0;
+  let retried = 0;
+  let failed = 0;
+  let deferred = 0;
+
+  for (const group of groups.values()) {
+    const first = group[0];
+    if (!first.recipientUserId) continue;
+    const preferences = await db.workspaceNotificationPreference.findUnique({
+      where: {workspaceId_userId: {workspaceId: first.workspaceId, userId: first.recipientUserId}},
+      select: {digestEnabled: true, digestFrequency: true, digestSendTime: true, timezone: true, quietHoursEnabled: true, quietHoursStart: true, quietHoursEnd: true},
+    });
+    if (!preferences?.digestEnabled) continue;
+    let due: {periodKey: string} | null = null;
+    try {
+      due = digestDue(now, preferences.timezone, preferences.digestFrequency, preferences.digestSendTime);
+    } catch {
+      continue;
+    }
+    if (!due) continue;
+    if (preferences.quietHoursEnabled && nextAllowedSendAt(now, preferences.timezone, preferences.quietHoursStart, preferences.quietHoursEnd)) {
+      deferred += group.length;
+      continue;
+    }
+
+    const ids = group.map((item) => item.id).sort();
+    const digestKey = first.workspaceId + ":" + first.recipientUserId + ":" + due.periodKey + ":" + ids.join(",");
+    const items = group.map((item) => ({
+      eventType: item.eventType,
+      title: item.assignment.contentPost.title || "Untitled content draft",
+      reviewer: item.assignment.reviewer.name || "A workspace reviewer",
+      feedback: item.eventType === "CONTENT_CHANGES_REQUESTED" ? item.assignment.feedback || "" : "",
+    }));
+    const workspace = await db.workspace.findFirst({where: {id: first.workspaceId}, select: {name: true}});
+    if (!workspace) continue;
+    try {
+      await db.$transaction(async (tx) => {
+        await tx.contentReviewEmailDigest.create({data: {
+          workspaceId: first.workspaceId,
+          recipientUserId: first.recipientUserId!,
+          recipientEmail: first.recipientEmail,
+          recipientName: first.recipientName,
+          digestKey,
+          periodKey: due!.periodKey,
+          deliveryIds: ids,
+          items,
+        }});
+        const moved = await tx.contentReviewEmailDelivery.updateMany({
+          where: {workspaceId: first.workspaceId, id: {in: ids}, status: {in: ["PENDING", "RETRY"]}},
+          data: {status: "DIGEST_QUEUED"},
+        });
+        if (moved.count !== ids.length) throw new Error("DIGEST_OUTBOX_CLAIM_CONFLICT");
+      });
+      queued += ids.length;
+    } catch {
+      // A duplicate digest key or concurrent claim is safe: the existing ledger owns these events.
+      continue;
+    }
+  }
+
+  const staleLock = new Date(now.getTime() - LOCK_TTL_MS);
+  const digests = await db.contentReviewEmailDigest.findMany({
+    where: {status: {in: ["PENDING", "RETRY", "PROCESSING"]}, nextAttemptAt: {lte: now}, OR: [{lockedAt: null}, {lockedAt: {lte: staleLock}}]},
+    orderBy: {createdAt: "asc"},
+    take: Math.max(1, Math.min(batchSize, 25)),
+  });
+
+  for (const digest of digests) {
+    const claimedAt = new Date();
+    const claim = await db.contentReviewEmailDigest.updateMany({
+      where: {id: digest.id, status: {in: ["PENDING", "RETRY", "PROCESSING"]}, nextAttemptAt: {lte: claimedAt}, OR: [{lockedAt: null}, {lockedAt: {lte: staleLock}}]},
+      data: {status: "PROCESSING", lockedAt: claimedAt, attempts: {increment: 1}},
+    });
+    if (claim.count !== 1) continue;
+    const attempt = digest.attempts + 1;
+    try {
+      const workspace = await db.workspace.findFirst({where: {id: digest.workspaceId}, select: {name: true}});
+      if (!workspace) throw new Error("DIGEST_WORKSPACE_UNAVAILABLE");
+      const items = Array.isArray(digest.items) ? digest.items as Array<{eventType: string; title: string; reviewer: string; feedback: string}> : [];
+      const lines = items.map((item) => {
+        const label = item.eventType === "CONTENT_REVIEW_ASSIGNED" ? "Review assigned" :
+          item.eventType === "CONTENT_REVIEW_COMPLETED" ? "Approval recommended" : "Changes requested";
+        return label + ": " + item.title + (item.reviewer ? " — " + item.reviewer : "") + (item.feedback ? " — " + item.feedback : "");
+      });
+      const subject = "[GrowthManager] " + items.length + " review update" + (items.length === 1 ? "" : "s");
+      const destination = appUrl() + "/dashboard/ai";
+      const htmlItems = items.map((item) => {
+        const label = item.eventType === "CONTENT_REVIEW_ASSIGNED" ? "Review assigned" :
+          item.eventType === "CONTENT_REVIEW_COMPLETED" ? "Approval recommended" : "Changes requested";
+        return "<li><strong>" + escapeHtml(label) + ":</strong> " + escapeHtml(item.title) +
+          " — " + escapeHtml(item.reviewer) + (item.feedback ? "<p>" + escapeHtml(item.feedback) + "</p>" : "") + "</li>";
+      }).join("");
+      const html = "<!doctype html><html lang=\"en\"><body style=\"font-family:Arial,sans-serif;color:#172033\"><main style=\"max-width:600px;margin:auto;padding:24px\"><p>GROWTHMANAGER · " +
+        escapeHtml(workspace.name) + "</p><h1>Your review digest</h1><p>" + items.length +
+        " review updates are ready.</p><ul>" + htmlItems + "</ul><p><a href=\"" + escapeHtml(destination) +
+        "\">Open review workspace</a></p></main></body></html>";
+      const response = await fetch("https://api.resend.com/emails", {
+        method: "POST",
+        headers: {Authorization: "Bearer " + process.env.RESEND_API_KEY, "Content-Type": "application/json", Accept: "application/json", "Idempotency-Key": "growthmanager-review-digest-" + digest.id},
+        body: JSON.stringify({from: process.env.RESEND_FROM_EMAIL, to: [digest.recipientEmail], subject, html, text: [subject, ...lines, "Open review workspace: " + destination].join("\\n\\n")}),
+        cache: "no-store", redirect: "error", signal: AbortSignal.timeout(12_000),
+      });
+      if (!response.ok) {
+        const retry = retryable(response.status) && attempt < MAX_ATTEMPTS;
+        await db.contentReviewEmailDigest.updateMany({
+          where: {id: digest.id, status: "PROCESSING", lockedAt: claimedAt},
+          data: {status: retry ? "RETRY" : "FAILED", nextAttemptAt: retry ? new Date(Date.now() + Math.min(30 * 60_000, 60_000 * 2 ** (attempt - 1))) : now, lockedAt: null, lastErrorCode: response.status === 429 ? "RESEND_RATE_LIMITED" : response.status >= 500 ? "RESEND_PROVIDER_ERROR" : "RESEND_REQUEST_REJECTED"},
+        });
+        if (retry) retried += 1; else failed += 1;
+        continue;
+      }
+      const payload: unknown = await response.json().catch(() => null);
+      const providerId = payload && typeof payload === "object" ? (payload as {id?: unknown}).id : null;
+      if (typeof providerId !== "string" || !providerId) throw new Error("RESEND_RESPONSE_INVALID");
+      await db.$transaction(async (tx) => {
+        await tx.contentReviewEmailDigest.updateMany({
+          where: {id: digest.id, status: "PROCESSING", lockedAt: claimedAt},
+          data: {status: "SENT", providerMessageId: providerId, sentAt: new Date(), lockedAt: null, lastErrorCode: null},
+        });
+        await tx.contentReviewEmailDelivery.updateMany({
+          where: {workspaceId: digest.workspaceId, id: {in: digest.deliveryIds}, status: "DIGEST_QUEUED"},
+          data: {status: "SENT", sentAt: new Date(), providerMessageId: providerId},
+        });
+      });
+      sent += 1;
+    } catch {
+      const retry = attempt < MAX_ATTEMPTS;
+      await db.contentReviewEmailDigest.updateMany({
+        where: {id: digest.id, status: "PROCESSING", lockedAt: claimedAt},
+        data: {status: retry ? "RETRY" : "FAILED", nextAttemptAt: retry ? new Date(Date.now() + Math.min(30 * 60_000, 60_000 * 2 ** (attempt - 1))) : now, lockedAt: null, lastErrorCode: "DIGEST_DELIVERY_ERROR"},
+      });
+      if (retry) retried += 1; else failed += 1;
+    }
+  }
+
+  return {queued, sent, retried, failed, deferred};
+}
