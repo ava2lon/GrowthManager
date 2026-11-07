@@ -313,28 +313,34 @@ export async function processYouTubeUploadTarget(input: {targetId: string; works
   }
   async function markPublished(videoId: string) {
     const finished = new Date();
+    const rawMetadata = target.uploadMetadata && typeof target.uploadMetadata === "object" && !Array.isArray(target.uploadMetadata)
+      ? target.uploadMetadata as Record<string, unknown> : {};
+    const scheduledAt = typeof rawMetadata.publishAt === "string" ? new Date(rawMetadata.publishAt) : null;
+    const isScheduled = !!scheduledAt && Number.isFinite(scheduledAt.getTime()) && scheduledAt.getTime() > finished.getTime();
+    const targetStatus = isScheduled ? "SCHEDULED" : "PUBLISHED";
     await db.$transaction(async tx => {
       await tx.socialPostTarget.update({
         where: {id: input.targetId},
-        data: {status: "PUBLISHED", publishedAt: finished, nextCheckAt: null, errorCode: null},
+        data: {status: targetStatus, publishedAt: isScheduled ? null : finished, nextCheckAt: null, errorCode: null},
       });
       await tx.socialPublishAttempt.updateMany({
         where: {workspaceId: input.workspaceId, targetId: input.targetId, status: "PROCESSING"},
-        data: {status: "PUBLISHED", providerPostId: videoId, finishedAt: finished},
+        data: {status: isScheduled ? "SCHEDULED" : "PUBLISHED", providerPostId: videoId, finishedAt: finished},
       });
       const remaining = await tx.socialPostTarget.count({
-        where: {workspaceId: input.workspaceId, contentPostId: target.contentPostId, status: {not: "PUBLISHED"}},
+        where: {workspaceId: input.workspaceId, contentPostId: target.contentPostId, status: {notIn: ["PUBLISHED", "SCHEDULED"]}},
       });
       if (remaining === 0) await tx.contentPost.update({
-        where: {id: target.contentPostId}, data: {status: "PUBLISHED", publishedAt: finished},
+        where: {id: target.contentPostId},
+        data: isScheduled ? {status: "SCHEDULED", scheduledAt} : {status: "PUBLISHED", publishedAt: finished},
       });
       await tx.activityLog.create({data: {
-        workspaceId: input.workspaceId, action: "social_post.youtube_published",
+        workspaceId: input.workspaceId, action: isScheduled ? "social_post.youtube_scheduled" : "social_post.youtube_published",
         entityType: "ContentPost", entityId: target.contentPostId,
-        metadata: {provider: "YOUTUBE", targetId: input.targetId, videoId},
+        metadata: {provider: "YOUTUBE", targetId: input.targetId, videoId, ...(isScheduled ? {publishAt: scheduledAt!.toISOString()} : {})},
       }});
     });
-    return {status: "PUBLISHED" as const, videoId};
+    return {status: targetStatus as "SCHEDULED" | "PUBLISHED", videoId};
   }
 
   async function completeUpload(videoId: string) {
