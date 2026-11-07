@@ -4,9 +4,9 @@ import {decryptIntegrationCredentials} from "@/lib/integration-crypto";
 type Obj=Record<string,unknown>;
 const obj=(v:unknown):Obj=>v&&typeof v==="object"&&!Array.isArray(v)?v as Obj:{};
 function providerCode(v:unknown){const e=obj(obj(v).error),c=Number(e.code);if(c===190)return "META_AUTH_FAILED";if(c===10||c===200)return "META_PERMISSION_DENIED";if([4,17,32,613].includes(c))return "META_RATE_LIMITED";if(c===100)return "META_METRIC_UNAVAILABLE";return "META_ANALYTICS_PROVIDER_ERROR";}
-async function requestInsights(version:string,id:string,token:string,metrics:string,instagram:boolean,since:string,until:string){
+async function requestInsights(version:string,id:string,token:string,metrics:string,instagram:boolean,media:boolean,since:string,until:string){
  const u=new URL("https://graph.facebook.com/"+version+"/"+encodeURIComponent(id)+"/insights");u.searchParams.set("metric",metrics);
- if(instagram)u.searchParams.set("metric_type","total_value");else{u.searchParams.set("period","day");u.searchParams.set("since",since);u.searchParams.set("until",until)}
+ if(instagram&&!media)u.searchParams.set("metric_type","total_value");if(!media){u.searchParams.set("period","day");u.searchParams.set("since",since);u.searchParams.set("until",until)}
  u.searchParams.set("access_token",token);const r=await fetch(u,{cache:"no-store",redirect:"error",signal:AbortSignal.timeout(15000)});const b=await r.json().catch(()=>null);
  if(!r.ok||!b)throw new Error(providerCode(b));return b as Obj;
 }
@@ -24,10 +24,10 @@ export async function refreshMetaAnalytics(input:{workspaceId:string;accountId:s
   const t=await db.socialPostTarget.findFirst({where:{id:input.targetId,workspaceId:input.workspaceId,socialAccountId:a.id,provider:a.provider,status:"PUBLISHED",providerPostId:{not:null}},select:{id:true,providerPostId:true,publishedAt:true}});
   if(!t?.providerPostId)throw new Error("META_PUBLISHED_TARGET_NOT_FOUND");subjectType="MEDIA";subjectId=t.id;startDate=t.publishedAt??startDate;
   const metrics=a.provider==="FACEBOOK"?"post_media_view,post_total_media_view_unique,post_reactions_by_type_total":"views,reach,likes,comments,saved,shares,total_interactions";
-  result=await requestInsights(version,t.providerPostId,token,metrics,a.provider==="INSTAGRAM",startDate.toISOString().slice(0,10),until);
+  result=await requestInsights(version,t.providerPostId,token,metrics,a.provider==="INSTAGRAM",true,startDate.toISOString().slice(0,10),until);
  }else{
   const metrics=a.provider==="FACEBOOK"?"page_media_view,page_total_media_view_unique,page_post_engagements,page_views_total,page_follows":"views,reach,accounts_engaged,total_interactions";
-  result=await requestInsights(version,graphId,token,metrics,a.provider==="INSTAGRAM",since,until);
+  result=await requestInsights(version,graphId,token,metrics,a.provider==="INSTAGRAM",false,since,until);
  }
  return db.metaAnalyticsSnapshot.upsert({where:{workspaceId_socialAccountId_subjectType_subjectId_reportDate:{workspaceId:input.workspaceId,socialAccountId:a.id,subjectType,subjectId,reportDate}},create:{workspaceId:input.workspaceId,socialAccountId:a.id,subjectType,subjectId,reportDate,startDate,endDate:reportDate,metrics:result,rawResponse:result,fetchedAt:now},update:{startDate,endDate:reportDate,metrics:result,rawResponse:result,fetchedAt:now}});
 }
