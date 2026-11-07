@@ -467,3 +467,88 @@ export async function provisionAutomationBlueprint(formData: FormData) {
   if (!verified) throw new Error("Workflow creation was recorded, but its inactive state could not be verified. Check n8n before activation.");
 }
 
+
+
+export async function reconcileAutomationBlueprintProvisioning(formData: FormData) {
+  const context = await requireWorkspaceRole("ADMIN");
+  const automationId = String(formData.get("automationId") ?? "");
+  if (!automationId || automationId.length > 128) throw new Error("Invalid automation blueprint.");
+  const limit = await consumeRateLimit("automation-reconcile:" + context.workspace.id + ":" + context.userId, 10, 3600);
+  if (!limit.allowed || (process.env.NODE_ENV === "production" && !limit.configured)) {
+    throw new Error("Reconciliation limit reached or request protection is unavailable.");
+  }
+
+  const blueprint = await db.automation.findFirst({
+    where: {id: automationId, workspaceId: context.workspace.id, enabled: false},
+    select: {id: true, name: true, definition: true},
+  });
+  if (!blueprint || !blueprint.definition || typeof blueprint.definition !== "object" || Array.isArray(blueprint.definition)) {
+    throw new Error("Workspace blueprint not found.");
+  }
+  const definition = blueprint.definition as Record<string, unknown>;
+  if (definition.kind !== "GROWTHMANAGER_AUTOMATION_BLUEPRINT" ||
+      !["PROVISIONING", "CREATE_OUTCOME_UNKNOWN", "CREATED_UNVERIFIED"].includes(String(definition.provisioningStatus)) ||
+      typeof definition.n8nWorkflowId === "string") {
+    throw new Error("This blueprint does not need provisioning reconciliation.");
+  }
+
+  const integration = await db.integration.findFirst({
+    where: {workspaceId: context.workspace.id, provider: "n8n", status: "CONNECTED"},
+    select: {id: true, credentialsEncrypted: true},
+  });
+  if (!integration?.credentialsEncrypted) throw new Error("A connected n8n integration is required to reconcile this blueprint.");
+  let credentials: Record<string, unknown>;
+  try {
+    credentials = decryptIntegrationCredentials(integration.credentialsEncrypted, context.workspace.id, integration.id);
+  } catch {
+    throw new Error("Could not decrypt n8n credentials.");
+  }
+  if (typeof credentials.baseUrl !== "string" || typeof credentials.apiKey !== "string") {
+    throw new Error("Saved n8n credentials are incomplete.");
+  }
+
+  const {listN8nWorkflows, getN8nWorkflowDetail} = await import("@/lib/n8n-client");
+  let inventory: Awaited<ReturnType<typeof listN8nWorkflows>>;
+  try {
+    inventory = await listN8nWorkflows(credentials.baseUrl, credentials.apiKey);
+  } catch {
+    throw new Error("Could not inspect n8n workflows. No changes were made.");
+  }
+  const expectedName = "GrowthManager · " + blueprint.name;
+  const matches = inventory.workflows.filter(item => item.name === expectedName);
+  if (matches.length !== 1) {
+    if (matches.length === 0 && inventory.hasMore) {
+      throw new Error("The matching workflow may be outside the current inventory page. Inspect n8n directly before retrying.");
+    }
+    throw new Error(matches.length > 1
+      ? "Multiple workflows have this exact name. Resolve duplicates in n8n before linking."
+      : "No matching workflow was found. Inspect n8n directly; GrowthManager will not create another copy automatically.");
+  }
+
+  const detail = await getN8nWorkflowDetail(credentials.baseUrl, credentials.apiKey, matches[0].id);
+  const linkedDefinition = {
+    ...definition,
+    executionMode: "N8N_STARTER_SCAFFOLD",
+    provisioningStatus: detail.active ? "LINKED_ACTIVE_REVIEW" : "VERIFIED_INACTIVE",
+    n8nWorkflowId: detail.id,
+    n8nWorkflowName: detail.name,
+    n8nWorkflowActive: detail.active,
+    n8nIntegrationId: integration.id,
+    reconciledAt: new Date().toISOString(),
+  };
+  await db.automation.updateMany({
+    where: {id: blueprint.id, workspaceId: context.workspace.id, enabled: false},
+    data: {definition: linkedDefinition},
+  });
+  await db.activityLog.create({
+    data: {
+      workspaceId: context.workspace.id,
+      userId: context.userId,
+      action: "automation.n8n_provision_reconciled",
+      entityType: "n8n_workflow",
+      entityId: detail.id,
+      metadata: {blueprintId: blueprint.id, integrationId: integration.id, active: detail.active},
+    },
+  });
+  revalidatePath("/dashboard/automations");
+}
