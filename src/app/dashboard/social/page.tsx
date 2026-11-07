@@ -62,7 +62,7 @@ export default async function SocialPage({searchParams}:{searchParams:Promise<{m
   const gridStart=new Date(monthStart.getTime()-((monthStart.getUTCDay()+6)%7)*86400000);
   const gridEnd=new Date(gridStart.getTime()+42*86400000);
   const {workspace} = await requireWorkspaceContext();
-  const [accounts, brands, calendarPosts, mediaAssets, incidents] = await Promise.all([
+  const [accounts, brands, calendarPosts, incidents] = await Promise.all([
     db.socialAccount.findMany({
       where:{workspaceId:workspace.id},
       orderBy:[{updatedAt:"desc"},{accountName:"asc"}],
@@ -70,9 +70,9 @@ export default async function SocialPage({searchParams}:{searchParams:Promise<{m
     }),
     db.brand.findMany({where:{workspaceId:workspace.id,status:"ACTIVE"},orderBy:{name:"asc"},select:{id:true,name:true}}),
     db.socialPostTarget.findMany({where:{workspaceId:workspace.id,status:"SCHEDULED",provider:{in:["FACEBOOK","INSTAGRAM","PINTEREST","X","YOUTUBE"]}},orderBy:{createdAt:"desc"},take:500,select:{id:true,provider:true,uploadMetadata:true,socialAccount:{select:{accountName:true}},contentPost:{select:{id:true,body:true,scheduledAt:true}}}}),
-    db.mediaAsset.findMany({where:{workspaceId:workspace.id,status:"READY",mimeType:{in:["image/jpeg","image/png","video/mp4","video/quicktime"]},OR:[{brandId:null},{brandId:{in:brands.map((brand)=>brand.id)}}]},orderBy:{createdAt:"desc"},take:100,select:{id:true,brandId:true,originalFilename:true,mimeType:true,sizeBytes:true,durationMs:true,width:true,height:true}}),
     db.workspaceIncident.findMany({where:{workspaceId:workspace.id,sourceType:{in:["SOCIAL_ACCOUNT","SOCIAL_PUBLISH_TARGET"]}},orderBy:[{status:"asc"},{lastSeenAt:"desc"}],take:50,select:{id:true,category:true,severity:true,status:true,message:true,errorCode:true,occurrenceCount:true,firstSeenAt:true,lastSeenAt:true,resolvedAt:true,resolutionMessage:true}}),
   ]);
+  const mediaAssets = await db.mediaAsset.findMany({where:{workspaceId:workspace.id,status:"READY",mimeType:{in:["image/jpeg","image/png","video/mp4","video/quicktime"]},OR:[{brandId:null},{brandId:{in:brands.map((brand)=>brand.id)}}]},orderBy:{createdAt:"desc"},take:100,select:{id:true,brandId:true,originalFilename:true,mimeType:true,sizeBytes:true,durationMs:true,width:true,height:true}});
   const drafts = await db.contentPost.findMany({
       where:{workspaceId:workspace.id,OR:[{status:{in:["DRAFT","APPROVED"]}},{publishTargets:{some:{provider:{in:["FACEBOOK","INSTAGRAM","TIKTOK","YOUTUBE","LINKEDIN","PINTEREST","X"]}}}}]},
       orderBy:{createdAt:"desc"},take:25,
