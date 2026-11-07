@@ -1298,6 +1298,9 @@ export async function createPinterestDraft(formData:FormData){
  const boardTarget=String(formData.get("boardTarget")??"").trim(),mediaType=String(formData.get("mediaType")??"image");
  const title=String(formData.get("title")??"").trim(),description=String(formData.get("description")??"").trim(),rawLink=String(formData.get("link")??"").trim();
  const videoAssetId=String(formData.get("videoAssetId")??"").trim(),coverAssetId=String(formData.get("coverAssetId")??"").trim(),imageAssetId=String(formData.get("mediaAssetId")??"").trim();
+ const scheduledInput=String(formData.get("scheduledAt")??"").trim();
+ const validSchedule=!scheduledInput||(scheduledInput.includes("T")&&(/[zZ]$|[+-][0-9]{2}:[0-9]{2}$/.test(scheduledInput))&&Number.isFinite(Date.parse(scheduledInput))&&Date.parse(scheduledInput)>=Date.now()+15*60_000);
+ if(!validSchedule)throw new Error("Scheduled time must be a timezone-qualified ISO 8601 value at least 15 minutes in the future.");
  const split=boardTarget.indexOf("|"),accountId=split>0?boardTarget.slice(0,split):"",boardId=split>0?boardTarget.slice(split+1):"";
  if(!accountId||accountId.length>128||!boardId||boardId.length>128||!title||title.length>100||description.length>500||!["image","video"].includes(mediaType))throw new Error("Choose a Pinterest board and valid Pin title and description.");
  let link:string|null=null;
@@ -1325,10 +1328,11 @@ export async function createPinterestDraft(formData:FormData){
  }
  await enforceSocialRateLimit(context.workspace.id,context.userId,"publish");
  const post=await db.$transaction(async tx=>{
-  const created=await tx.contentPost.create({data:{workspaceId:context.workspace.id,brandId:brand.id,title,body:description||title,status:"DRAFT"},select:{id:true}});
-  const target=await tx.socialPostTarget.create({data:{workspaceId:context.workspace.id,contentPostId:created.id,socialAccountId:account.id,provider:"PINTEREST",status:"DRAFT",uploadMetadata:{boardId,title,description,link,mediaType,boardName:typeof board.name==="string"?board.name:"Pinterest board"}},select:{id:true}});
+  const scheduledAt=scheduledInput?new Date(scheduledInput):null;
+  const created=await tx.contentPost.create({data:{workspaceId:context.workspace.id,brandId:brand.id,title,body:description||title,status:scheduledAt?"SCHEDULED":"DRAFT",scheduledAt},select:{id:true}});
+  const target=await tx.socialPostTarget.create({data:{workspaceId:context.workspace.id,contentPostId:created.id,socialAccountId:account.id,provider:"PINTEREST",status:scheduledAt?"SCHEDULED":"DRAFT",uploadMetadata:{boardId,title,description,link,mediaType,boardName:typeof board.name==="string"?board.name:"Pinterest board"}},select:{id:true}});
   await tx.contentPostMedia.createMany({data:attachments.map(asset=>({workspaceId:context.workspace.id,contentPostId:created.id,mediaAssetId:asset.id,position:asset.position}))});
-  await tx.activityLog.create({data:{workspaceId:context.workspace.id,userId:context.userId,action:"social_post.draft_created",entityType:"ContentPost",entityId:created.id,metadata:{provider:"PINTEREST",targetId:target.id,accountId:account.id,boardId,mediaCount:attachments.length,mediaType}}});
+  await tx.activityLog.create({data:{workspaceId:context.workspace.id,userId:context.userId,action:"social_post.draft_created",entityType:"ContentPost",entityId:created.id,metadata:{provider:"PINTEREST",targetId:target.id,accountId:account.id,boardId,mediaCount:attachments.length,mediaType,scheduledAt:scheduledAt?.toISOString()??null}}});
   return created;
  });
  revalidatePath("/dashboard/social");return post.id;
