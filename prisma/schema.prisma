@@ -199,6 +199,7 @@ model SocialPostTarget {
   socialAccount  SocialAccount @relation(fields: [workspaceId, socialAccountId], references: [workspaceId, id], onDelete: Cascade)
   attempts       SocialPublishAttempt[]
   pinterestAnalyticsSnapshots PinterestPinAnalyticsSnapshot[]
+  metaAnalyticsSnapshots MetaAnalyticsSnapshot[]
   @@unique([workspaceId, id])
   @@unique([contentPostId, socialAccountId])
   @@index([workspaceId, status, createdAt])
@@ -486,6 +487,7 @@ model MetaAnalyticsSnapshot {
   socialAccountId String
   subjectType String
   subjectId String
+  targetId String? @unique
   reportDate DateTime @db.Date
   startDate DateTime @db.Date
   endDate DateTime @db.Date
@@ -493,7 +495,8 @@ model MetaAnalyticsSnapshot {
   rawResponse Json
   fetchedAt DateTime @default(now())
   socialAccount SocialAccount @relation(fields: [workspaceId, socialAccountId], references: [workspaceId, id], onDelete: Cascade)
-  @@unique([workspaceId, socialAccountId, subjectType, subjectId, reportDate])
-  @@index([workspaceId, reportDate])
-  @@index([workspaceId, socialAccountId, subjectType, fetchedAt])
+  target SocialPostTarget? @relation(fields: [targetId], references: [id], onDelete: Cascade)
+  @@unique([workspaceId, socialAccountId, subjectType, subjectId, reportDate], map: "meta_analytics_subject_report_uq")
+  @@index([workspaceId, reportDate], map: "meta_analytics_workspace_date_idx")
+  @@index([workspaceId, socialAccountId, subjectType, fetchedAt], map: "meta_analytics_account_type_fetched_idx")
 }
