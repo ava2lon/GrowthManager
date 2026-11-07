@@ -150,6 +150,7 @@ model SocialAccount {
   updatedAt      DateTime       @updatedAt
   brand          Brand          @relation(fields: [workspaceId, brandId], references: [workspaceId, id], onDelete: Cascade)
   publishTargets SocialPostTarget[]
+  pinterestAnalyticsSnapshots PinterestAnalyticsSnapshot[]
   @@unique([workspaceId, provider, providerUserId])
   @@unique([workspaceId, id])
   @@index([workspaceId, brandId, provider])
@@ -439,4 +440,21 @@ model AutomationAlertDeliveryAttempt {
   @@unique([deliveryId, attemptNumber])
   @@index([workspaceId, startedAt])
   @@index([workspaceId, deliveryId, attemptNumber])
+}
+
+
+model PinterestAnalyticsSnapshot {
+  id              String        @id @default(cuid())
+  workspaceId     String
+  socialAccountId String
+  reportDate      DateTime      @db.Date
+  startDate       DateTime      @db.Date
+  endDate         DateTime      @db.Date
+  metrics         Json
+  rawResponse     Json
+  fetchedAt       DateTime      @default(now())
+  socialAccount   SocialAccount @relation(fields: [workspaceId, socialAccountId], references: [workspaceId, id], onDelete: Cascade)
+  @@unique([workspaceId, socialAccountId, reportDate])
+  @@index([workspaceId, reportDate])
+  @@index([workspaceId, socialAccountId, fetchedAt])
 }
