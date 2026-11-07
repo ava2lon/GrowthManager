@@ -14,6 +14,7 @@ import {getLinkedInCredentials,linkedinApiHeaders} from "@/lib/linkedin-auth";
 import {publishLinkedInTarget} from "@/lib/linkedin-publishing";
 import {getPinterestCredentials,pinterestApi} from "@/lib/pinterest-auth";
 import {publishPinterestTarget} from "@/lib/pinterest-publishing";
+import {refreshPinterestAccountAnalytics} from "@/lib/pinterest-analytics";
 
 function readMetadata(value: unknown): Record<string, unknown> {
   if (!value || typeof value !== "object" || Array.isArray(value)) return {};
@@ -1413,4 +1414,14 @@ export async function retryPinterestPublish(formData:FormData){
   await tx.activityLog.create({data:{workspaceId:context.workspace.id,userId:context.userId,action:"social_post.retry_authorized",entityType:"ContentPost",entityId:target.contentPostId,metadata:{provider:"PINTEREST",targetId:target.id,previousErrorCode:target.errorCode}}});
  });
  revalidatePath("/dashboard/social");
+}
+
+export async function refreshPinterestAnalytics(formData:FormData){
+ const context=await requireWorkspaceRole("MEMBER");
+ const accountId=String(formData.get("accountId")??"").trim();
+ if(!accountId||accountId.length>128)throw new Error("Invalid Pinterest account.");
+ await enforceSocialRateLimit(context.workspace.id,context.userId,"analytics");
+ const result=await refreshPinterestAccountAnalytics({workspaceId:context.workspace.id,accountId});
+ revalidatePath("/dashboard/social");
+ redirect("/dashboard/social?pinterestAnalytics=refreshed&accountId="+encodeURIComponent(accountId)+"&reportDate="+encodeURIComponent(result.reportDate));
 }
