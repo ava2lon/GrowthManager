@@ -34,7 +34,6 @@ export async function saveNotificationPreferences(formData: FormData) {
       emailReviewDecisions: value("emailReviewDecisions"),
       timezone, quietHoursEnabled: value("quietHoursEnabled"), quietHoursStart, quietHoursEnd,
       digestEnabled: value("digestEnabled"), digestFrequency, digestSendTime,
-      digestEnabled: value("digestEnabled"), digestFrequency, digestSendTime,
     },
     update: {
       inAppReviewAssigned: value("inAppReviewAssigned"),
@@ -42,6 +41,7 @@ export async function saveNotificationPreferences(formData: FormData) {
       inAppReviewDecisions: value("inAppReviewDecisions"),
       emailReviewDecisions: value("emailReviewDecisions"),
       timezone, quietHoursEnabled: value("quietHoursEnabled"), quietHoursStart, quietHoursEnd,
+      digestEnabled: value("digestEnabled"), digestFrequency, digestSendTime,
     },
   });
   revalidatePath("/dashboard/notifications");
