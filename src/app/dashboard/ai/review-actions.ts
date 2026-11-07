@@ -115,7 +115,7 @@ export async function assignContentReviewer(input:{postId:string;reviewerUserId:
       href:"/dashboard/ai",
     }});
     if(preferences?.emailReviewAssigned!==false) await tx.contentReviewEmailDelivery.create({data:{
-      workspaceId:context.workspace.id,assignmentId:assignment.id,eventType:"CONTENT_REVIEW_ASSIGNED",
+      workspaceId:context.workspace.id,assignmentId:assignment.id,eventType:"CONTENT_REVIEW_ASSIGNED",recipientUserId:reviewerUserId,
       eventKey:assignment.id+":ASSIGNED:"+assignment.updatedAt.toISOString(),
       recipientEmail:member.user.email,recipientName:member.user.name,
     }});
@@ -161,7 +161,7 @@ export async function submitContentReview(input:{assignmentId:string;decision:"A
         href:"/dashboard/ai",
       }});
       if(preferences?.emailReviewDecisions!==false) await tx.contentReviewEmailDelivery.create({data:{
-        workspaceId:context.workspace.id,assignmentId:assignment.id,
+        workspaceId:context.workspace.id,assignmentId:assignment.id,recipientUserId:assignment.assignedById,
         eventType:decision==="APPROVED"?"CONTENT_REVIEW_COMPLETED":"CONTENT_CHANGES_REQUESTED",
         eventKey:assignment.id+":"+decision+":"+reviewedAt.toISOString(),
         recipientEmail:assignment.assignedBy.email,recipientName:assignment.assignedBy.name,
