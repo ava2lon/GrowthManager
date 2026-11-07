@@ -2,7 +2,7 @@
 
 import {useState} from "react";
 
-type ExportRow={provider:string;title:string;publishedAt:string;analyticsSnapshotAvailable:boolean};
+type ExportRow={provider:string;title:string;publishedAt:string;analyticsSnapshotAvailable:boolean;metricName:string;metricValue:number|string;metricUnit:string};
 
 function csvCell(value:string|boolean){
   const text=String(value);
@@ -15,8 +15,8 @@ export default function AnalyticsExport({rows}:{rows:ExportRow[]}){
     if(exporting||rows.length===0)return;
     setExporting(true);
     try{
-      const header=["platform","content_title","published_at","analytics_snapshot_available"];
-      const lines=[header,...rows.map(row=>[row.provider,row.title,row.publishedAt,row.analyticsSnapshotAvailable])]
+      const header=["platform","content_title","published_at","analytics_snapshot_available","metric_name","metric_value","metric_unit"];
+      const lines=[header,...rows.map(row=>[row.provider,row.title,row.publishedAt,row.analyticsSnapshotAvailable,row.metricName,row.metricValue,row.metricUnit])]
         .map(line=>line.map(csvCell).join(","));
       const blob=new Blob(["\uFEFF"+lines.join("\r\n")],{type:"text/csv;charset=utf-8"});
       const url=URL.createObjectURL(blob);
