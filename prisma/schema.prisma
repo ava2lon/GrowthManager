@@ -488,6 +488,8 @@ model AutomationAlertEvent {
   acknowledgedAt    DateTime?
   acknowledgedById  String?
   lastNotifiedAt    DateTime?
+  resolvedAt        DateTime?
+  resolutionMessage String?
   createdAt         DateTime  @default(now())
   workspace         Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
   integration       Integration @relation(fields: [workspaceId, integrationId], references: [workspaceId, id], onDelete: Cascade)
