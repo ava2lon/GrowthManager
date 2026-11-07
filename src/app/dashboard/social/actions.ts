@@ -1,6 +1,7 @@
 "use server";
 
 import {revalidatePath} from "next/cache";
+import {redirect} from "next/navigation";
 import {requireWorkspaceRole} from "@/lib/workspace";
 import {db} from "@/lib/db";
 import {consumeRateLimit} from "@/lib/rate-limit";
@@ -1326,7 +1327,7 @@ export async function publishPinterestDraft(formData:FormData){
  const result=await publishPinterestTarget({targetId,workspaceId:context.workspace.id,actorUserId:context.userId});
  revalidatePath("/dashboard/social");
  if(result.status==="SKIPPED")throw new Error("This Pinterest target is no longer a publishable draft. Refresh the page.");
- return result;
+ redirect("/dashboard/social?pinterestPublish="+result.status.toLowerCase());
 }
 
 const RETRYABLE_PINTEREST_ERRORS=new Set(["PINTEREST_REAUTHORIZATION_REQUIRED","PINTEREST_REFRESH_UNAVAILABLE","PINTEREST_REFRESH_REJECTED","PINTEREST_AUTH_FAILED","PINTEREST_PERMISSION_DENIED","PINTEREST_RATE_LIMITED","PINTEREST_PUBLISH_REJECTED","PINTEREST_BOARD_NOT_FOUND","PINTEREST_IMAGE_INVALID","PINTEREST_PIN_METADATA_INVALID","PINTEREST_BOARD_NOT_DISCOVERED","PINTEREST_MEDIA_SIGNING_FAILED","PINTEREST_MEDIA_STORAGE_MISMATCH","PINTEREST_REQUIRED_SCOPE_MISSING"]);
