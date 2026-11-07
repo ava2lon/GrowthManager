@@ -34,7 +34,9 @@ export async function GET(request: Request) {
 
   const clientId = process.env.YOUTUBE_CLIENT_ID;
   const redirectUri = process.env.YOUTUBE_REDIRECT_URI;
-  if (!clientId || !redirectUri || new URL(redirectUri).protocol !== "https:") {
+  let validRedirect = false;
+  try { validRedirect = !!redirectUri && new URL(redirectUri).protocol === "https:"; } catch { validRedirect = false; }
+  if (!clientId || !validRedirect || !redirectUri) {
     return NextResponse.redirect(new URL("/dashboard/social?youtube=not_configured", request.url));
   }
   const url = new URL(request.url);
