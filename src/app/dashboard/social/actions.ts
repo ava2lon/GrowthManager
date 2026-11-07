@@ -1405,7 +1405,7 @@ export async function reschedulePinterestPin(formData: FormData) {
   const targetId = String(formData.get("targetId") ?? "").trim();
   const raw = String(formData.get("scheduledAt") ?? "").trim();
   if (!targetId || targetId.length > 128) throw new Error("Invalid Pinterest publishing target.");
-  if (!/^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}$/.test(raw)) throw new Error("Choose a valid schedule time.");
+  if (!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(raw)) throw new Error("Choose a valid schedule time.");
   const scheduledAt = new Date(raw + ":00Z");
   const now = Date.now();
   if (!Number.isFinite(scheduledAt.getTime()) || scheduledAt.getTime() < now + 15 * 60_000 ||
