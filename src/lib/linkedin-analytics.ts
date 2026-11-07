@@ -14,14 +14,15 @@ export async function refreshLinkedInAnalytics(input:{workspaceId:string;account
  if(metadata.accountType!=="ORGANIZATION"||typeof orgUrn!=="string"||!/^urn:li:organization:\d+$/.test(orgUrn))throw new Error("LINKEDIN_ORGANIZATION_ACCOUNT_REQUIRED");
  const credentials=await getLinkedInCredentials({workspaceId:input.workspaceId,accountId:account.id});
  if(!credentials.scopes.includes("rw_organization_admin"))throw new Error("LINKEDIN_ANALYTICS_PERMISSION_MISSING");
- const start=startDate.getTime(),end=dataEndDate.getTime()+86400000-1;
+ const start=startDate.getTime(),end=dataEndDate.getTime()+86400000;
  const interval="(timeGranularityType:DAY,timeRange:(start:"+start+",end:"+end+"))";
  let subjectType="ACCOUNT",subjectId=account.id,raw:Obj={};
  if(input.targetId){
   const target=await db.socialPostTarget.findFirst({where:{id:input.targetId,workspaceId:input.workspaceId,socialAccountId:account.id,provider:"LINKEDIN",status:"PUBLISHED",providerPostId:{not:null}},select:{id:true,providerPostId:true,publishedAt:true}});
   if(!target?.providerPostId||!/^urn:li:(share|ugcPost):\d+$/.test(target.providerPostId))throw new Error("LINKEDIN_PUBLISHED_TARGET_NOT_FOUND");
   subjectType="MEDIA";subjectId=target.id;
-  const url="https://api.linkedin.com/rest/organizationalEntityShareStatistics?q=organizationalEntity&organizationalEntity="+encodeURIComponent(orgUrn)+"&shares="+encodeURIComponent(restliList(target.providerPostId));
+  const base="https://api.linkedin.com/rest/organizationalEntityShareStatistics?q=organizationalEntity&organizationalEntity="+encodeURIComponent(orgUrn);
+  const url=target.providerPostId.startsWith("urn:li:share:")?base+"&shares="+encodeURIComponent(restliList(target.providerPostId)):base+"&ugcPosts%5B0%5D="+encodeURIComponent(target.providerPostId);
   raw=await linkedinGet(url,credentials.accessToken);
  }else{
   const shareUrl="https://api.linkedin.com/rest/organizationalEntityShareStatistics?q=organizationalEntity&organizationalEntity="+encodeURIComponent(orgUrn)+"&timeIntervals="+encodeURIComponent(interval);
