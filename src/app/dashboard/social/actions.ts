@@ -1293,6 +1293,28 @@ export async function checkPinterestAccountHealth(formData:FormData){
  if(failure)throw new Error(failure==="PINTEREST_REAUTHORIZATION_REQUIRED"||failure==="PINTEREST_AUTH_FAILED"?"Pinterest authorization expired or was revoked. Reconnect this account.":failure==="PINTEREST_REQUIRED_SCOPE_MISSING"?"Required Pinterest permissions are missing. Reconnect after enabling the required API access.":"Pinterest could not validate this account. Retry the health check.");
 }
 
+export async function loadMorePinterestBoards(formData:FormData){
+ const context=await requireWorkspaceRole("ADMIN"),accountId=String(formData.get("accountId")??"").trim();
+ if(!accountId||accountId.length>128)throw new Error("Invalid Pinterest account.");
+ await enforceSocialRateLimit(context.workspace.id,context.userId,"health");
+ const account=await db.socialAccount.findFirst({where:{id:accountId,workspaceId:context.workspace.id,provider:"PINTEREST",status:"CONNECTED"},select:{id:true,credentialsEncrypted:true,metadata:true}});
+ if(!account?.credentialsEncrypted)throw new Error("Reconnect Pinterest before refreshing its boards.");
+ const metadata=readMetadata(account.metadata),bookmark=metadata.boardBookmark;
+ if(metadata.hasMoreBoards!==true||typeof bookmark!=="string"||!bookmark||bookmark.length>4096)throw new Error("There are no additional discovered Pinterest boards to load.");
+ const credentials=await getPinterestCredentials({workspaceId:context.workspace.id,accountId:account.id});
+ const query=new URLSearchParams({page_size:"100",bookmark});
+ const page=await pinterestApi<{items?:Array<{id?:string;name?:string;privacy?:string}>;bookmark?:string|null}>(credentials.accessToken,"/v5/boards?"+query.toString());
+ const existing=Array.isArray(metadata.boards)?metadata.boards.filter((item)=>item&&typeof item==="object"&&typeof (item as Record<string,unknown>).id==="string") as Array<{id:string;name:string;privacy:string}>:[];
+ const merged=new Map(existing.map((item)=>[item.id,item]));
+ for(const item of page.items??[])if(typeof item.id==="string"&&typeof item.name==="string")merged.set(item.id,{id:item.id,name:item.name.slice(0,100),privacy:typeof item.privacy==="string"?item.privacy:"UNKNOWN"});
+ const nextBookmark=typeof page.bookmark==="string"&&page.bookmark? page.bookmark:null;
+ const updated={...metadata,boards:[...merged.values()],boardCount:merged.size,hasMoreBoards:!!nextBookmark,boardBookmark:nextBookmark};
+ const changed=await db.socialAccount.updateMany({where:{id:account.id,workspaceId:context.workspace.id,provider:"PINTEREST",status:"CONNECTED",credentialsEncrypted:account.credentialsEncrypted},data:{metadata:updated,lastValidatedAt:new Date(),lastErrorCode:null}});
+ if(changed.count!==1)throw new Error("Pinterest account changed during board pagination. Refresh and retry.");
+ await db.activityLog.create({data:{workspaceId:context.workspace.id,userId:context.userId,action:"social_account.pinterest_boards_loaded",entityType:"SocialAccount",entityId:account.id,metadata:{boardsAdded:merged.size-existing.length,totalBoards:merged.size,hasMoreBoards:!!nextBookmark}}});
+ revalidatePath("/dashboard/social");
+}
+
 export async function createPinterestDraft(formData:FormData){
  const context=await requireWorkspaceRole("MEMBER");
  const boardTarget=String(formData.get("boardTarget")??"").trim(),mediaType=String(formData.get("mediaType")??"image");
