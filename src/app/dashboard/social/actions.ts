@@ -768,6 +768,7 @@ export async function createInstagramReelDraft(formData:FormData){
   const context=await requireWorkspaceRole("MEMBER");
   const accountIds=[...new Set(formData.getAll("accountIds").map(v=>String(v).trim()).filter(Boolean))];
   const mediaAssetId=String(formData.get("mediaAssetId")??"").trim();
+ const altText=String(formData.get("altText")??"").trim();
   const body=String(formData.get("body")??"").trim();
   if(accountIds.length<1||accountIds.length>10||accountIds.some(id=>id.length>128)||!mediaAssetId||mediaAssetId.length>128||!body||body.length>2200)
     throw new Error("Select 1–10 Instagram accounts, one video, and a caption up to 2,200 characters.");
@@ -1518,15 +1519,16 @@ export async function createXDraft(formData:FormData){
  const accounts=await db.socialAccount.findMany({where:{id:{in:accountIds},workspaceId:context.workspace.id,provider:"X",status:"CONNECTED"},select:{id:true,brandId:true,scopes:true}});
  if(accounts.length!==accountIds.length||new Set(accounts.map(a=>a.brandId)).size!==1||accounts.some(a=>!a.scopes.includes("tweet.write")||(mediaAssetId&&!a.scopes.includes("media.write"))))throw new Error("Every selected X account must have tweet.write"+(mediaAssetId?" and media.write":"")+" permission and belong to the same brand.");
  const brandId=accounts[0].brandId;
- const mediaAsset=mediaAssetId?await db.mediaAsset.findFirst({where:{id:mediaAssetId,workspaceId:context.workspace.id,status:"READY",OR:[{brandId:null},{brandId:brandId}],mimeType:{in:["image/jpeg","image/png","video/mp4","video/quicktime"]},sizeBytes:{lte:20n*1024n*1024n}},select:{id:true}}):null;
+ const mediaAsset=mediaAssetId?await db.mediaAsset.findFirst({where:{id:mediaAssetId,workspaceId:context.workspace.id,status:"READY",OR:[{brandId:null},{brandId:brandId}],mimeType:{in:["image/jpeg","image/png","video/mp4","video/quicktime"]},sizeBytes:{lte:20n*1024n*1024n}},select:{id:true,mimeType:true}}):null;
  if(mediaAssetId&&!mediaAsset)throw new Error("Choose one ready JPEG, PNG, MP4, or MOV asset up to 20 MB from this workspace or brand.");
+ if(altText.length>1000||(!mediaAssetId&&altText)||(mediaAsset&&!["image/jpeg","image/png"].includes(mediaAsset.mimeType)&&altText))throw new Error("Image alt text is optional, up to 1,000 characters, and only supported for JPEG/PNG images.");
  const brand=await db.brand.findFirst({where:{id:accounts[0].brandId,workspaceId:context.workspace.id,status:"ACTIVE"},select:{id:true}});
  if(!brand)throw new Error("The selected X accounts must belong to an active brand.");
  await enforcePublishLimit(context.workspace.id,context.userId);
  const post=await db.$transaction(async tx=>{
   const created=await tx.contentPost.create({data:{workspaceId:context.workspace.id,brandId:brand.id,body,status:scheduledAt?"SCHEDULED":"DRAFT",scheduledAt},select:{id:true}});
   if(mediaAsset)await tx.contentPostMedia.create({data:{workspaceId:context.workspace.id,contentPostId:created.id,mediaAssetId:mediaAsset.id,position:0}});
-  await tx.socialPostTarget.createMany({data:accounts.map(a=>({workspaceId:context.workspace.id,contentPostId:created.id,socialAccountId:a.id,provider:"X",status:scheduledAt?"SCHEDULED":"DRAFT"}))});
+  await tx.socialPostTarget.createMany({data:accounts.map(a=>({workspaceId:context.workspace.id,contentPostId:created.id,socialAccountId:a.id,provider:"X",status:scheduledAt?"SCHEDULED":"DRAFT",uploadMetadata:altText?{xAltText:altText}:undefined}))});
   await tx.activityLog.create({data:{workspaceId:context.workspace.id,userId:context.userId,action:"social_post.draft_created",entityType:"ContentPost",entityId:created.id,metadata:{provider:"X",targetCount:accounts.length,scheduledAt:scheduledAt?.toISOString()??null,mediaCount:mediaAsset?1:0}}});
   return created;
  });
