@@ -23,7 +23,7 @@ async function activate(signal:Signal,now:Date):Promise<"created"|"reopened"|"up
       await tx.workspaceIncident.create({data:{workspaceId:signal.workspaceId,sourceType:signal.sourceType,sourceId:signal.sourceId,socialAccountId:signal.socialAccountId,socialPostTargetId:signal.socialPostTargetId,category:signal.category,severity:signal.severity,dedupeKey:signal.dedupeKey,message:signal.message,errorCode:signal.errorCode??null,firstSeenAt:now,lastSeenAt:now,metadata:signal.metadata}});
     }
     const admins=await tx.workspaceMembership.findMany({where:{workspaceId:signal.workspaceId,role:{in:["OWNER","ADMIN"]}},select:{userId:true}});
-    if(admins.length)await tx.workspaceNotification.createMany({data:admins.map(member=>({workspaceId:signal.workspaceId,userId:member.userId,type:"SOCIAL_INCIDENT",title:"Social integration incident",message:signal.message,href:"/dashboard/social"}))});
+    if(admins.length)await tx.workspaceNotification.createMany({data:admins.map(member=>({workspaceId:signal.workspaceId,userId:member.userId,type:"SOCIAL_INCIDENT" as const,title:"Social integration incident",message:signal.message,href:"/dashboard/social"}))});
     return existing?"reopened":"created";
   });
 }
@@ -36,7 +36,7 @@ export async function synchronizeSocialIncidents():Promise<{created:number;reope
   ]);
   const signals:Signal[]=[];
   for(const account of accounts){
-    const base={workspaceId:account.workspaceId,sourceType:"SOCIAL_ACCOUNT" as "SOCIAL_ACCOUNT",sourceId:account.id,socialAccountId:account.id,metadata:{provider:account.provider}};
+    const base={workspaceId:account.workspaceId,sourceType:"SOCIAL_ACCOUNT" as const,sourceId:account.id,socialAccountId:account.id,metadata:{provider:account.provider}};
     if(account.status==="ERROR")signals.push({...base,category:"CONNECTION_ERROR",severity:"CRITICAL",dedupeKey:"social-account:"+account.id+":CONNECTION_ERROR",message:account.accountName+" ("+account.provider+") is in a connection error state.",errorCode:safeCode(account.lastErrorCode,"PROVIDER_CONNECTION_ERROR")});
     else if(account.status!=="CONNECTED")signals.push({...base,category:"CONNECTION_STATE",severity:"WARNING",dedupeKey:"social-account:"+account.id+":CONNECTION_STATE",message:account.accountName+" ("+account.provider+") requires connection review: "+account.status+"."});
     if(account.lastErrorCode&&account.status==="CONNECTED")signals.push({...base,category:"PROVIDER_ERROR",severity:"WARNING",dedupeKey:"social-account:"+account.id+":PROVIDER_ERROR",message:account.accountName+" ("+account.provider+") has a recorded provider error.",errorCode:safeCode(account.lastErrorCode,"PROVIDER_ERROR")});
@@ -61,7 +61,7 @@ export async function synchronizeSocialIncidents():Promise<{created:number;reope
     if(changed.count){
       resolved++;
       const admins=await db.workspaceMembership.findMany({where:{workspaceId:incident.workspaceId,role:{in:["OWNER","ADMIN"]}},select:{userId:true}});
-      if(admins.length)await db.workspaceNotification.createMany({data:admins.map(member=>({workspaceId:incident.workspaceId,userId:member.userId,type:"SOCIAL_INCIDENT_RESOLVED",title:"Social incident resolved",message:"A previously detected social account or publishing issue has recovered.",href:"/dashboard/social"}))});
+      if(admins.length)await db.workspaceNotification.createMany({data:admins.map(member=>({workspaceId:incident.workspaceId,userId:member.userId,type:"SOCIAL_INCIDENT_RESOLVED" as const,title:"Social incident resolved",message:"A previously detected social account or publishing issue has recovered.",href:"/dashboard/social"}))});
     }
   }
   let escalated=0;
@@ -77,7 +77,7 @@ export async function synchronizeSocialIncidents():Promise<{created:number;reope
       const claimed=await tx.workspaceIncident.updateMany({where:{id:incident.id,workspaceId:incident.workspaceId,status:"OPEN",escalatedAt:null},data:{escalatedAt:now}});
       if(!claimed.count)return;
       await tx.workspaceNotification.createMany({data:admins.map(member=>({
-        workspaceId:incident.workspaceId,userId:member.userId,type:"SOCIAL_INCIDENT_ESCALATED",
+        workspaceId:incident.workspaceId,userId:member.userId,type:"SOCIAL_INCIDENT_ESCALATED" as const,
         title:"Unresolved social incident escalation",
         message:incident.category.replaceAll("_"," ")+" remains open after 30 minutes: "+incident.message,
         href:"/dashboard/social",
