@@ -1525,6 +1525,7 @@ export async function createXDraft(formData:FormData){
  await enforcePublishLimit(context.workspace.id,context.userId);
  const post=await db.$transaction(async tx=>{
   const created=await tx.contentPost.create({data:{workspaceId:context.workspace.id,brandId:brand.id,body,status:scheduledAt?"SCHEDULED":"DRAFT",scheduledAt},select:{id:true}});
+  if(mediaAsset)await tx.contentPostMedia.create({data:{workspaceId:context.workspace.id,contentPostId:created.id,mediaAssetId:mediaAsset.id,position:0}});
   await tx.socialPostTarget.createMany({data:accounts.map(a=>({workspaceId:context.workspace.id,contentPostId:created.id,socialAccountId:a.id,provider:"X",status:scheduledAt?"SCHEDULED":"DRAFT"}))});
   await tx.activityLog.create({data:{workspaceId:context.workspace.id,userId:context.userId,action:"social_post.draft_created",entityType:"ContentPost",entityId:created.id,metadata:{provider:"X",targetCount:accounts.length,scheduledAt:scheduledAt?.toISOString()??null,mediaCount:mediaAsset?1:0}}});
   return created;
