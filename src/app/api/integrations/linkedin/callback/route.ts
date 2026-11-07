@@ -30,7 +30,7 @@ export async function GET(request:Request){
  if(!clientId||!clientSecret||!redirectUri){const r=redirect(request,"not_configured");r.cookies.delete(COOKIE);return r}
  try{
   const response=await fetch("https://www.linkedin.com/oauth/v2/accessToken",{method:"POST",headers:{"Content-Type":"application/x-www-form-urlencoded","Cache-Control":"no-cache"},body:new URLSearchParams({grant_type:"authorization_code",code,client_id:clientId,client_secret:clientSecret,redirect_uri:redirectUri}),cache:"no-store",redirect:"error",signal:AbortSignal.timeout(12000)});
-  const token=await response.json().catch(()=>null) as {access_token?:string;expires_in?:number;scope?:string;refresh_token?:string}|null;
+  const token=await response.json().catch(()=>null) as {access_token?:string;expires_in?:number;scope?:string;refresh_token?:string;refresh_token_expires_in?:number}|null;
   if(!response.ok||!token?.access_token||!Number.isFinite(token.expires_in)||!token.scope)throw new Error("LINKEDIN_TOKEN_EXCHANGE_FAILED");
   const scopes=token.scope.split(/[ ,]+/).filter(Boolean);if(!scopes.includes("openid")||!scopes.includes("profile")||!scopes.includes("w_member_social"))throw new Error("LINKEDIN_SCOPE_MISSING");
   const expiresAt=new Date(Date.now()+Number(token.expires_in)*1000);
@@ -55,7 +55,7 @@ export async function GET(request:Request){
   await db.$transaction(async tx=>{
    for(const item of records){
     const old=await tx.socialAccount.findFirst({where:{workspaceId:state.workspaceId,provider:"LINKEDIN",providerUserId:item.urn},select:{id:true}});
-    const id=old?.id??randomUUID(),encrypted=encryptIntegrationCredentials({accessToken:token.access_token,refreshToken:token.refresh_token??null,tokenExpiresAt:expiresAt.toISOString(),provider:"linkedin",memberUrn,scopes},state.workspaceId,id);
+    const id=old?.id??randomUUID(),encrypted=encryptIntegrationCredentials({accessToken:token.access_token,refreshToken:token.refresh_token??null,refreshTokenExpiresAt:Number.isFinite(token.refresh_token_expires_in)&&Number(token.refresh_token_expires_in)>0?new Date(Date.now()+Number(token.refresh_token_expires_in)*1000).toISOString():null,tokenExpiresAt:expiresAt.toISOString(),provider:"linkedin",memberUrn,scopes},state.workspaceId,id);
     await tx.socialAccount.upsert({where:{workspaceId_provider_providerUserId:{workspaceId:state.workspaceId,provider:"LINKEDIN",providerUserId:item.urn}},create:{id,workspaceId:state.workspaceId,brandId:state.brandId,provider:"LINKEDIN",providerUserId:item.urn,accountName:item.name,credentialsEncrypted:encrypted,status:"CONNECTED",scopes,connectedAt:new Date(),lastValidatedAt:new Date(),tokenExpiresAt:expiresAt,metadata:item.metadata},update:{brandId:state.brandId,accountName:item.name,credentialsEncrypted:encrypted,status:"CONNECTED",scopes,connectedAt:new Date(),lastValidatedAt:new Date(),tokenExpiresAt:expiresAt,lastErrorCode:null,metadata:item.metadata}});
    }
    await tx.activityLog.create({data:{workspaceId:state.workspaceId,userId:state.userId,action:"social_account.connected",entityType:"SocialAccount",metadata:{provider:"LINKEDIN",accountsConnected:records.length,organizationDiscovery:discovery}}});
