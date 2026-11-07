@@ -182,6 +182,9 @@ model SocialPostTarget {
   provider       SocialProvider
   status         String   @default("DRAFT")
   providerPostId String?
+  providerContainerId String?
+  processingStartedAt DateTime?
+  nextCheckAt DateTime?
   errorCode      String?
   publishedAt    DateTime?
   createdAt      DateTime @default(now())
