@@ -1498,7 +1498,8 @@ export async function refreshPinterestAnalytics(formData:FormData){
  const accountId=String(formData.get("accountId")??"").trim();
  if(!accountId||accountId.length>128)throw new Error("Invalid Pinterest account.");
  await enforceSocialRateLimit(context.workspace.id,context.userId,"analytics");
- const result=try{await refreshPinterestAccountAnalytics({workspaceId:context.workspace.id,accountId});await auditManualAnalyticsRefresh(context.workspace.id,context.userId,accountId,"PINTEREST","SUCCESS");}catch(error){await auditManualAnalyticsRefresh(context.workspace.id,context.userId,accountId,"PINTEREST","FAILED",analyticsErrorCode(error));throw error;}
+ let result:Awaited<ReturnType<typeof refreshPinterestAccountAnalytics>>;
+ try{result=await refreshPinterestAccountAnalytics({workspaceId:context.workspace.id,accountId});await auditManualAnalyticsRefresh(context.workspace.id,context.userId,accountId,"PINTEREST","SUCCESS");}catch(error){await auditManualAnalyticsRefresh(context.workspace.id,context.userId,accountId,"PINTEREST","FAILED",analyticsErrorCode(error));throw error;}
  revalidatePath("/dashboard/social");
  redirect("/dashboard/social?pinterestAnalytics=refreshed&accountId="+encodeURIComponent(accountId)+"&reportDate="+encodeURIComponent(result.reportDate));
 }
