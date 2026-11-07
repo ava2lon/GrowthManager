@@ -92,6 +92,7 @@ export default async function SocialPage({searchParams}:{searchParams:Promise<{m
   const tikTokVideoSnapshots=tikTokAnalyticsSnapshots.filter(snapshot=>snapshot.subjectType==="VIDEO").slice(0,20);
   const xAccounts=accounts.filter(account=>account.provider==="X"&&account.status==="CONNECTED"&&account.scopes.includes("tweet.read")&&account.scopes.includes("users.read"));
   const xWritableAccounts=xAccounts.filter(account=>account.scopes.includes("tweet.write"));
+  const xMediaAssets=mediaAssets.filter(asset=>Number(asset.sizeBytes)<=20*1024*1024&&["image/jpeg","image/png","video/mp4","video/quicktime"].includes(asset.mimeType));
   const xAnalyticsSnapshots=xAccounts.length?await db.xAnalyticsSnapshot.findMany({where:{workspaceId:workspace.id,socialAccountId:{in:xAccounts.map(account=>account.id)}},orderBy:{fetchedAt:"desc"},distinct:["socialAccountId","subjectType","subjectId"],take:100,select:{id:true,socialAccountId:true,subjectType:true,subjectId:true,targetId:true,reportDate:true,fetchedAt:true,metrics:true}}):[];
   const xAccountSnapshots=xAnalyticsSnapshots.filter(snapshot=>snapshot.subjectType==="ACCOUNT");
   const xPostSnapshots=xAnalyticsSnapshots.filter(snapshot=>snapshot.subjectType==="POST").slice(0,20);
@@ -254,15 +255,16 @@ export default async function SocialPage({searchParams}:{searchParams:Promise<{m
 </section>
 
 <section className="rounded-2xl border border-slate-200 bg-white p-5 sm:p-6">
- <h2 className="font-semibold text-slate-900">X text composer</h2>
- <p className="mt-1 text-sm text-slate-500">Create text-only X posts and schedule them through the GrowthManager worker. Media uploads are not enabled yet.</p>
+ <h2 className="font-semibold text-slate-900">X post composer</h2>
+ <p className="mt-1 text-sm text-slate-500">Create text posts with one JPEG, PNG, MP4, or MOV from the Media Library. Media is uploaded securely to X before the post is created.</p>
  {params.xPublish==="published"&&<p className="mt-2 text-sm text-emerald-700">X post published.</p>}
  {xWritableAccounts.length>0?<form action={createXDraft} className="mt-4 grid gap-3">
   <label className="grid gap-1 text-xs font-medium text-slate-600">X accounts <select name="accountIds" required multiple size={Math.min(5,Math.max(3,xWritableAccounts.length))} className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm">{xWritableAccounts.map(account=><option key={account.id} value={account.id}>{account.accountName} · {brandNames.get(account.brandId)??"Brand unavailable"}</option>)}</select></label>
   <label className="grid gap-1 text-xs font-medium text-slate-600">Post text <textarea name="body" required maxLength={280} rows={3} placeholder="Write your X post…" className="rounded-lg border border-slate-300 px-3 py-2 text-sm"/></label>
+  <label className="grid gap-1 text-xs font-medium text-slate-600">Attach media (optional) <span className="font-normal text-slate-400">One image or video, up to 20 MB. X publishing authorization requires media.write.</span><select name="mediaAssetId" className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm"><option value="">Text only</option>{xMediaAssets.filter(asset=>asset.brandId===null||xWritableAccounts.some(account=>account.brandId===asset.brandId)).map(asset=><option key={asset.id} value={asset.id}>{asset.originalFilename} · {asset.mimeType} · {Math.round(Number(asset.sizeBytes)/1048576)} MB</option>)}</select></label>
   <label className="grid gap-1 text-xs font-medium text-slate-600">Schedule (optional) <input name="scheduledAt" type="text" placeholder="2026-11-10T14:30:00+01:00" className="rounded-lg border border-slate-300 px-3 py-2 text-sm"/><span className="font-normal text-slate-400">Timezone-qualified ISO 8601; at least 15 minutes ahead.</span></label>
   <button type="submit" className="w-fit rounded-xl bg-slate-950 px-4 py-2.5 text-sm font-semibold text-white">Save X draft</button>
- </form>:<p className="mt-3 text-sm text-slate-500">Authorize publishing separately with the “Connect X publishing” link above. This adds tweet.write permission.</p>}
+ </form>:<p className="mt-3 text-sm text-slate-500">Authorize publishing separately with the “Connect X publishing” link above. It grants tweet.write and media.write permissions.</p>}
 </section>
 
 <section className="rounded-2xl border border-slate-200 bg-white p-5 sm:p-6">
