@@ -166,7 +166,7 @@ export async function checkSocialAccountHealth(formData: FormData) {
         grantedScopes = permissionBody.data
           .filter((item) => item.status === "granted" && typeof item.permission === "string")
           .map((item) => item.permission as string);
-        const requiredScopes = ["pages_show_list", "pages_read_engagement"];
+        const requiredScopes = ["pages_show_list", "pages_read_engagement", ...(account.provider === "FACEBOOK" ? ["read_insights"] : [])];
         if (account.provider === "FACEBOOK") requiredScopes.push("pages_manage_posts");
         if (account.provider === "INSTAGRAM") requiredScopes.push("instagram_basic", "instagram_content_publish", "instagram_manage_insights");
         if (requiredScopes.some((scope) => !grantedScopes.includes(scope))) failureCode = "MISSING_PERMISSIONS";
