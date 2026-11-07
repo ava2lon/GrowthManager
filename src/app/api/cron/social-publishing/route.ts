@@ -7,6 +7,7 @@ import {processTikTokInboxTarget} from "@/lib/tiktok-upload";
 import {processYouTubeUploadTarget} from "@/lib/youtube-upload";
 import {publishPinterestTarget} from "@/lib/pinterest-publishing";
 import {refreshPinterestAccountAnalytics} from "@/lib/pinterest-analytics";
+import {refreshPinterestPinAnalytics} from "@/lib/pinterest-pin-analytics";
 
 export const runtime="nodejs";
 export const dynamic="force-dynamic";
@@ -169,6 +170,29 @@ export async function GET(request:Request){
     }
   }
 
+  // Collect one published Pin's detailed analytics per invocation; no beta bulk endpoint.
+  const pinAnalyticsTarget=await db.socialPostTarget.findFirst({
+    where:{provider:"PINTEREST",status:"PUBLISHED",providerPostId:{not:null},pinterestAnalyticsSnapshots:{none:{reportDate:analyticsDay}},socialAccount:{provider:"PINTEREST",status:"CONNECTED",scopes:{has:"pins:read"}}},
+    select:{id:true,workspaceId:true,providerPostId:true},
+    orderBy:{publishedAt:"asc"},
+  });
+  let pinterestPinAnalyticsRefreshed=0,pinterestPinAnalyticsFailed=0;
+  if(pinAnalyticsTarget){
+    try{
+      await refreshPinterestPinAnalytics({workspaceId:pinAnalyticsTarget.workspaceId,targetId:pinAnalyticsTarget.id,asOf:now});
+      pinterestPinAnalyticsRefreshed++;
+    }catch(error){
+      pinterestPinAnalyticsFailed++;
+      const endDate=analyticsDay,startDate=new Date(analyticsDay.getTime()-89*86400000);
+      const code=error instanceof Error&&/^[A-Z0-9_]{1,100}$/.test(error.message)?error.message:"PINTEREST_PIN_ANALYTICS_REFRESH_FAILED";
+      await db.pinterestPinAnalyticsSnapshot.upsert({
+        where:{workspaceId_targetId_reportDate:{workspaceId:pinAnalyticsTarget.workspaceId,targetId:pinAnalyticsTarget.id,reportDate:analyticsDay}},
+        create:{workspaceId:pinAnalyticsTarget.workspaceId,targetId:pinAnalyticsTarget.id,pinId:pinAnalyticsTarget.providerPostId!,reportDate:analyticsDay,startDate,endDate,metrics:{status:"FAILED",errorCode:code},rawResponse:{},fetchedAt:now},
+        update:{pinId:pinAnalyticsTarget.providerPostId!,startDate,endDate,metrics:{status:"FAILED",errorCode:code},rawResponse:{},fetchedAt:now},
+      });
+    }
+  }
+
   const due=await db.socialPostTarget.findMany({
     where:{provider:{in:["FACEBOOK","INSTAGRAM"]},status:"SCHEDULED",contentPost:{scheduledAt:{lte:now}}},
     select:{id:true,workspaceId:true,provider:true},
@@ -195,5 +219,5 @@ export async function GET(request:Request){
       failed++;
     }
   }
-  return NextResponse.json({due:due.length,published,failed,unknown,skipped,recoveredUnknown,pinterest:{checked:pinterestDue.length,published:pinterestPublished,failed:pinterestFailed,unknown:pinterestUnknown,skipped:pinterestSkipped,analyticsChecked:pinterestAnalyticsDue.length,analyticsRefreshed:pinterestAnalyticsRefreshed,analyticsFailed:pinterestAnalyticsFailed},reels:{checked:processing.length,published:reelsPublished,failed:reelsFailed,processing:reelsProcessing,unknown:reelsUnknown},tiktok:{checked:tiktokProcessing.length,uploaded:tiktokUploaded,published:tiktokPublished,failed:tiktokFailed},youtube:{checked:youtubeProcessing.length,published:youtubePublished,scheduled:youtubeScheduled,failed:youtubeFailed,processing:youtubeProcessingCount,recoveredInitializations:recoveredYouTubeStarts}});
+  return NextResponse.json({due:due.length,published,failed,unknown,skipped,recoveredUnknown,pinterest:{checked:pinterestDue.length,published:pinterestPublished,failed:pinterestFailed,unknown:pinterestUnknown,skipped:pinterestSkipped,analyticsChecked:pinterestAnalyticsDue.length,analyticsRefreshed:pinterestAnalyticsRefreshed,analyticsFailed:pinterestAnalyticsFailed,pinAnalyticsChecked:pinAnalyticsTarget?1:0,pinAnalyticsRefreshed:pinterestPinAnalyticsRefreshed,pinAnalyticsFailed:pinterestPinAnalyticsFailed},reels:{checked:processing.length,published:reelsPublished,failed:reelsFailed,processing:reelsProcessing,unknown:reelsUnknown},tiktok:{checked:tiktokProcessing.length,uploaded:tiktokUploaded,published:tiktokPublished,failed:tiktokFailed},youtube:{checked:youtubeProcessing.length,published:youtubePublished,scheduled:youtubeScheduled,failed:youtubeFailed,processing:youtubeProcessingCount,recoveredInitializations:recoveredYouTubeStarts}});
 }
