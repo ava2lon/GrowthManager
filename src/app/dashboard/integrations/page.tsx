@@ -387,7 +387,7 @@ export default async function IntegrationsPage({searchParams}: {searchParams: Pr
             </table>
           </div>
         )}
-        <p className="mt-3 text-xs text-slate-400">Showing up to 30 stored records. Records remain isolated by workspace and connected integration. Disconnecting the integration removes its snapshots through the database relation.</p>
+        <p className="mt-3 text-xs text-slate-400">Showing up to 30 stored records. Records remain isolated by workspace and integration. Disconnecting clears credentials but retains historical snapshots; deleting the integration record cascades its snapshots.</p>
       </section>
 
       <section>
