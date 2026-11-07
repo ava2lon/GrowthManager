@@ -23,3 +23,21 @@ jobs:
         run: |
           test -n "$CRON_SECRET"
           curl --fail-with-body --silent --show-error             --max-time 75             -H "Authorization: Bearer $CRON_SECRET"             "https://growthmanager.vercel.app/api/cron/social-publishing"
+
+      - name: Sync one connected n8n integration execution history
+        env:
+          CRON_SECRET: ${{ secrets.GROWTHMANAGER_CRON_SECRET }}
+        run: |
+          test -n "$CRON_SECRET"
+          curl --fail-with-body --silent --show-error --max-time 50 \
+            -H "Authorization: Bearer $CRON_SECRET" \
+            "https://growthmanager.vercel.app/api/cron/n8n-executions"
+
+      - name: Evaluate automation alert policies and deliver notifications
+        env:
+          CRON_SECRET: ${{ secrets.GROWTHMANAGER_CRON_SECRET }}
+        run: |
+          test -n "$CRON_SECRET"
+          curl --fail-with-body --silent --show-error --max-time 50 \
+            -H "Authorization: Bearer $CRON_SECRET" \
+            "https://growthmanager.vercel.app/api/cron/automation-alerts"
