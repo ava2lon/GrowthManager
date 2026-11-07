@@ -770,7 +770,7 @@ export async function createTikTokDraft(formData:FormData){
   const brand=await db.brand.findFirst({where:{id:account.brandId,workspaceId:context.workspace.id,status:"ACTIVE"},select:{id:true}});
   if(!brand)throw new Error("The TikTok account must belong to an active brand.");
   const asset=await db.mediaAsset.findFirst({
-    where:{id:mediaAssetId,workspaceId:context.workspace.id,status:"READY",mimeType:{in:["video/mp4","video/quicktime","video/webm"]},OR:[{brandId:brand.id},{brandId:null}]},
+    where:{id:mediaAssetId,workspaceId:context.workspace.id,status:"READY",mimeType:{in:["video/mp4","video/quicktime"]},OR:[{brandId:brand.id},{brandId:null}]},
     select:{id:true,sizeBytes:true,durationMs:true,width:true,height:true},
   });
   if(!asset||Number(asset.sizeBytes)>100*1024*1024||!asset.durationMs||asset.durationMs<3000||asset.durationMs>900000||
