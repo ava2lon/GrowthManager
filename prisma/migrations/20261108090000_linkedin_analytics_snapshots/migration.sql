@@ -4,4 +4,4 @@ CREATE INDEX "linkedin_analytics_workspace_date_idx" ON "LinkedInAnalyticsSnapsh
 CREATE INDEX "linkedin_analytics_account_type_fetched_idx" ON "LinkedInAnalyticsSnapshot"("workspaceId","socialAccountId","subjectType","fetchedAt");
 CREATE INDEX "linkedin_analytics_target_idx" ON "LinkedInAnalyticsSnapshot"("targetId");
 ALTER TABLE "LinkedInAnalyticsSnapshot" ADD CONSTRAINT "LinkedInAnalyticsSnapshot_workspaceId_socialAccountId_fkey" FOREIGN KEY ("workspaceId","socialAccountId") REFERENCES "SocialAccount"("workspaceId","id") ON DELETE CASCADE ON UPDATE CASCADE;
-ALTER TABLE "LinkedInAnalyticsSnapshot" ADD CONSTRAINT "LinkedInAnalyticsSnapshot_targetId_fkey" FOREIGN KEY ("targetId") REFERENCES "SocialPostTarget"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+ALTER TABLE "LinkedInAnalyticsSnapshot" ADD CONSTRAINT "LinkedInAnalyticsSnapshot_targetId_fkey" FOREIGN KEY ("workspaceId","targetId") REFERENCES "SocialPostTarget"("workspaceId","id") ON DELETE CASCADE ON UPDATE CASCADE;
