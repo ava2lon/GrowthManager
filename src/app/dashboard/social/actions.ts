@@ -16,6 +16,7 @@ import {getPinterestCredentials,pinterestApi} from "@/lib/pinterest-auth";
 import {publishPinterestTarget} from "@/lib/pinterest-publishing";
 import {refreshPinterestAccountAnalytics} from "@/lib/pinterest-analytics";
 import {refreshPinterestPinAnalytics} from "@/lib/pinterest-pin-analytics";
+import {refreshMetaAnalytics} from "@/lib/meta-analytics";
 
 function readMetadata(value: unknown): Record<string, unknown> {
   if (!value || typeof value !== "object" || Array.isArray(value)) return {};
@@ -1435,4 +1436,16 @@ export async function refreshPinterestPinAnalyticsAction(formData:FormData){
  const result=await refreshPinterestPinAnalytics({workspaceId:context.workspace.id,targetId});
  revalidatePath("/dashboard/social");
  redirect("/dashboard/social?pinterestPinAnalytics=refreshed&reportDate="+encodeURIComponent(result.reportDate));
+}
+
+
+export async function refreshMetaAnalyticsAction(formData:FormData){
+ const context=await requireWorkspaceRole("MEMBER");
+ const accountId=String(formData.get("accountId")??"").trim();
+ const targetId=String(formData.get("targetId")??"").trim();
+ if(!accountId||accountId.length>128||targetId.length>128)throw new Error("Invalid Meta analytics target.");
+ await enforceSocialRateLimit(context.workspace.id,context.userId,"meta-analytics");
+ await refreshMetaAnalytics({workspaceId:context.workspace.id,accountId,...(targetId?{targetId}:{})});
+ revalidatePath("/dashboard/social");
+ redirect("/dashboard/social?metaAnalytics=refreshed");
 }
