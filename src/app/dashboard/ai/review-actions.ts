@@ -84,3 +84,82 @@ export async function bulkApproveContentDrafts(postIds:string[]) {
   revalidatePath("/dashboard/ai");
   revalidatePath("/dashboard/social");
 }
+
+export async function assignContentReviewer(input:{postId:string;reviewerUserId:string}) {
+  const context=await requireWorkspaceRole("ADMIN");
+  await limit(context.workspace.id,context.userId,"assign");
+  const postId=typeof input?.postId==="string"?input.postId.trim():"";
+  const reviewerUserId=typeof input?.reviewerUserId==="string"?input.reviewerUserId.trim():"";
+  if(!postId||postId.length>128||!reviewerUserId||reviewerUserId.length>128) throw new Error("Select a draft and a workspace reviewer.");
+  await db.$transaction(async tx=>{
+    const [post,member]=await Promise.all([
+      tx.contentPost.findFirst({where:{id:postId,workspaceId:context.workspace.id,status:"DRAFT",publishTargets:{none:{}}},select:{id:true,title:true}}),
+      tx.workspaceMembership.findUnique({where:{userId_workspaceId:{userId:reviewerUserId,workspaceId:context.workspace.id}},select:{userId:true,role:true}}),
+    ]);
+    if(!post) throw new Error("Only standalone drafts in this workspace can be assigned for review.");
+    if(!member||member.role==="VIEWER") throw new Error("The reviewer must be an active workspace member with editing access.");
+    const assignment=await tx.contentReviewAssignment.upsert({
+      where:{workspaceId_contentPostId_reviewerUserId:{workspaceId:context.workspace.id,contentPostId:post.id,reviewerUserId}},
+      create:{workspaceId:context.workspace.id,contentPostId:post.id,reviewerUserId,assignedById:context.userId},
+      update:{assignedById:context.userId,status:"PENDING",feedback:null,reviewedAt:null},
+      select:{id:true},
+    });
+    await tx.workspaceNotification.create({data:{
+      workspaceId:context.workspace.id,userId:reviewerUserId,type:"CONTENT_REVIEW_ASSIGNED",
+      title:"Content review assigned",
+      message:"You have been assigned to review "+(post.title||"an untitled draft")+".",
+      href:"/dashboard/ai",
+    }});
+    await tx.activityLog.create({data:{
+      workspaceId:context.workspace.id,userId:context.userId,action:"content.review_assigned",
+      entityType:"ContentReviewAssignment",entityId:assignment.id,
+      metadata:{contentPostId:post.id,reviewerUserId},
+    }});
+  });
+  revalidatePath("/dashboard/ai");
+}
+
+export async function submitContentReview(input:{assignmentId:string;decision:"APPROVED"|"CHANGES_REQUESTED";feedback:string}) {
+  const context=await requireWorkspaceRole("MEMBER");
+  await limit(context.workspace.id,context.userId,"submit-review");
+  const assignmentId=typeof input?.assignmentId==="string"?input.assignmentId.trim():"";
+  const decision=input?.decision;
+  const feedback=typeof input?.feedback==="string"?input.feedback.trim().slice(0,2000):"";
+  if(!assignmentId||assignmentId.length>128||!(decision==="APPROVED"||decision==="CHANGES_REQUESTED")) throw new Error("Invalid review submission.");
+  if(decision==="CHANGES_REQUESTED"&&!feedback) throw new Error("Add feedback explaining the requested changes.");
+  await db.$transaction(async tx=>{
+    const assignment=await tx.contentReviewAssignment.findFirst({
+      where:{id:assignmentId,workspaceId:context.workspace.id,reviewerUserId:context.userId,status:"PENDING"},
+      select:{id:true,contentPostId:true,assignedById:true,contentPost:{select:{status:true,title:true}}},
+    });
+    if(!assignment||assignment.contentPost.status!=="DRAFT") throw new Error("This review is no longer pending or the draft is unavailable.");
+    const changed=await tx.contentReviewAssignment.updateMany({
+      where:{id:assignment.id,workspaceId:context.workspace.id,reviewerUserId:context.userId,status:"PENDING"},
+      data:{status:decision,feedback:feedback||null,reviewedAt:new Date()},
+    });
+    if(changed.count!==1) throw new Error("This review was already submitted. Refresh the page.");
+    if(assignment.assignedById!==context.userId) await tx.workspaceNotification.create({data:{
+      workspaceId:context.workspace.id,userId:assignment.assignedById,
+      type:decision==="APPROVED"?"CONTENT_REVIEW_COMPLETED":"CONTENT_CHANGES_REQUESTED",
+      title:decision==="APPROVED"?"Content review completed":"Changes requested",
+      message:(assignment.contentPost.title||"A content draft")+" — "+(decision==="APPROVED"?"reviewer recommends approval.":"reviewer requested changes: "+feedback),
+      href:"/dashboard/ai",
+    }});
+    await tx.activityLog.create({data:{
+      workspaceId:context.workspace.id,userId:context.userId,action:decision==="APPROVED"?"content.review_recommended_approval":"content.review_changes_requested",
+      entityType:"ContentReviewAssignment",entityId:assignment.id,
+      metadata:{contentPostId:assignment.contentPostId,feedback:feedback||null},
+    }});
+  });
+  revalidatePath("/dashboard/ai");
+}
+
+export async function markWorkspaceNotificationRead(notificationId:string) {
+  const context=await requireWorkspaceRole("VIEWER");
+  if(typeof notificationId!=="string"||!notificationId.trim()||notificationId.length>128) throw new Error("Invalid notification.");
+  await db.workspaceNotification.updateMany({
+    where:{id:notificationId,workspaceId:context.workspace.id,userId:context.userId,readAt:null},
+    data:{readAt:new Date()},
+  });
+  revalidatePath("/dashboard/ai");
+}
