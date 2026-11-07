@@ -59,7 +59,7 @@ export default async function NotificationsPage({searchParams}:{searchParams:Pro
           ].map(([name,label])=><label key={name} className="flex items-center gap-3 rounded-lg border border-slate-100 p-3 text-sm text-slate-700"><input type="checkbox" name={name} defaultChecked={preferences?preferences[name as keyof typeof preferences] as boolean:true} className="h-4 w-4 rounded border-slate-300"/>{label}</label>)}
         </div>
         <div className="rounded-xl border border-slate-100 p-4">
-          <label className="flex items-center gap-3 text-sm font-medium text-slate-700"><input type="checkbox" name="quietHoursEnabled" defaultChecked={preferences?.quietHoursEnabled ?? false} className="h-4 w-4 rounded border-slate-300"/> Defer review emails during quiet hours</label>
+          <label className="flex items-center gap-3 text-sm font-medium text-slate-700"><input type="checkbox" name="quietHoursEnabled" defaultChecked={preferences?.quietHoursEnabled ?? false} className="h-4 w-4 rounded border-slate-300"/> Defer review and social incident emails during quiet hours</label>
           <p className="mt-1 text-xs text-slate-500">Queued emails remain pending and are sent after quiet hours end. In-app notifications are unaffected.</p>
           <div className="mt-3 grid gap-3 sm:grid-cols-3">
             <label className="text-xs font-medium text-slate-600">IANA timezone<input name="timezone" defaultValue={preferences?.timezone ?? "UTC"} placeholder="Africa/Lagos" className="mt-1 block w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"/></label>
