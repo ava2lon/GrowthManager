@@ -1,6 +1,6 @@
 import {timingSafeEqual} from "node:crypto";
 import {NextResponse} from "next/server";
-import {dispatchContentReviewEmails} from "@/lib/content-review-email-delivery";
+import {dispatchContentReviewEmails, dispatchContentReviewEmailDigests} from "@/lib/content-review-email-delivery";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -21,8 +21,11 @@ export async function GET(request: Request) {
     return NextResponse.json({error: "Email delivery is not configured"}, {status: 503});
   }
   try {
-    const delivery = await dispatchContentReviewEmails(10);
-    return NextResponse.json(delivery);
+    const [delivery, digests] = await Promise.all([
+      dispatchContentReviewEmails(10),
+      dispatchContentReviewEmailDigests(10),
+    ]);
+    return NextResponse.json({delivery, digests});
   } catch {
     return NextResponse.json({error: "Content review email dispatch failed"}, {status: 500});
   }
