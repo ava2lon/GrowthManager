@@ -84,7 +84,6 @@ export async function dispatchContentReviewEmails(batchSize = 10): Promise<Deliv
     let errorCode: string | null = null;
     let canRetry = false;
     let providerMessageId: string | null = null;
-    let httpStatus: number | null = null;
     const startedAt = Date.now();
 
     try {
@@ -170,7 +169,6 @@ export async function dispatchContentReviewEmails(batchSize = 10): Promise<Deliv
         }
 
         if (response) {
-          httpStatus = response.status;
           if (!response.ok) {
             errorCode = response.status === 401 || response.status === 403
               ? "RESEND_AUTH_FAILED"
