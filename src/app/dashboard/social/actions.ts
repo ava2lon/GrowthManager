@@ -142,7 +142,6 @@ export async function checkSocialAccountHealth(formData: FormData) {
   }
 
   let failureCode: string | null = null;
-  let grantedScopes = account.scopes;
   const userAccessToken = credentials.userAccessToken;
   if (typeof userAccessToken === "string") {
     try {
@@ -202,7 +201,7 @@ export async function checkSocialAccountHealth(formData: FormData) {
       },
       data: failureCode
         ? {status: "ERROR", scopes: grantedScopes, lastValidatedAt: new Date(), lastErrorCode: failureCode}
-        : {status: "CONNECTED", scopes: grantedScopes, lastValidatedAt: new Date(), lastErrorCode: null},
+        : {status: "CONNECTED", scopes: latestAccount.scopes, lastValidatedAt: new Date(), lastErrorCode: null},
     });
     if (changed.count !== 1) throw new Error("Social account changed concurrently. Refresh and retry.");
     await tx.activityLog.create({
@@ -296,7 +295,7 @@ export async function checkTikTokAccountHealth(formData: FormData) {
   // before the compare-and-swap so this health check never overwrites a rotation.
   const latestAccount = await db.socialAccount.findFirst({
     where: {id: account.id, workspaceId: context.workspace.id, provider: "TIKTOK", status: "CONNECTED"},
-    select: {credentialsEncrypted: true},
+    select: {credentialsEncrypted: true, scopes: true},
   });
   if (!latestAccount?.credentialsEncrypted) {
     throw new Error("TikTok account changed during the health check. Refresh and retry.");
