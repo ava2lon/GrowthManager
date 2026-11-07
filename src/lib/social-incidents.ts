@@ -18,7 +18,7 @@ async function activate(signal:Signal,now:Date):Promise<"created"|"reopened"|"up
       return "updated";
     }
     if(existing){
-      await tx.workspaceIncident.update({where:{id:existing.id},data:{status:"OPEN",severity:signal.severity,message:signal.message,errorCode:signal.errorCode??null,occurrenceCount:{increment:1},firstSeenAt:now,lastSeenAt:now,resolvedAt:null,resolutionMessage:null,metadata:signal.metadata}});
+      await tx.workspaceIncident.update({where:{id:existing.id},data:{status:"OPEN",severity:signal.severity,message:signal.message,errorCode:signal.errorCode??null,occurrenceCount:{increment:1},firstSeenAt:now,lastSeenAt:now,resolvedAt:null,escalatedAt:null,resolutionMessage:null,metadata:signal.metadata}});
     }else{
       await tx.workspaceIncident.create({data:{workspaceId:signal.workspaceId,sourceType:signal.sourceType,sourceId:signal.sourceId,socialAccountId:signal.socialAccountId,socialPostTargetId:signal.socialPostTargetId,category:signal.category,severity:signal.severity,dedupeKey:signal.dedupeKey,message:signal.message,errorCode:signal.errorCode??null,firstSeenAt:now,lastSeenAt:now,metadata:signal.metadata}});
     }
@@ -28,7 +28,7 @@ async function activate(signal:Signal,now:Date):Promise<"created"|"reopened"|"up
   });
 }
 
-export async function synchronizeSocialIncidents():Promise<{created:number;reopened:number;updated:number;resolved:number}> {
+export async function synchronizeSocialIncidents():Promise<{created:number;reopened:number;updated:number;resolved:number;escalated:number}> {
   const now=new Date(),expiryWarning=new Date(now.getTime()+14*86400000),targetLookback=new Date(now.getTime()-30*86400000);
   const [accounts,targets]=await Promise.all([
     db.socialAccount.findMany({where:{OR:[{status:{not:"DISCONNECTED"}},{incidents:{some:{status:"OPEN"}}}]},select:{id:true,workspaceId:true,provider:true,accountName:true,status:true,lastErrorCode:true,tokenExpiresAt:true},take:2000}),
@@ -64,5 +64,26 @@ export async function synchronizeSocialIncidents():Promise<{created:number;reope
       if(admins.length)await db.workspaceNotification.createMany({data:admins.map(member=>({workspaceId:incident.workspaceId,userId:member.userId,type:"SOCIAL_INCIDENT_RESOLVED",title:"Social incident resolved",message:"A previously detected social account or publishing issue has recovered.",href:"/dashboard/social"}))});
     }
   }
-  return {created,reopened,updated,resolved};
+  let escalated=0;
+  const escalationCutoff=new Date(now.getTime()-30*60_000);
+  const dueEscalations=await db.workspaceIncident.findMany({
+    where:{status:"OPEN",sourceType:{in:["SOCIAL_ACCOUNT","SOCIAL_PUBLISH_TARGET"]},escalatedAt:null,firstSeenAt:{lte:escalationCutoff}},
+    orderBy:{firstSeenAt:"asc"},take:500,select:{id:true,workspaceId:true,message:true,category:true,severity:true},
+  });
+  for(const incident of dueEscalations){
+    await db.$transaction(async tx=>{
+      const admins=await tx.workspaceMembership.findMany({where:{workspaceId:incident.workspaceId,role:{in:["OWNER","ADMIN"]}},select:{userId:true}});
+      if(!admins.length)return;
+      const claimed=await tx.workspaceIncident.updateMany({where:{id:incident.id,workspaceId:incident.workspaceId,status:"OPEN",escalatedAt:null},data:{escalatedAt:now}});
+      if(!claimed.count)return;
+      await tx.workspaceNotification.createMany({data:admins.map(member=>({
+        workspaceId:incident.workspaceId,userId:member.userId,type:"SOCIAL_INCIDENT_ESCALATED",
+        title:"Unresolved social incident escalation",
+        message:incident.category.replaceAll("_"," ")+" remains open after 30 minutes: "+incident.message,
+        href:"/dashboard/social",
+      }))});
+      escalated++;
+    });
+  }
+  return {created,reopened,updated,resolved,escalated};
 }
