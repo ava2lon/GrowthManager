@@ -7,6 +7,7 @@ import {consumeRateLimit} from "@/lib/rate-limit";
 import {decryptIntegrationCredentials, encryptIntegrationCredentials} from "@/lib/integration-crypto";
 import {publishFacebookTarget,publishInstagramTarget} from "@/lib/social-publishing";
 import {startInstagramReelTarget} from "@/lib/instagram-reels";
+import {getFreshTikTokCredentials} from "@/lib/tiktok-auth";
 
 function readMetadata(value: unknown): Record<string, unknown> {
   if (!value || typeof value !== "object" || Array.isArray(value)) return {};
@@ -229,6 +230,118 @@ export async function checkSocialAccountHealth(formData: FormData) {
         : failureCode === "PROVIDER_UNAVAILABLE"
           ? "Meta could not be reached. The failed health check was recorded."
           : "Meta could not validate this account. Reconnect or review its permissions.");
+  }
+}
+
+export async function checkTikTokAccountHealth(formData: FormData) {
+  const context = await requireWorkspaceRole("ADMIN");
+  const accountId = String(formData.get("accountId") ?? "").trim();
+  if (!accountId || accountId.length > 128) throw new Error("Invalid social account.");
+  await enforceSocialRateLimit(context.workspace.id, context.userId, "health");
+
+  const account = await db.socialAccount.findFirst({
+    where: {id: accountId, workspaceId: context.workspace.id, provider: "TIKTOK", status: "CONNECTED"},
+    select: {id: true, workspaceId: true, providerUserId: true, accountName: true, credentialsEncrypted: true, scopes: true},
+  });
+  if (!account || !account.credentialsEncrypted) {
+    throw new Error("A connected TikTok account with saved credentials is required. Reconnect this account if it is disconnected.");
+  }
+
+  let failureCode: string | null = null;
+  let displayName = account.accountName;
+  let grantedScopes = account.scopes;
+  try {
+    const credentials = await getFreshTikTokCredentials({workspaceId: context.workspace.id, accountId: account.id});
+    const endpoint = new URL("https://open.tiktokapis.com/v2/user/info/");
+    endpoint.searchParams.set("fields", "open_id,display_name,avatar_url");
+    const response = await fetch(endpoint, {
+      headers: {Authorization: "Bearer " + credentials.accessToken},
+      cache: "no-store",
+      redirect: "error",
+      signal: AbortSignal.timeout(10000),
+    });
+    const payload = await response.json().catch(() => null) as {
+      data?: {user?: {open_id?: string; display_name?: string}};
+      error?: {code?: string};
+    } | null;
+    if (response.status === 401 || response.status === 403 ||
+        ["invalid_token", "access_token_invalid", "scope_not_authorized"].includes(payload?.error?.code ?? "")) {
+      failureCode = "TIKTOK_AUTH_FAILED";
+    } else if (response.status === 429) {
+      failureCode = "TIKTOK_PROVIDER_RATE_LIMITED";
+    } else if (!response.ok || !payload || (payload.error?.code && payload.error.code !== "ok")) {
+      failureCode = "TIKTOK_PROVIDER_ERROR";
+    } else if (payload.data?.user?.open_id !== account.providerUserId) {
+      failureCode = "TIKTOK_ACCOUNT_MISMATCH";
+    } else if (typeof payload.data.user.display_name === "string" && payload.data.user.display_name.trim()) {
+      displayName = payload.data.user.display_name.trim().slice(0, 255);
+    }
+  } catch (error) {
+    const code = error instanceof Error ? error.message : "";
+    if (code === "TIKTOK_REFRESH_REJECTED" || code === "TIKTOK_REFRESH_TOKEN_MISSING" ||
+        code === "TIKTOK_CREDENTIAL_DECRYPTION_FAILED") {
+      failureCode = code === "TIKTOK_CREDENTIAL_DECRYPTION_FAILED"
+        ? "TIKTOK_CREDENTIAL_DECRYPTION_FAILED" : "TIKTOK_REAUTHORIZATION_REQUIRED";
+    } else if (code === "TIKTOK_UPLOAD_SCOPE_MISSING") {
+      failureCode = "TIKTOK_UPLOAD_SCOPE_MISSING";
+    } else if (code === "TIKTOK_NOT_CONFIGURED") {
+      failureCode = "TIKTOK_NOT_CONFIGURED";
+    } else {
+      failureCode = "TIKTOK_PROVIDER_UNAVAILABLE";
+    }
+  }
+
+  // Only definitive authorization, account, or scope failures change connection state.
+  const definitive = failureCode !== null && failureCode !== "TIKTOK_PROVIDER_RATE_LIMITED" &&
+    failureCode !== "TIKTOK_PROVIDER_ERROR" && failureCode !== "TIKTOK_PROVIDER_UNAVAILABLE" &&
+    failureCode !== "TIKTOK_NOT_CONFIGURED";
+  await db.$transaction(async (tx) => {
+    const changed = await tx.socialAccount.updateMany({
+      where: {
+        id: account.id,
+        workspaceId: context.workspace.id,
+        provider: "TIKTOK",
+        status: "CONNECTED",
+        credentialsEncrypted: account.credentialsEncrypted,
+      },
+      data: failureCode
+        ? {
+            ...(definitive ? {status: "ERROR" as const} : {}),
+            lastValidatedAt: new Date(),
+            lastErrorCode: failureCode,
+          }
+        : {status: "CONNECTED", accountName: displayName, scopes: grantedScopes, lastValidatedAt: new Date(), lastErrorCode: null},
+    });
+    if (changed.count !== 1) throw new Error("TikTok account changed during the health check. Refresh and retry.");
+    await tx.activityLog.create({
+      data: {
+        workspaceId: context.workspace.id,
+        userId: context.userId,
+        action: failureCode ? "social_account.health_check_failed" : "social_account.health_check_succeeded",
+        entityType: "SocialAccount",
+        entityId: account.id,
+        metadata: {provider: "TIKTOK", errorCode: failureCode, authorizationStateChanged: definitive},
+      },
+    });
+  });
+
+  revalidatePath("/dashboard/social");
+  if (failureCode) {
+    throw new Error(
+      failureCode === "TIKTOK_AUTH_FAILED" || failureCode === "TIKTOK_REAUTHORIZATION_REQUIRED"
+        ? "TikTok authorization is no longer valid. Reconnect this account."
+        : failureCode === "TIKTOK_UPLOAD_SCOPE_MISSING"
+          ? "The TikTok video.upload permission is missing. Reconnect and approve the required permission."
+          : failureCode === "TIKTOK_ACCOUNT_MISMATCH"
+            ? "TikTok returned a different creator identity. Reconnect and verify the account."
+            : failureCode === "TIKTOK_CREDENTIAL_DECRYPTION_FAILED"
+              ? "Saved TikTok credentials could not be decrypted. Check the encryption key configuration."
+              : failureCode === "TIKTOK_PROVIDER_RATE_LIMITED"
+                ? "TikTok rate-limited the health check. Retry later."
+                : failureCode === "TIKTOK_NOT_CONFIGURED"
+                  ? "TikTok credentials are not configured on the server."
+                  : "TikTok could not be reached or did not validate the account. Retry the health check."
+    );
   }
 }
 
