@@ -134,7 +134,7 @@ export async function GET(request:Request){
   let pinterestPublished=0,pinterestFailed=0,pinterestUnknown=0,pinterestSkipped=0;
   for(const target of pinterestDue){
     try{
-      const result=await publishPinterestTarget({targetId:target.id,workspaceId:target.workspaceId,actorUserId:"system",allowedStatuses:["SCHEDULED"]});
+      const result=await publishPinterestTarget({targetId:target.id,workspaceId:target.workspaceId,allowedStatuses:["SCHEDULED"]});
       if(result.status==="PUBLISHED")pinterestPublished++;
       else if(result.status==="FAILED")pinterestFailed++;
       else if(result.status==="UNKNOWN")pinterestUnknown++;
