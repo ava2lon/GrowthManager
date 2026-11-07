@@ -66,20 +66,22 @@ export async function startYouTubeUploadTarget(input: {targetId: string; workspa
     throw new Error("YOUTUBE_VIDEO_CONSTRAINTS");
   }
   const metadata = validateYouTubeMetadata(target.uploadMetadata, target.contentPost.title || target.contentPost.body.slice(0, 100));
-  const claim = await db.socialPostTarget.updateMany({
-    where: {id: target.id, workspaceId: input.workspaceId, provider: "YOUTUBE", status: "DRAFT"},
-    data: {status: "PUBLISHING", errorCode: null, uploadTotalBytes: BigInt(size), uploadOffset: 0n},
+  const attempt = await db.$transaction(async tx => {
+    const claim = await tx.socialPostTarget.updateMany({
+      where: {id: target.id, workspaceId: input.workspaceId, provider: "YOUTUBE", status: "DRAFT"},
+      data: {status: "PUBLISHING", errorCode: null, uploadTotalBytes: BigInt(size), uploadOffset: 0n,
+        nextCheckAt: new Date(Date.now() + 5 * 60_000)},
+    });
+    if (claim.count !== 1) throw new Error("YOUTUBE_TARGET_ALREADY_CLAIMED");
+    const prior = await tx.socialPublishAttempt.aggregate({
+      where: {workspaceId: input.workspaceId, targetId: target.id}, _max: {attemptNumber: true},
+    });
+    return tx.socialPublishAttempt.create({data: {
+      workspaceId: input.workspaceId, targetId: target.id,
+      attemptNumber: (prior._max.attemptNumber ?? 0) + 1,
+      idempotencyKey: randomUUID(), status: "STARTED",
+    }, select: {id: true}});
   });
-  if (claim.count !== 1) throw new Error("YOUTUBE_TARGET_ALREADY_CLAIMED");
-
-  const prior = await db.socialPublishAttempt.aggregate({
-    where: {workspaceId: input.workspaceId, targetId: target.id}, _max: {attemptNumber: true},
-  });
-  const attempt = await db.socialPublishAttempt.create({data: {
-    workspaceId: input.workspaceId, targetId: target.id,
-    attemptNumber: (prior._max.attemptNumber ?? 0) + 1,
-    idempotencyKey: randomUUID(), status: "STARTED",
-  }, select: {id: true}});
   try {
     const {accessToken} = await getFreshYouTubeCredentials({
       workspaceId: input.workspaceId, accountId: target.socialAccount.id,
