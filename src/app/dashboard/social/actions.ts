@@ -200,7 +200,7 @@ export async function checkSocialAccountHealth(formData: FormData) {
         credentialsEncrypted: account.credentialsEncrypted,
       },
       data: failureCode
-        ? {status: "ERROR", scopes: grantedScopes, lastValidatedAt: new Date(), lastErrorCode: failureCode}
+        ? {status: "ERROR", scopes: latestAccount.scopes, lastValidatedAt: new Date(), lastErrorCode: failureCode}
         : {status: "CONNECTED", scopes: latestAccount.scopes, lastValidatedAt: new Date(), lastErrorCode: null},
     });
     if (changed.count !== 1) throw new Error("Social account changed concurrently. Refresh and retry.");
