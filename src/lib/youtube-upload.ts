@@ -97,7 +97,7 @@ export async function startYouTubeUploadTarget(input: {targetId: string; workspa
       snippet: {title: metadata.title, description: metadata.description,
         ...(metadata.categoryId ? {categoryId: metadata.categoryId} : {}),
         ...(metadata.tags ? {tags: metadata.tags} : {})},
-      status: {privacyStatus: metadata.privacyStatus},
+      status: {privacyStatus: metadata.privacyStatus, ...(metadata.publishAt ? {publishAt: metadata.publishAt} : {})},
     };
     const response = await fetch(initUrl, {
       method: "POST",
@@ -131,7 +131,7 @@ export async function startYouTubeUploadTarget(input: {targetId: string; workspa
         workspaceId: input.workspaceId, userId: input.actorUserId,
         action: "social_post.youtube_upload_initialized", entityType: "ContentPost",
         entityId: target.contentPost.id,
-        metadata: {provider: "YOUTUBE", targetId: target.id, videoSizeBytes: size, privacyStatus: metadata.privacyStatus},
+        metadata: {provider: "YOUTUBE", targetId: target.id, videoSizeBytes: size, privacyStatus: metadata.privacyStatus, ...(metadata.publishAt ? {publishAt: metadata.publishAt} : {})},
       }});
     });
     return {status: "PROCESSING" as const};
