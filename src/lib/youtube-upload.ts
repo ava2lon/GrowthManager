@@ -16,15 +16,15 @@ async function failTarget(input: {targetId: string; workspaceId: string; code: s
       select: {contentPostId: true},
     });
     await tx.socialPostTarget.updateMany({
-      where: {id: input.targetId, workspaceId: input.workspaceId, provider: "YOUTUBE", status: {in: ["PUBLISHING", "PROCESSING"]}},
+      where: {id: input.targetId, workspaceId: input.workspaceId, provider: "YOUTUBE", status: {in: ["PUBLISHING", "PROCESSING", "SCHEDULED"]}},
       data: {status: "FAILED", errorCode: input.code, nextCheckAt: null, uploadSessionEncrypted: null},
     });
     if (target) await tx.contentPost.updateMany({
-      where: {id: target.contentPostId, workspaceId: input.workspaceId, status: "PUBLISHING"},
+      where: {id: target.contentPostId, workspaceId: input.workspaceId, status: {in: ["PUBLISHING", "SCHEDULED"]}},
       data: {status: "FAILED"},
     });
     await tx.socialPublishAttempt.updateMany({
-      where: {workspaceId: input.workspaceId, targetId: input.targetId, status: {in: ["STARTED", "PROCESSING"]}},
+      where: {workspaceId: input.workspaceId, targetId: input.targetId, status: {in: ["STARTED", "PROCESSING", "SCHEDULED"]}},
       data: {status: "FAILED", errorCode: input.code, finishedAt: now},
     });
     await tx.activityLog.create({
@@ -146,10 +146,11 @@ export async function processYouTubeUploadTarget(input: {targetId: string; works
   const now = new Date();
   const claimed = await db.socialPostTarget.updateMany({
     where: {id: input.targetId, workspaceId: input.workspaceId, provider: "YOUTUBE",
-      status: {in: ["PUBLISHING", "PROCESSING"]},
+      status: {in: ["PUBLISHING", "PROCESSING", "SCHEDULED"]},
       OR: [
         {status: "PUBLISHING", uploadSessionEncrypted: {not: null}},
         {status: "PROCESSING", providerPostId: {not: null}},
+        {status: "SCHEDULED", providerPostId: {not: null}},
       ],
       AND: [{OR: [{nextCheckAt: null}, {nextCheckAt: {lte: now}}]}]},
     data: {nextCheckAt: new Date(now.getTime() + 3 * 60_000)},
@@ -157,7 +158,7 @@ export async function processYouTubeUploadTarget(input: {targetId: string; works
   if (claimed.count !== 1) return {status: "SKIPPED" as const};
 
   const target = await db.socialPostTarget.findFirst({
-    where: {id: input.targetId, workspaceId: input.workspaceId, provider: "YOUTUBE", status: {in: ["PUBLISHING", "PROCESSING"]}},
+    where: {id: input.targetId, workspaceId: input.workspaceId, provider: "YOUTUBE", status: {in: ["PUBLISHING", "PROCESSING", "SCHEDULED"]}},
     include: {
       contentPost: {select: {id: true, workspaceId: true, brandId: true, mediaAssets: {
         orderBy: {position: "asc"}, select: {mediaAsset: {select: {
@@ -168,7 +169,7 @@ export async function processYouTubeUploadTarget(input: {targetId: string; works
     },
   });
   if (!target || !target.uploadTotalBytes || (target.status === "PUBLISHING" && !target.uploadSessionEncrypted) ||
-      (target.status === "PROCESSING" && !target.providerPostId)) return {status: "SKIPPED" as const};
+      (target.status !== "PUBLISHING" && !target.providerPostId)) return {status: "SKIPPED" as const};
   try {
     if (target.contentPost.workspaceId !== input.workspaceId || target.socialAccount.workspaceId !== input.workspaceId ||
         target.contentPost.brandId !== target.socialAccount.brandId || target.socialAccount.status !== "CONNECTED" ||
@@ -183,7 +184,7 @@ export async function processYouTubeUploadTarget(input: {targetId: string; works
     }
     const {accessToken} = await getFreshYouTubeCredentials({workspaceId: input.workspaceId, accountId: target.socialAccount.id});
 
-    if (target.status === "PROCESSING" && target.providerPostId) {
+    if (target.status !== "PUBLISHING" && target.providerPostId) {
       const statusUrl = new URL("https://www.googleapis.com/youtube/v3/videos");
       statusUrl.searchParams.set("part", "status");
       statusUrl.searchParams.set("id", target.providerPostId);
@@ -307,7 +308,7 @@ export async function processYouTubeUploadTarget(input: {targetId: string; works
 
   async function defer() {
     await db.socialPostTarget.updateMany({
-      where: {id: input.targetId, workspaceId: input.workspaceId, provider: "YOUTUBE", status: {in: ["PUBLISHING", "PROCESSING"]}},
+      where: {id: input.targetId, workspaceId: input.workspaceId, provider: "YOUTUBE", status: {in: ["PUBLISHING", "PROCESSING", "SCHEDULED"]}},
       data: {nextCheckAt: new Date(Date.now() + 5 * 60_000)},
     });
   }
@@ -321,7 +322,7 @@ export async function processYouTubeUploadTarget(input: {targetId: string; works
     await db.$transaction(async tx => {
       await tx.socialPostTarget.update({
         where: {id: input.targetId},
-        data: {status: targetStatus, publishedAt: isScheduled ? null : finished, nextCheckAt: null, errorCode: null},
+        data: {status: targetStatus, publishedAt: isScheduled ? null : finished, nextCheckAt: isScheduled ? scheduledAt : null, errorCode: null},
       });
       await tx.socialPublishAttempt.updateMany({
         where: {workspaceId: input.workspaceId, targetId: input.targetId, status: "PROCESSING"},
