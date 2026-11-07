@@ -140,7 +140,7 @@ Email notifications are transactional operational alerts, not marketing messages
 
 ## Media library and storage
 
-The media library at `/dashboard/media` stores workspace-scoped metadata in PostgreSQL and file bytes in a **private Supabase Storage bucket**. Browser uploads use short-lived signed upload URLs; the Supabase service-role key remains server-only. Upload initialization and completion are authenticated, workspace-scoped, rate-limited, and audited. The completion endpoint verifies the stored object's size and MIME type before marking the asset `READY`.
+The media library at `/dashboard/media` stores workspace-scoped metadata in PostgreSQL and file bytes in a **private Supabase Storage bucket**. Browser uploads use short-lived signed upload URLs; the Supabase service-role key remains server-only. Upload initialization and completion are authenticated, workspace-scoped, rate-limited, and audited. The completion endpoint verifies the stored object's size and MIME type before marking the asset `READY`, and persists browser-read dimensions plus video duration metadata. Video uploads must report a 3-second to 15-minute duration and dimensions no larger than 1920 × 1920 pixels. These metadata checks do not inspect the encoded video/audio codecs; Instagram Reels publishing remains disabled until server-side publishing and recovery are implemented.
 
 When configuring storage:
 1. Create a **private** Supabase Storage bucket named `growthmanager-media` (or set `SUPABASE_MEDIA_BUCKET` to another valid bucket name).
