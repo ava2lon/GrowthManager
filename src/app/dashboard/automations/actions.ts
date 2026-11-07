@@ -295,9 +295,14 @@ export async function deleteAutomationBlueprint(formData: FormData) {
   await db.$transaction(async (tx) => {
     const blueprint = await tx.automation.findFirst({
       where: {id: automationId, workspaceId: context.workspace.id, enabled: false},
-      select: {id: true, name: true},
+      select: {id: true, name: true, definition: true},
     });
     if (!blueprint) throw new Error("Blueprint not found or cannot be deleted.");
+    const definition = blueprint.definition && typeof blueprint.definition === "object" && !Array.isArray(blueprint.definition)
+      ? blueprint.definition as Record<string, unknown> : {};
+    if (typeof definition.n8nWorkflowId === "string" || definition.provisioningStatus === "PROVISIONING" || definition.provisioningStatus === "CREATE_OUTCOME_UNKNOWN") {
+      throw new Error("This blueprint is linked to n8n or has an uncertain creation result. Resolve the remote workflow before removing the record.");
+    }
     const removed = await tx.automation.deleteMany({
       where: {id: blueprint.id, workspaceId: context.workspace.id, enabled: false},
     });
