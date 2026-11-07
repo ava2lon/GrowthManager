@@ -65,7 +65,7 @@ export async function synchronizeSocialIncidents():Promise<{created:number;reope
   const now=new Date(),expiryWarning=new Date(now.getTime()+14*86400000),targetLookback=new Date(now.getTime()-30*86400000);
   const [accounts,targets]=await Promise.all([
     db.socialAccount.findMany({where:{OR:[{status:{not:"DISCONNECTED"}},{incidents:{some:{status:{in:["OPEN","ACKNOWLEDGED"]}}}}]},select:{id:true,workspaceId:true,provider:true,accountName:true,status:true,lastErrorCode:true,tokenExpiresAt:true},take:2000}),
-    db.socialPostTarget.findMany({where:{OR:[{status:{in:["FAILED","UNKNOWN"]},updatedAt:{gte:targetLookback}},{incidents:{some:{status:"OPEN"}}}]},orderBy:{updatedAt:"desc"},take:2000,select:{id:true,workspaceId:true,provider:true,status:true,errorCode:true,socialAccountId:true,socialAccount:{select:{accountName:true}}}}),
+    db.socialPostTarget.findMany({where:{OR:[{status:{in:["FAILED","UNKNOWN"]},updatedAt:{gte:targetLookback}},{incidents:{some:{status:{in:["OPEN","ACKNOWLEDGED"]}}}}]},orderBy:{updatedAt:"desc"},take:2000,select:{id:true,workspaceId:true,provider:true,status:true,errorCode:true,socialAccountId:true,socialAccount:{select:{accountName:true}}}}),
   ]);
   const signals:Signal[]=[];
   for(const account of accounts){
@@ -108,7 +108,7 @@ export async function synchronizeSocialIncidents():Promise<{created:number;reope
   const escalationCutoff=new Date(now.getTime()-30*60_000);
   const dueEscalations=await db.workspaceIncident.findMany({
     where:{status:{in:["OPEN","ACKNOWLEDGED"]},sourceType:{in:["SOCIAL_ACCOUNT","SOCIAL_PUBLISH_TARGET"]},escalatedAt:null,firstSeenAt:{lte:escalationCutoff}},
-    orderBy:{firstSeenAt:"asc"},take:500,select:{id:true,workspaceId:true,message:true,category:true,severity:true},
+    orderBy:{firstSeenAt:"asc"},take:500,select:{id:true,workspaceId:true,message:true,category:true,severity:true,occurrenceCount:true},
   });
   for(const incident of dueEscalations){
     await db.$transaction(async tx=>{
