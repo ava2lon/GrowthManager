@@ -352,7 +352,7 @@ export async function createFacebookDraft(formData: FormData) {
   });
   if (accounts.length !== accountIds.length) throw new Error("One or more selected Facebook Pages are unavailable in this workspace.");
   const brandIds = [...new Set(accounts.map((account) => account.brandId))];
-  if (brandIds.length !== 1) throw new Error("All selected Pages must belong to the same brand.");
+  if (brandIds.length !== 1) throw new Error("All selected social accounts must belong to the same brand.");
   if (accounts.some((account) => !account.scopes.includes("pages_manage_posts"))) {
     throw new Error("Every selected Page must have pages_manage_posts permission.");
   }
@@ -426,8 +426,8 @@ export async function createInstagramDraft(formData: FormData) {
   if (accounts.length !== accountIds.length) throw new Error("One or more selected Instagram accounts are unavailable in this workspace.");
   const brandIds = [...new Set(accounts.map((account) => account.brandId))];
   if (brandIds.length !== 1) throw new Error("All selected Pages must belong to the same brand.");
-  if (accounts.some((account) => !account.scopes.includes("instagram_content_publish"))) {
-    throw new Error("Every selected Page must have instagram_content_publish permission.");
+  if (accounts.some((account) => !account.scopes.includes("instagram_basic") || !account.scopes.includes("instagram_content_publish"))) {
+    throw new Error("Every selected Instagram account must have instagram_basic and instagram_content_publish permissions.");
   }
   const brand = await db.brand.findFirst({
     where: {id: brandIds[0], workspaceId: context.workspace.id, status: "ACTIVE"},
@@ -590,7 +590,7 @@ export async function scheduleInstagramDraftTargets(formData: FormData) {
       targets.some((target) => target.socialAccount.brandId !== post.brandId ||
         target.socialAccount.status !== "CONNECTED" ||
         !target.socialAccount.scopes.includes("instagram_content_publish"))) {
-    throw new Error("Every draft target must be a connected Instagram Page with publishing permission under this brand.");
+    throw new Error("Every draft target must be a connected Instagram Professional account with publishing permission under this brand.");
   }
   await db.$transaction(async (tx) => {
     const ids = targets.map((target) => target.id);
