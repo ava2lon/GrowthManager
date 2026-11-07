@@ -39,7 +39,7 @@ export default async function SocialPage({searchParams}:{searchParams:Promise<{m
   const tiktokAccounts=accounts.filter((account)=>account.provider==="TIKTOK"&&account.status==="CONNECTED"&&account.scopes.includes("video.upload"));
   const youtubeAccounts=accounts.filter((account)=>account.provider==="YOUTUBE"&&account.status==="CONNECTED"&&account.scopes.includes("https://www.googleapis.com/auth/youtube.upload"));
   const linkedinAccounts=accounts.filter((account)=>account.provider==="LINKEDIN"&&account.status==="CONNECTED");
-  const pinterestAccounts=accounts.filter((account)=>account.provider==="PINTEREST"&&account.status==="CONNECTED"&&account.scopes.includes("pins:write"));
+  const pinterestAccounts=accounts.filter((account)=>account.provider==="PINTEREST"&&account.status==="CONNECTED"&&account.scopes.includes("pins:write")&&brands.some(brand=>brand.id===account.brandId));
   const pinterestBoardOptions=pinterestAccounts.flatMap((account)=>{
     const metadata=account.metadata&&typeof account.metadata==="object"&&!Array.isArray(account.metadata)?account.metadata as Record<string,unknown>:{};
     const boards=Array.isArray(metadata.boards)?metadata.boards:[];
