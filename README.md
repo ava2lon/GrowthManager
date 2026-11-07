@@ -219,7 +219,7 @@ GrowthManager supports Pinterest API v5 OAuth account connection, identity valid
 
 `https://growthmanager.vercel.app/api/integrations/pinterest/callback`
 
-Configure `PINTEREST_APP_ID`, `PINTEREST_APP_SECRET`, and `PINTEREST_REDIRECT_URI`. The OAuth flow requests `user_accounts:read`, `boards:read`, `pins:read`, and `pins:write`; it uses a short-lived HMAC-signed, HttpOnly, SameSite=Lax state cookie bound to the authenticated user, workspace, and active brand. Callback handling rechecks current workspace administrator membership and brand ownership before storing credentials.
+Configure `PINTEREST_APP_ID`, `PINTEREST_APP_SECRET`, and `PINTEREST_REDIRECT_URI`. The OAuth flow requests `user_accounts:read`, `boards:read`, and `pins:write`; it uses a short-lived HMAC-signed, HttpOnly, SameSite=Lax state cookie bound to the authenticated user, workspace, and active brand. Callback handling rechecks current workspace administrator membership and brand ownership before storing credentials.
 
 Access and refresh tokens are encrypted using the workspace/account-bound AES-GCM credential envelope. Pinterest access tokens are refreshed server-side before expiry; refresh-token rotation is persisted with compare-and-swap protection. The connection callback verifies the Pinterest user identity and retrieves the first 100 boards. Workspace administrators can run an account health check to validate identity, scopes, and board discovery. Disconnect removes locally stored credentials and scopes.
 
