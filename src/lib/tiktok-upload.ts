@@ -5,7 +5,7 @@ import {getSupabaseStorageConfig,storageHeaders} from "@/lib/media-storage";
 import {getFreshTikTokCredentials} from "@/lib/tiktok-auth";
 
 const MAX_VIDEO_BYTES=100*1024*1024;
-const CHUNK_BYTES=10*1024*1024;
+const CHUNK_BYTES=64*1024*1024;
 type TikTokResponse={data?:{publish_id?:string;upload_url?:string};error?:{code?:string;message?:string;log_id?:string}};
 
 export async function uploadTikTokInboxTarget(input:{targetId:string;workspaceId:string;actorUserId:string}){
@@ -119,6 +119,7 @@ export async function processTikTokInboxTarget(input:{targetId:string;workspaceI
  if(status==="SEND_TO_USER_INBOX"){
   await db.$transaction(async tx=>{
    await tx.socialPostTarget.update({where:{id:target.id},data:{status:"UPLOADED",nextCheckAt:null,errorCode:null}});
+   await tx.contentPost.update({where:{id:target.contentPost.id},data:{status:"DRAFT"}});
    await tx.socialPublishAttempt.updateMany({where:{workspaceId:input.workspaceId,targetId:target.id,status:"PROCESSING"},data:{status:"UPLOADED",finishedAt:new Date()}});
    await tx.activityLog.create({data:{workspaceId:input.workspaceId,action:"social_post.tiktok_inbox_ready",entityType:"ContentPost",entityId:target.contentPost.id,metadata:{provider:"TIKTOK",targetId:target.id,publishId:target.providerContainerId}}});
   });
