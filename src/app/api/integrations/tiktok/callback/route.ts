@@ -116,8 +116,6 @@ export async function GET(request: Request) {
 
     const scopes = (token.scope ?? "").split(",").map((scope) => scope.trim()).filter(Boolean);
     if (!scopes.includes("user.info.basic")) throw new Error("TIKTOK_PROFILE_SCOPE_MISSING");
-    const analyticsEnabled = process.env.TIKTOK_ENABLE_ANALYTICS_SCOPE === "true";
-    if (analyticsEnabled && !scopes.includes("video.list")) throw new Error("TIKTOK_ANALYTICS_SCOPE_MISSING");
 
     const profile = await api<{data?: {user?: {open_id?: string; display_name?: string; avatar_url?: string}}}>(
       "/v2/user/info/?fields="+["open_id","display_name","avatar_url",...(scopes.includes("user.info.stats")?["follower_count","following_count","likes_count","video_count"]:[])].join(","), token.access_token,
