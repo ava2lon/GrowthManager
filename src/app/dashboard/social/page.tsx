@@ -59,6 +59,18 @@ export default async function SocialPage({searchParams}:{searchParams:Promise<{m
       </section>
 
       <section className="rounded-2xl border border-slate-200 bg-white p-5 sm:p-6">
+        <div>
+          <h2 className="font-semibold text-slate-900">Connect TikTok</h2>
+          <p className="mt-1 text-sm text-slate-500">Authorize a TikTok creator account for this brand. Publishing remains gated until the Content Posting API app review and publishing lifecycle are complete.</p>
+        </div>
+        <div className="mt-4 flex flex-wrap gap-2">
+          {brands.map((brand) => <a key={brand.id} href={"/api/integrations/tiktok/connect?brandId="+encodeURIComponent(brand.id)} className="rounded-xl border border-slate-200 px-4 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50">Connect TikTok · {brand.name}</a>)}
+          {brands.length===0&&<p className="text-sm text-slate-500">Create an active brand before connecting a TikTok account.</p>}
+        </div>
+        <p className="mt-3 text-xs text-slate-500">Requires TIKTOK_CLIENT_KEY, TIKTOK_CLIENT_SECRET, and a registered HTTPS TIKTOK_REDIRECT_URI. The requested scopes are user.info.basic and video.publish.</p>
+      </section>
+
+      <section className="rounded-2xl border border-slate-200 bg-white p-5 sm:p-6">
         <div><h2 className="font-semibold text-slate-900">Facebook Page composer</h2><p className="mt-1 text-sm text-slate-500">Create one text draft for multiple Facebook Pages under the same brand, publish targets individually, or schedule them.</p></div>
         {facebookAccounts.length&&brands.length ? <form action={createFacebookDraft} className="mt-4 grid gap-3">
           <label className="grid gap-1 text-xs font-medium text-slate-600">Facebook Pages <span className="font-normal text-slate-400">Select up to 10 Pages for the same brand (Ctrl/Cmd-click for multiple).</span><select name="accountIds" required multiple size={Math.min(6, Math.max(3, facebookAccounts.length))} className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm">{facebookAccounts.map((account)=><option key={account.id} value={account.id}>{account.accountName} · {brandNames.get(account.brandId)??"Brand unavailable"}</option>)}</select></label>
