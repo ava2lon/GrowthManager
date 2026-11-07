@@ -64,8 +64,9 @@ export async function dispatchContentReviewEmails(batchSize = 10): Promise<Deliv
       : item.assignment.assignedById);
     const preferences = await db.workspaceNotificationPreference.findUnique({
       where: {workspaceId_userId: {workspaceId: item.workspaceId, userId: recipientUserId}},
-      select: {quietHoursEnabled: true, timezone: true, quietHoursStart: true, quietHoursEnd: true},
+      select: {quietHoursEnabled: true, timezone: true, quietHoursStart: true, quietHoursEnd: true, digestEnabled: true},
     });
+    if (preferences?.digestEnabled) continue;
     if (preferences?.quietHoursEnabled) {
       const nextAllowed = nextAllowedSendAt(
         now,
