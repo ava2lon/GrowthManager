@@ -48,6 +48,34 @@ export async function GET(request:Request){
     }
   }
 
+  // A process can die after claiming a target but before persisting Google's session URI.
+  // No video bytes have been transferred at that point, so mark it safely retryable as a failed draft.
+  const abandonedYouTubeStarts=await db.socialPostTarget.findMany({
+    where:{provider:"YOUTUBE",status:"PUBLISHING",uploadSessionEncrypted:null,updatedAt:{lt:new Date(now.getTime()-5*60_000)}},
+    select:{id:true,workspaceId:true,contentPostId:true},
+    take:25,
+  });
+  let recoveredYouTubeStarts=0;
+  for(const target of abandonedYouTubeStarts){
+    const changed=await db.socialPostTarget.updateMany({
+      where:{id:target.id,workspaceId:target.workspaceId,provider:"YOUTUBE",status:"PUBLISHING",
+        uploadSessionEncrypted:null,updatedAt:{lt:new Date(now.getTime()-5*60_000)}},
+      data:{status:"FAILED",errorCode:"YOUTUBE_UPLOAD_INITIALIZATION_INTERRUPTED",nextCheckAt:null},
+    });
+    if(changed.count){
+      await db.socialPublishAttempt.updateMany({
+        where:{workspaceId:target.workspaceId,targetId:target.id,status:"STARTED"},
+        data:{status:"FAILED",errorCode:"YOUTUBE_UPLOAD_INITIALIZATION_INTERRUPTED",finishedAt:now},
+      });
+      await db.activityLog.create({data:{
+        workspaceId:target.workspaceId,action:"social_post.youtube_upload_initialization_interrupted",
+        entityType:"SocialPostTarget",entityId:target.id,
+        metadata:{provider:"YOUTUBE",reason:"WORKER_INTERRUPTED_BEFORE_SESSION_PERSISTENCE"},
+      }});
+      recoveredYouTubeStarts++;
+    }
+  }
+
   const processing=await db.socialPostTarget.findMany({
     where:{provider:"INSTAGRAM",status:"PROCESSING",OR:[{nextCheckAt:null},{nextCheckAt:{lte:now}}]},
     select:{id:true,workspaceId:true},orderBy:{nextCheckAt:"asc"},take:10,
@@ -120,5 +148,5 @@ export async function GET(request:Request){
       failed++;
     }
   }
-  return NextResponse.json({due:due.length,published,failed,unknown,skipped,recoveredUnknown,reels:{checked:processing.length,published:reelsPublished,failed:reelsFailed,processing:reelsProcessing,unknown:reelsUnknown},tiktok:{checked:tiktokProcessing.length,uploaded:tiktokUploaded,published:tiktokPublished,failed:tiktokFailed},youtube:{checked:youtubeProcessing.length,published:youtubePublished,failed:youtubeFailed,processing:youtubeProcessingCount}});
+  return NextResponse.json({due:due.length,published,failed,unknown,skipped,recoveredUnknown,reels:{checked:processing.length,published:reelsPublished,failed:reelsFailed,processing:reelsProcessing,unknown:reelsUnknown},tiktok:{checked:tiktokProcessing.length,uploaded:tiktokUploaded,published:tiktokPublished,failed:tiktokFailed},youtube:{checked:youtubeProcessing.length,published:youtubePublished,failed:youtubeFailed,processing:youtubeProcessingCount,recoveredInitializations:recoveredYouTubeStarts}});
 }
