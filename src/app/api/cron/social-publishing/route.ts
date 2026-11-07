@@ -5,6 +5,7 @@ import {publishFacebookTarget,publishInstagramTarget} from "@/lib/social-publish
 import {startInstagramReelTarget,processInstagramReelTarget} from "@/lib/instagram-reels";
 import {processTikTokInboxTarget} from "@/lib/tiktok-upload";
 import {processYouTubeUploadTarget} from "@/lib/youtube-upload";
+import {publishPinterestTarget} from "@/lib/pinterest-publishing";
 
 export const runtime="nodejs";
 export const dynamic="force-dynamic";
@@ -126,6 +127,21 @@ export async function GET(request:Request){
   }
 
 
+  const pinterestDue=await db.socialPostTarget.findMany({
+    where:{provider:"PINTEREST",status:"SCHEDULED",contentPost:{scheduledAt:{lte:now}}},
+    select:{id:true,workspaceId:true},orderBy:{contentPost:{scheduledAt:"asc"}},take:1,
+  });
+  let pinterestPublished=0,pinterestFailed=0,pinterestUnknown=0,pinterestSkipped=0;
+  for(const target of pinterestDue){
+    try{
+      const result=await publishPinterestTarget({targetId:target.id,workspaceId:target.workspaceId,actorUserId:"system",allowedStatuses:["SCHEDULED"]});
+      if(result.status==="PUBLISHED")pinterestPublished++;
+      else if(result.status==="FAILED")pinterestFailed++;
+      else if(result.status==="UNKNOWN")pinterestUnknown++;
+      else pinterestSkipped++;
+    }catch{pinterestUnknown++;}
+  }
+
   const due=await db.socialPostTarget.findMany({
     where:{provider:{in:["FACEBOOK","INSTAGRAM"]},status:"SCHEDULED",contentPost:{scheduledAt:{lte:now}}},
     select:{id:true,workspaceId:true,provider:true},
@@ -152,5 +168,5 @@ export async function GET(request:Request){
       failed++;
     }
   }
-  return NextResponse.json({due:due.length,published,failed,unknown,skipped,recoveredUnknown,reels:{checked:processing.length,published:reelsPublished,failed:reelsFailed,processing:reelsProcessing,unknown:reelsUnknown},tiktok:{checked:tiktokProcessing.length,uploaded:tiktokUploaded,published:tiktokPublished,failed:tiktokFailed},youtube:{checked:youtubeProcessing.length,published:youtubePublished,scheduled:youtubeScheduled,failed:youtubeFailed,processing:youtubeProcessingCount,recoveredInitializations:recoveredYouTubeStarts}});
+  return NextResponse.json({due:due.length,published,failed,unknown,skipped,recoveredUnknown,pinterest:{checked:pinterestDue.length,published:pinterestPublished,failed:pinterestFailed,unknown:pinterestUnknown,skipped:pinterestSkipped},reels:{checked:processing.length,published:reelsPublished,failed:reelsFailed,processing:reelsProcessing,unknown:reelsUnknown},tiktok:{checked:tiktokProcessing.length,uploaded:tiktokUploaded,published:tiktokPublished,failed:tiktokFailed},youtube:{checked:youtubeProcessing.length,published:youtubePublished,scheduled:youtubeScheduled,failed:youtubeFailed,processing:youtubeProcessingCount,recoveredInitializations:recoveredYouTubeStarts}});
 }
