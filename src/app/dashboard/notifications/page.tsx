@@ -45,6 +45,21 @@ export default async function NotificationsPage({searchParams}:{searchParams:Pro
       <div className="rounded-xl border border-slate-200 bg-white p-4"><p className="text-xs text-slate-500">Failed n8n snapshots</p><p className="mt-1 text-2xl font-semibold">{automationFailures.length}</p></div>
     </div>
     <section className="rounded-2xl border border-slate-200 bg-white p-5 sm:p-6">
+      <h2 className="font-semibold text-slate-900">Notification preferences</h2>
+      <p className="mt-1 text-xs text-slate-500">Choose which content-review events reach you in-app and by email. Defaults are enabled.</p>
+      <form action={saveNotificationPreferences} className="mt-4 space-y-4">
+        <div className="grid gap-3 sm:grid-cols-2">
+          {[
+            ["inAppReviewAssigned","In-app: review assignments"],
+            ["emailReviewAssigned","Email: review assignments"],
+            ["inAppReviewDecisions","In-app: review decisions"],
+            ["emailReviewDecisions","Email: review decisions"],
+          ].map(([name,label])=><label key={name} className="flex items-center gap-3 rounded-lg border border-slate-100 p-3 text-sm text-slate-700"><input type="checkbox" name={name} defaultChecked={preferences?preferences[name as keyof typeof preferences] as boolean:true} className="h-4 w-4 rounded border-slate-300"/>{label}</label>)}
+        </div>
+        <button type="submit" className="rounded-lg bg-slate-900 px-4 py-2 text-xs font-semibold text-white">Save preferences</button>
+      </form>
+    </section>
+    <section className="rounded-2xl border border-slate-200 bg-white p-5 sm:p-6">
       <div className="flex flex-wrap items-center justify-between gap-2"><div><h2 className="font-semibold text-slate-900">In-app notifications</h2><p className="mt-1 text-xs text-slate-500">Personal notifications for the active workspace.</p></div>{unreadCount>0&&<form action={markAllNotificationsRead}><button className="rounded-lg border border-slate-200 px-3 py-2 text-xs font-semibold text-slate-700">Mark all read</button></form>}</div>
       {notifications.length===0?<p className="mt-4 rounded-lg bg-slate-50 p-4 text-sm text-slate-500">No {filter==="unread"?"unread ":""}notifications.</p>:<div className="mt-4 divide-y divide-slate-100">{notifications.map(item=><article key={item.id} className="flex flex-wrap items-start justify-between gap-3 py-4"><div className="min-w-0 flex-1"><div className="flex flex-wrap items-center gap-2"><h3 className="text-sm font-semibold text-slate-900">{item.title}</h3>{!item.readAt&&<span className="rounded-full bg-indigo-50 px-2 py-0.5 text-[10px] font-semibold text-indigo-700">Unread</span>}</div><p className="mt-1 text-sm text-slate-600">{item.message}</p><p className="mt-1 text-xs text-slate-400">{item.type.replaceAll("_"," ").toLowerCase()} · {item.createdAt.toLocaleString()}</p><Link href={item.href} className="mt-2 inline-block text-xs font-semibold text-indigo-700 hover:underline">Open related workspace item</Link></div>{!item.readAt&&<form action={markNotificationRead.bind(null,item.id)}><button className="rounded-lg border border-slate-200 px-3 py-2 text-xs font-semibold text-slate-600">Mark read</button></form>}</article>)}</div>}
     </section>
