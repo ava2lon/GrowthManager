@@ -4,8 +4,20 @@ import {YouTubeUploadButton} from "./youtube-upload-button";
 import {requireWorkspaceContext} from "@/lib/workspace";
 import {db} from "@/lib/db";
 import {socialProviders} from "@/lib/integration-providers";
-import {checkSocialAccountHealth, checkTikTokAccountHealth, checkYouTubeAccountHealth, checkLinkedInAccountHealth, checkPinterestAccountHealth, loadMorePinterestBoards, cancelPinterestSchedule, reschedulePinterestPin, createPinterestDraft, publishPinterestDraft, retryPinterestPublish, refreshPinterestAnalytics, refreshPinterestPinAnalyticsAction, refreshMetaAnalyticsAction, createLinkedInDraft, publishLinkedInDraft, retryLinkedInPublish, disconnectSocialAccount, refreshMetaAuthorization, createFacebookDraft, publishFacebookDraft, scheduleFacebookDraftTargets, createInstagramDraft, publishInstagramDraft, createInstagramReelDraft, publishInstagramReelDraft, scheduleInstagramDraftTargets, createTikTokDraft, createYouTubeDraft, retryYouTubeUpload, cancelFacebookSchedule} from "@/app/dashboard/social/actions";
+import {checkSocialAccountHealth, checkTikTokAccountHealth, checkYouTubeAccountHealth, checkLinkedInAccountHealth, checkPinterestAccountHealth, loadMorePinterestBoards, cancelPinterestSchedule, reschedulePinterestPin, createPinterestDraft, publishPinterestDraft, retryPinterestPublish, refreshPinterestAnalytics, refreshPinterestPinAnalyticsAction, refreshMetaAnalyticsAction, refreshLinkedInAnalyticsAction, createLinkedInDraft, publishLinkedInDraft, retryLinkedInPublish, disconnectSocialAccount, refreshMetaAuthorization, createFacebookDraft, publishFacebookDraft, scheduleFacebookDraftTargets, createInstagramDraft, publishInstagramDraft, createInstagramReelDraft, publishInstagramReelDraft, scheduleInstagramDraftTargets, createTikTokDraft, createYouTubeDraft, retryYouTubeUpload, cancelFacebookSchedule} from "@/app/dashboard/social/actions";
 
+
+
+function linkedInMetricEntries(value:unknown):Array<{name:string;value:string}>{
+ const out:Array<{name:string;value:string}>=[];
+ const visit=(v:unknown,path:string,depth:number)=>{
+  if(out.length>=16||depth>4||v===null||v===undefined)return;
+  if(typeof v==="number"||typeof v==="string"||typeof v==="boolean"){if(path&&!["paging","metadata"].includes(path))out.push({name:path,value:typeof v==="number"?new Intl.NumberFormat().format(v):String(v)});return;}
+  if(Array.isArray(v)){if(v.length===1)visit(v[0],path,depth+1);else if(v.length>1&&path.endsWith("elements"))v.slice(0,3).forEach((item,index)=>visit(item,path+"["+(index+1)+"]",depth+1));return;}
+  if(typeof v==="object"){for(const [key,item] of Object.entries(v as Record<string,unknown>)){if(["organizationalEntity","share","ugcPost","timeRange","paging","metadata"].includes(key))continue;visit(item,path?path+"."+key:key,depth+1);}}
+ };
+ visit(value,"",0);return out;
+}
 
 function metaMetricEntries(value:unknown):Array<{name:string;value:string}>{
   const root=value&&typeof value==="object"&&!Array.isArray(value)?value as Record<string,unknown>:{};
@@ -25,7 +37,7 @@ const capabilityLabels: Record<string,string> = {
   ANALYTICS:"Analytics", COMMENTS_READ:"Comments", MESSAGING:"Messaging",
 };
 
-export default async function SocialPage({searchParams}:{searchParams:Promise<{month?:string;linkedin?:string;pinterest?:string;pinterestPublish?:string;pinterestAnalytics?:string;pinterestPinAnalytics?:string;metaAnalytics?:string;accountId?:string;reportDate?:string}>}) {
+export default async function SocialPage({searchParams}:{searchParams:Promise<{month?:string;linkedin?:string;pinterest?:string;pinterestPublish?:string;pinterestAnalytics?:string;pinterestPinAnalytics?:string;metaAnalytics?:string;linkedinAnalytics?:string;accountId?:string;reportDate?:string}>}) {
   const params=await searchParams;
   const requestedMonth=typeof params.month==="string"&&/^\d{4}-\d{2}$/.test(params.month)?params.month:new Date().toISOString().slice(0,7);
   const monthDate=new Date(requestedMonth+"-01T00:00:00Z");
@@ -55,6 +67,11 @@ export default async function SocialPage({searchParams}:{searchParams:Promise<{m
   const linkedinAccounts=accounts.filter((account)=>account.provider==="LINKEDIN"&&account.status==="CONNECTED");
   const pinterestAccounts=accounts.filter((account)=>account.provider==="PINTEREST"&&account.status==="CONNECTED"&&account.scopes.includes("pins:write")&&brands.some(brand=>brand.id===account.brandId));
   const metaAccounts=accounts.filter(account=>(account.provider==="FACEBOOK"||account.provider==="INSTAGRAM")&&account.status==="CONNECTED");
+  const linkedInOrganizationAccounts=linkedinAccounts.filter(account=>{const meta=account.metadata&&typeof account.metadata==="object"&&!Array.isArray(account.metadata)?account.metadata as Record<string,unknown>:{};return meta.accountType==="ORGANIZATION"&&account.scopes.includes("rw_organization_admin");});
+  const linkedInAnalyticsSnapshots=linkedInOrganizationAccounts.length?await db.linkedInAnalyticsSnapshot.findMany({where:{workspaceId:workspace.id,socialAccountId:{in:linkedInOrganizationAccounts.map(account=>account.id)}},orderBy:{fetchedAt:"desc"},distinct:["socialAccountId","subjectType","subjectId"],take:100,select:{id:true,socialAccountId:true,subjectType:true,subjectId:true,targetId:true,reportDate:true,fetchedAt:true,metrics:true}}):[];
+  const linkedInAccountSnapshots=linkedInAnalyticsSnapshots.filter(snapshot=>snapshot.subjectType==="ACCOUNT");
+  const linkedInMediaSnapshots=linkedInAnalyticsSnapshots.filter(snapshot=>snapshot.subjectType==="MEDIA").slice(0,20);
+
   const metaAnalyticsSnapshots=metaAccounts.length?await db.metaAnalyticsSnapshot.findMany({where:{workspaceId:workspace.id,socialAccountId:{in:metaAccounts.map(account=>account.id)}},orderBy:{fetchedAt:"desc"},distinct:["socialAccountId","subjectType","subjectId"],take:100,select:{id:true,socialAccountId:true,subjectType:true,subjectId:true,reportDate:true,fetchedAt:true,metrics:true}}):[];
   const metaAccountSnapshots=metaAnalyticsSnapshots.filter(snapshot=>snapshot.subjectType==="ACCOUNT");
   const metaMediaSnapshots=metaAnalyticsSnapshots.filter(snapshot=>snapshot.subjectType==="MEDIA").slice(0,20);
@@ -158,7 +175,7 @@ export default async function SocialPage({searchParams}:{searchParams:Promise<{m
       <section className="rounded-2xl border border-slate-200 bg-white p-5 sm:p-6">
         <div><h2 className="font-semibold text-slate-900">Cross-platform performance overview</h2><p className="mt-1 text-sm text-slate-500">Published content over the last 90 days, across connected publishing integrations. Pinterest and Meta metrics are shown in their provider-specific sections below; this overview does not combine metrics with different definitions.</p></div>
         <div className="mt-4 overflow-x-auto"><table className="w-full min-w-[700px] text-left text-sm"><thead className="text-xs text-slate-500"><tr><th className="py-2 pr-3">Platform</th><th className="py-2 pr-3">Published</th><th className="py-2 pr-3">Analytics tracked</th><th className="py-2 pr-3">Impressions</th><th className="py-2 pr-3">Engagements</th><th className="py-2 pr-3">Outbound clicks</th><th className="py-2 pr-3">Saves</th><th className="py-2 pr-3">Latest sync</th></tr></thead><tbody className="divide-y divide-slate-100">{crossPlatformSummary.map(row=><tr key={row.provider}><td className="py-3 pr-3 font-medium text-slate-900">{row.provider==="FACEBOOK"?"Facebook":row.provider==="INSTAGRAM"?"Instagram":row.provider==="PINTEREST"?"Pinterest":row.provider==="LINKEDIN"?"LinkedIn":row.provider==="TIKTOK"?"TikTok":"YouTube"}</td><td className="py-3 pr-3">{row.publishedCount}</td><td className="py-3 pr-3">{row.provider==="PINTEREST"?String(row.measuredCount)+"/"+String(row.publishedCount):row.provider==="FACEBOOK"||row.provider==="INSTAGRAM"?"See Meta section":"Not available"}</td><td className="py-3 pr-3">{row.impressions===null?"—":new Intl.NumberFormat().format(row.impressions)}</td><td className="py-3 pr-3">{row.engagements===null?"—":new Intl.NumberFormat().format(row.engagements)}</td><td className="py-3 pr-3">{row.clicks===null?"—":new Intl.NumberFormat().format(row.clicks)}</td><td className="py-3 pr-3">{row.saves===null?"—":new Intl.NumberFormat().format(row.saves)}</td><td className="py-3 pr-3 text-xs text-slate-500">{row.lastFetchedAt?row.lastFetchedAt.toLocaleDateString():"—"}</td></tr>)}</tbody></table></div>
-        <p className="mt-3 text-xs text-slate-500">Pinterest metrics use stored Pin snapshots. Facebook and Instagram use Meta-native snapshots in the section above. LinkedIn, TikTok, and YouTube analytics are not yet available in GrowthManager.</p>
+        <p className="mt-3 text-xs text-slate-500">Pinterest, Meta, and LinkedIn have provider-specific analytics sections. TikTok and YouTube analytics are not yet available in GrowthManager.</p>
       </section>
 
       <section className="rounded-2xl border border-slate-200 bg-white p-5 sm:p-6">
