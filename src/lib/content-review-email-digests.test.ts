@@ -1,5 +1,5 @@
 import {describe, expect, it} from "vitest";
-import {digestDue} from "./content-review-email-delivery";
+import {digestDue} from "./notification-digest-schedule";
 
 describe("digestDue", () => {
   it("does not schedule a daily digest before the configured local time", () => {
