@@ -179,9 +179,6 @@ export async function processYouTubeUploadTarget(input: {targetId: string; works
     if (!Number.isSafeInteger(total) || total < 1 || total > MAX_VIDEO_BYTES || Number(asset.sizeBytes) !== total) {
       throw new Error("YOUTUBE_UPLOAD_SIZE_MISMATCH");
     }
-    const sessionEnvelope = decryptIntegrationCredentials(target.uploadSessionEncrypted, input.workspaceId, target.id);
-    if (typeof sessionEnvelope.sessionUrl !== "string") throw new Error("YOUTUBE_UPLOAD_SESSION_INVALID");
-    const sessionUrl = validateYouTubeSessionUrl(sessionEnvelope.sessionUrl);
     const {accessToken} = await getFreshYouTubeCredentials({workspaceId: input.workspaceId, accountId: target.socialAccount.id});
 
     if (target.status === "PROCESSING" && target.providerPostId) {
@@ -216,6 +213,11 @@ export async function processYouTubeUploadTarget(input: {targetId: string; works
       });
       return {status: "PROCESSING" as const};
     }
+
+    if (!target.uploadSessionEncrypted) throw new Error("YOUTUBE_UPLOAD_SESSION_INVALID");
+    const sessionEnvelope = decryptIntegrationCredentials(target.uploadSessionEncrypted, input.workspaceId, target.id);
+    if (typeof sessionEnvelope.sessionUrl !== "string") throw new Error("YOUTUBE_UPLOAD_SESSION_INVALID");
+    const sessionUrl = validateYouTubeSessionUrl(sessionEnvelope.sessionUrl);
 
     // Google is authoritative about the committed offset; never infer it from a timed-out PUT.
     const statusResponse = await fetch(sessionUrl, {
@@ -334,7 +336,6 @@ export async function processYouTubeUploadTarget(input: {targetId: string; works
   }
 
   async function completeUpload(videoId: string) {
-    const finished = new Date();
     await db.$transaction(async tx => {
       await tx.socialPostTarget.update({
         where: {id: input.targetId},
