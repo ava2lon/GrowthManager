@@ -12,8 +12,10 @@ async function requestInsights(version:string,id:string,token:string,metrics:str
 }
 export async function refreshMetaAnalytics(input:{workspaceId:string;accountId:string;targetId?:string;asOf?:Date}){
  const now=input.asOf??new Date(),reportDate=new Date(now.toISOString().slice(0,10)+"T00:00:00.000Z");
- const a=await db.socialAccount.findFirst({where:{id:input.accountId,workspaceId:input.workspaceId,provider:{in:["FACEBOOK","INSTAGRAM"]},status:"CONNECTED",credentialsEncrypted:{not:null}},select:{id:true,workspaceId:true,provider:true,credentialsEncrypted:true,metadata:true}});
+ const a=await db.socialAccount.findFirst({where:{id:input.accountId,workspaceId:input.workspaceId,provider:{in:["FACEBOOK","INSTAGRAM"]},status:"CONNECTED",credentialsEncrypted:{not:null}},select:{id:true,workspaceId:true,provider:true,scopes:true,credentialsEncrypted:true,metadata:true}});
  if(!a?.credentialsEncrypted)throw new Error("META_ACCOUNT_NOT_READY");
+ const requiredScopes=a.provider==="FACEBOOK"?["pages_read_engagement","read_insights"]:["instagram_basic","instagram_manage_insights"];
+ if(requiredScopes.some(scope=>!a.scopes.includes(scope)))throw new Error("META_ANALYTICS_PERMISSION_MISSING");
  const m=obj(a.metadata),graphId=a.provider==="FACEBOOK"?m.pageId:m.instagramUserId;if(typeof graphId!=="string")throw new Error("META_ACCOUNT_ID_MISSING");
  const version=process.env.META_GRAPH_API_VERSION;if(!version||!/^v\d+\.\d+$/.test(version))throw new Error("META_API_NOT_CONFIGURED");
  let credentials:Obj;try{credentials=decryptIntegrationCredentials(a.credentialsEncrypted,input.workspaceId,a.id)}catch{throw new Error("CREDENTIAL_DECRYPTION_FAILED")}
