@@ -151,6 +151,7 @@ model SocialAccount {
   brand          Brand          @relation(fields: [workspaceId, brandId], references: [workspaceId, id], onDelete: Cascade)
   publishTargets SocialPostTarget[]
   pinterestAnalyticsSnapshots PinterestAnalyticsSnapshot[]
+  metaAnalyticsSnapshots MetaAnalyticsSnapshot[]
   @@unique([workspaceId, provider, providerUserId])
   @@unique([workspaceId, id])
   @@index([workspaceId, brandId, provider])
@@ -476,4 +477,23 @@ model PinterestPinAnalyticsSnapshot {
   @@unique([workspaceId, targetId, reportDate])
   @@index([workspaceId, reportDate])
   @@index([workspaceId, targetId, fetchedAt])
+}
+
+
+model MetaAnalyticsSnapshot {
+  id String @id @default(cuid())
+  workspaceId String
+  socialAccountId String
+  subjectType String
+  subjectId String
+  reportDate DateTime @db.Date
+  startDate DateTime @db.Date
+  endDate DateTime @db.Date
+  metrics Json
+  rawResponse Json
+  fetchedAt DateTime @default(now())
+  socialAccount SocialAccount @relation(fields: [workspaceId, socialAccountId], references: [workspaceId, id], onDelete: Cascade)
+  @@unique([workspaceId, socialAccountId, subjectType, subjectId, reportDate])
+  @@index([workspaceId, reportDate])
+  @@index([workspaceId, socialAccountId, subjectType, fetchedAt])
 }
