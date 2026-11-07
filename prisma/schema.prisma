@@ -817,6 +817,8 @@ model WorkspaceIncident {
   category           String
   severity           String
   status             String   @default("OPEN")
+  acknowledgedAt     DateTime?
+  acknowledgedById   String?
   dedupeKey          String
   message            String   @db.Text
   errorCode          String?
