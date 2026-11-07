@@ -109,7 +109,7 @@ export async function processTikTokInboxTarget(input:{targetId:string;workspaceI
  if(!response.ok||!payload||payload.error?.code!=="ok"){
   const terminal=payload?.error?.code==="invalid_publish_id"||payload?.error?.code==="token_not_authorized_for_specified_publish_id";
   if(terminal)return mark("FAILED","TIKTOK_STATUS_"+(payload?.error?.code??"ERROR").toUpperCase());
-  await db.socialPostTarget.updateMany({where:{id:target.id,workspaceId:input.workspaceId,status:"PROCESSING"},data:{nextCheckAt:new Date(Date.now()+5*60_000)}});
+  await db.socialPostTarget.updateMany({where:{id:target.id,workspaceId:input.workspaceId,status:{in:["PROCESSING","UPLOADED"]}},data:{nextCheckAt:new Date(Date.now()+5*60_000)}});
   return {status:"PROCESSING" as const};
  }
  const status=payload.data?.status;
