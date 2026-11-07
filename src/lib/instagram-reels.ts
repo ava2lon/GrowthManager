@@ -34,7 +34,10 @@ export async function startInstagramReelTarget(input:{targetId:string;workspaceI
  if(a.workspaceId!==input.workspaceId||a.status!=="READY"||(a.brandId!==null&&a.brandId!==t.contentPost.brandId))return fail("MEDIA_ASSET_NOT_READY");
  if(a.mimeType!=="video/mp4"&&a.mimeType!=="video/quicktime")return fail("INSTAGRAM_REEL_UNSUPPORTED_FORMAT");
  if(Number(a.sizeBytes)>100*1024*1024||!a.durationMs||a.durationMs<3000||a.durationMs>900000||!a.width||!a.height||a.width>1920||a.height>1920)return fail("INSTAGRAM_REEL_MEDIA_CONSTRAINT");
- const allowed=input.allowedStatuses??["DRAFT","SCHEDULED"];const claim=await db.socialPostTarget.updateMany({where:{id:t.id,workspaceId:input.workspaceId,status:{in:allowed}},data:{status:"PUBLISHING",errorCode:null}});if(claim.count!==1)return {status:"SKIPPED"};
+ const allowed=input.allowedStatuses??["DRAFT","SCHEDULED"];const claim=await db.socialPostTarget.updateMany({where:{
+  id:t.id,workspaceId:input.workspaceId,status:{in:allowed},
+  ...(t.status==="SCHEDULED"?{contentPost:{scheduledAt:{lte:new Date()}}}:{}),
+ },data:{status:"PUBLISHING",errorCode:null}});if(claim.count!==1)return {status:"SKIPPED"};
  const prev=await db.socialPublishAttempt.aggregate({where:{workspaceId:input.workspaceId,targetId:t.id},_max:{attemptNumber:true}});
  const attempt=await db.socialPublishAttempt.create({data:{workspaceId:input.workspaceId,targetId:t.id,attemptNumber:(prev._max.attemptNumber??0)+1,idempotencyKey:randomUUID(),status:"STARTED"},select:{id:true}});
  try{const video=await signedVideoUrl(a);const form=new URLSearchParams({media_type:"REELS",video_url:video,caption:t.contentPost.body,share_to_feed:"true",access_token:token});
