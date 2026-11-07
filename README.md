@@ -168,3 +168,13 @@ Configure the TikTok developer application's webhook callback URL as:
 The handler verifies the raw request body using the `TikTok-Signature` timestamp/HMAC-SHA256 format and `TIKTOK_CLIENT_SECRET`, enforces a five-minute replay window and a 64 KiB body limit, and checks `client_key` against `TIKTOK_CLIENT_KEY`. It processes the documented `authorization.removed` event by disconnecting matching TikTok accounts across their respective workspaces, clearing credentials and scopes, and writing workspace-scoped audit events. Duplicate notifications are idempotent. Workspace administrators can also run a TikTok account health check from Social Media. It refreshes an expiring access token through the existing refresh helper, validates the creator's `open_id` through the User Info API, and records a sanitized audit result. Definitive authorization, account-identity, or required-scope failures move the account to `ERROR`; transient provider/network failures are recorded without falsely disconnecting the account.
 
 TikTok's currently documented `video.upload.failed` and `video.publish.completed` webhook events refer to Video Kit. They are not treated as Content Posting API inbox-upload status notifications. GrowthManager therefore continues to reconcile inbox uploads through the Content Posting API status endpoint and its scheduled worker. Configure both TikTok OAuth variables and the public HTTPS callback in the TikTok developer portal before expecting live webhook delivery.
+
+## YouTube channel connection
+
+GrowthManager supports the first phase of YouTube OAuth channel connection. Enable **YouTube Data API v3** in the Google Cloud project, create a Web application OAuth client, and register this exact authorized redirect URI:
+
+`https://growthmanager.vercel.app/api/integrations/youtube/callback`
+
+Set `YOUTUBE_CLIENT_ID`, `YOUTUBE_CLIENT_SECRET`, and `YOUTUBE_REDIRECT_URI` in the deployment environment. The OAuth flow requests `youtube.upload` and `youtube.readonly`, uses offline access, validates a signed workspace-bound state cookie, verifies the authenticated workspace administrator and active brand on callback, fetches the authenticated channel identity, and stores access/refresh tokens encrypted with the workspace and account identifiers as AES-GCM associated data. Tokens are never returned to the browser or logged. Channel upload and processing workflows are a subsequent phase.
+
+Google may require OAuth consent-screen configuration and verification depending on the audience and requested scopes. YouTube Data API quota is project-scoped; review quota and API compliance before enabling production publishing.
