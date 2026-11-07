@@ -1,0 +1,59 @@
+"use server";
+
+import {revalidatePath} from "next/cache";
+import {requireWorkspaceRole} from "@/lib/workspace";
+import {db} from "@/lib/db";
+import {consumeRateLimit} from "@/lib/rate-limit";
+
+async function limit(workspaceId:string,userId:string,operation:string) {
+  const result=await consumeRateLimit("content-review:"+operation+":"+workspaceId+":"+userId,30,3600);
+  if(!result.allowed||(process.env.NODE_ENV==="production"&&!result.configured)) throw new Error("Review action limit reached or protection is unavailable.");
+}
+
+export async function updateContentDraft(input:{postId:string;title:string;body:string}) {
+  const context=await requireWorkspaceRole("MEMBER");
+  await limit(context.workspace.id,context.userId,"edit");
+  const postId=typeof input?.postId==="string"?input.postId.trim():"";
+  const title=typeof input?.title==="string"?input.title.trim().slice(0,240):"";
+  const body=typeof input?.body==="string"?input.body.trim().slice(0,12000):"";
+  if(!postId||postId.length>128||!body) throw new Error("A valid draft and non-empty content are required.");
+  await db.$transaction(async tx=>{
+    const post=await tx.contentPost.findFirst({where:{id:postId,workspaceId:context.workspace.id},select:{id:true,title:true,body:true,status:true,updatedAt:true}});
+    if(!post) throw new Error("Draft not found in the active workspace.");
+    if(post.status!=="DRAFT") throw new Error("Only drafts can be edited. Reopen approved content before making changes.");
+    if(post.title===title&&post.body===body) return;
+    const versionCount=await tx.contentPostRevision.count({where:{workspaceId:context.workspace.id,contentPostId:post.id}});
+    const changed=await tx.contentPost.updateMany({where:{id:post.id,workspaceId:context.workspace.id,status:"DRAFT",updatedAt:post.updatedAt},data:{title:title||null,body}});
+    if(changed.count!==1) throw new Error("This draft changed in another session. Refresh and retry.");
+    await tx.contentPostRevision.create({data:{workspaceId:context.workspace.id,contentPostId:post.id,title:post.title,body:post.body,version:versionCount+1,changeReason:"Snapshot before edit",createdById:context.userId}});
+    await tx.activityLog.create({data:{workspaceId:context.workspace.id,userId:context.userId,action:"content.draft_updated",entityType:"ContentPost",entityId:post.id,metadata:{revision:versionCount+1}}});
+  });
+  revalidatePath("/dashboard/ai");
+  revalidatePath("/dashboard/social");
+}
+
+export async function approveContentDraft(postId:string) {
+  const context=await requireWorkspaceRole("ADMIN");
+  await limit(context.workspace.id,context.userId,"approve");
+  if(typeof postId!=="string"||!postId.trim()||postId.length>128) throw new Error("Invalid draft.");
+  await db.$transaction(async tx=>{
+    const changed=await tx.contentPost.updateMany({where:{id:postId,workspaceId:context.workspace.id,status:"DRAFT"},data:{status:"APPROVED"}});
+    if(changed.count!==1) throw new Error("Draft is unavailable or has already changed. Refresh the review queue.");
+    await tx.activityLog.create({data:{workspaceId:context.workspace.id,userId:context.userId,action:"content.draft_approved",entityType:"ContentPost",entityId:postId,metadata:{approval:"ADMIN",nextStep:"MANUAL_SCHEDULING"}}});
+  });
+  revalidatePath("/dashboard/ai");
+  revalidatePath("/dashboard/social");
+}
+
+export async function reopenApprovedContent(postId:string) {
+  const context=await requireWorkspaceRole("ADMIN");
+  await limit(context.workspace.id,context.userId,"reopen");
+  if(typeof postId!=="string"||!postId.trim()||postId.length>128) throw new Error("Invalid content.");
+  await db.$transaction(async tx=>{
+    const changed=await tx.contentPost.updateMany({where:{id:postId,workspaceId:context.workspace.id,status:"APPROVED"},data:{status:"DRAFT"}});
+    if(changed.count!==1) throw new Error("Approved content is unavailable or has already changed.");
+    await tx.activityLog.create({data:{workspaceId:context.workspace.id,userId:context.userId,action:"content.approval_reopened",entityType:"ContentPost",entityId:postId,metadata:{reason:"Returned to draft for revision"}}});
+  });
+  revalidatePath("/dashboard/ai");
+  revalidatePath("/dashboard/social");
+}
