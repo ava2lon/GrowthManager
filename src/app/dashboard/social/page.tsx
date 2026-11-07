@@ -52,6 +52,27 @@ export default async function SocialPage({searchParams}:{searchParams:Promise<{m
     orderBy:{fetchedAt:"desc"},distinct:["targetId"],
     select:{id:true,targetId:true,pinId:true,startDate:true,endDate:true,fetchedAt:true,metrics:true},
   }):[];
+  const crossPlatformTargets=await db.socialPostTarget.findMany({
+    where:{workspaceId:workspace.id,status:"PUBLISHED",publishedAt:{gte:new Date(Date.now()-90*86400000)},provider:{in:["FACEBOOK","INSTAGRAM","TIKTOK","YOUTUBE","LINKEDIN","PINTEREST"]}},
+    orderBy:{publishedAt:"desc"},take:500,
+    select:{id:true,provider:true,publishedAt:true,providerPostId:true,socialAccount:{select:{id:true,accountName:true,brandId:true}}}
+  });
+  const crossPlatformPinterestIds=crossPlatformTargets.filter(target=>target.provider==="PINTEREST").map(target=>target.id);
+  const crossPlatformPinterestSnapshots=crossPlatformPinterestIds.length?await db.pinterestPinAnalyticsSnapshot.findMany({where:{workspaceId:workspace.id,targetId:{in:crossPlatformPinterestIds}},orderBy:{fetchedAt:"desc"},distinct:["targetId"],select:{targetId:true,fetchedAt:true,metrics:true}}):[];
+  const crossPlatformPinterestByTarget=new Map(crossPlatformPinterestSnapshots.map(snapshot=>[snapshot.targetId,snapshot]));
+  const crossPlatformProviders=["FACEBOOK","INSTAGRAM","PINTEREST","LINKEDIN","TIKTOK","YOUTUBE"] as const;
+  const crossPlatformSummary=crossPlatformProviders.map(provider=>{
+    const targets=crossPlatformTargets.filter(target=>target.provider===provider);
+    const measured=provider==="PINTEREST"?targets.flatMap(target=>{
+      const snapshot=crossPlatformPinterestByTarget.get(target.id);if(!snapshot)return [];
+      const root=snapshot.metrics&&typeof snapshot.metrics==="object"&&!Array.isArray(snapshot.metrics)?snapshot.metrics as Record<string,unknown>:{};
+      const summary=root.summary&&typeof root.summary==="object"&&!Array.isArray(root.summary)?root.summary as Record<string,unknown>:{};
+      const read=(key:string)=>typeof summary[key]==="number"&&Number.isFinite(summary[key])?summary[key] as number:null;
+      return [{impressions:read("IMPRESSION"),engagements:read("ENGAGEMENT"),clicks:read("OUTBOUND_CLICK"),saves:read("SAVE"),fetchedAt:snapshot.fetchedAt}];
+    }):[];
+    const sum=(key:"impressions"|"engagements"|"clicks"|"saves")=>measured.reduce((total,item)=>total+(item[key]??0),0);
+    return {provider,publishedCount:targets.length,measuredCount:measured.length,impressions:provider==="PINTEREST"?sum("impressions"):null,engagements:provider==="PINTEREST"?sum("engagements"):null,clicks:provider==="PINTEREST"?sum("clicks"):null,saves:provider==="PINTEREST"?sum("saves"):null,lastFetchedAt:measured.reduce<Date|null>((latest,item)=>!latest||item.fetchedAt>latest?item.fetchedAt:latest,null)};
+  });
   const pinterestBoardOptions=pinterestAccounts.flatMap((account)=>{
     const metadata=account.metadata&&typeof account.metadata==="object"&&!Array.isArray(account.metadata)?account.metadata as Record<string,unknown>:{};
     const boards=Array.isArray(metadata.boards)?metadata.boards:[];
@@ -115,6 +136,11 @@ export default async function SocialPage({searchParams}:{searchParams:Promise<{m
         )}
       </section>
 
+      <section className="rounded-2xl border border-slate-200 bg-white p-5 sm:p-6">
+        <div><h2 className="font-semibold text-slate-900">Cross-platform performance overview</h2><p className="mt-1 text-sm text-slate-500">Published content over the last 90 days, across connected publishing integrations. Provider metrics are shown only where GrowthManager currently has an analytics collector; unavailable metrics are not estimated.</p></div>
+        <div className="mt-4 overflow-x-auto"><table className="w-full min-w-[700px] text-left text-sm"><thead className="text-xs text-slate-500"><tr><th className="py-2 pr-3">Platform</th><th className="py-2 pr-3">Published</th><th className="py-2 pr-3">Analytics tracked</th><th className="py-2 pr-3">Impressions</th><th className="py-2 pr-3">Engagements</th><th className="py-2 pr-3">Outbound clicks</th><th className="py-2 pr-3">Saves</th><th className="py-2 pr-3">Latest sync</th></tr></thead><tbody className="divide-y divide-slate-100">{crossPlatformSummary.map(row=><tr key={row.provider}><td className="py-3 pr-3 font-medium text-slate-900">{row.provider==="FACEBOOK"?"Facebook":row.provider==="INSTAGRAM"?"Instagram":row.provider==="PINTEREST"?"Pinterest":row.provider==="LINKEDIN"?"LinkedIn":row.provider==="TIKTOK"?"TikTok":"YouTube"}</td><td className="py-3 pr-3">{row.publishedCount}</td><td className="py-3 pr-3">{row.provider==="PINTEREST"?String(row.measuredCount)+"/"+String(row.publishedCount):"Not available"}</td><td className="py-3 pr-3">{row.impressions===null?"—":new Intl.NumberFormat().format(row.impressions)}</td><td className="py-3 pr-3">{row.engagements===null?"—":new Intl.NumberFormat().format(row.engagements)}</td><td className="py-3 pr-3">{row.clicks===null?"—":new Intl.NumberFormat().format(row.clicks)}</td><td className="py-3 pr-3">{row.saves===null?"—":new Intl.NumberFormat().format(row.saves)}</td><td className="py-3 pr-3 text-xs text-slate-500">{row.lastFetchedAt?row.lastFetchedAt.toLocaleDateString():"—"}</td></tr>)}</tbody></table></div>
+        <p className="mt-3 text-xs text-slate-500">Pinterest analytics use the latest stored Pin snapshots. Facebook, Instagram, LinkedIn, TikTok, and YouTube currently show publishing counts only; their analytics collectors are not yet connected to this report.</p>
+      </section>
       <section className="rounded-2xl border border-rose-100 bg-white p-5 sm:p-6">
         <div><h2 className="font-semibold text-slate-900">Pinterest organic performance</h2><p className="mt-1 text-sm text-slate-500">Account-level organic metrics over Pinterest's supported 90-day reporting window. Uses the existing user_accounts:read permission.</p></div>
         {params.pinterestAnalytics==="refreshed"&&<p className="mt-3 rounded-lg bg-emerald-50 px-3 py-2 text-sm text-emerald-800">Pinterest analytics snapshot refreshed for {params.reportDate??"the latest reporting window"}.</p>}
