@@ -58,6 +58,7 @@ enum WorkspaceNotificationType {
   CONTENT_CHANGES_REQUESTED
   SOCIAL_INCIDENT
   SOCIAL_INCIDENT_RESOLVED
+  SOCIAL_INCIDENT_ESCALATED
 }
 
 enum MediaAssetStatus {
@@ -819,6 +820,7 @@ model WorkspaceIncident {
   firstSeenAt        DateTime @default(now())
   lastSeenAt         DateTime @default(now())
   resolvedAt         DateTime?
+  escalatedAt        DateTime?
   resolutionMessage  String?  @db.Text
   metadata           Json?
   createdAt          DateTime @default(now())
