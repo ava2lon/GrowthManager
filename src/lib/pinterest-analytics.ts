@@ -20,13 +20,13 @@ function normalizeMetrics(input:Record<string,unknown>|undefined):MetricValues{
  }
  return result;
 }
-export async function refreshPinterestAccountAnalytics(input:{workspaceId:string;accountId:string}){
+export async function refreshPinterestAccountAnalytics(input:{workspaceId:string;accountId:string;asOf?:Date}){
  const account=await db.socialAccount.findFirst({where:{id:input.accountId,workspaceId:input.workspaceId,provider:"PINTEREST",status:"CONNECTED"},select:{id:true,scopes:true}});
  if(!account)throw new Error("PINTEREST_ACCOUNT_NOT_CONNECTED");
  if(!account.scopes.includes("user_accounts:read"))throw new Error("PINTEREST_ANALYTICS_SCOPE_MISSING");
  const credentials=await getPinterestCredentials(input);
  if(!credentials.scopes.includes("user_accounts:read"))throw new Error("PINTEREST_ANALYTICS_SCOPE_MISSING");
- const end=new Date();const start=new Date(end.getTime()-89*86400000);
+ const end=input.asOf??new Date();const start=new Date(end.getTime()-89*86400000);
  const startDate=dateOnly(start),endDate=dateOnly(end),reportDate=new Date(endDate+"T00:00:00.000Z");
  const params=new URLSearchParams({start_date:startDate,end_date:endDate,from_claimed_content:"BOTH",pin_format:"ALL",app_types:"ALL",content_type:"ORGANIC",source:"ALL",metric_types:METRIC_TYPES.join(","),split_field:"NO_SPLIT"});
  const raw=await pinterestApi<PinterestAnalyticsResponse>(credentials.accessToken,"/v5/user_account/analytics?"+params.toString());
@@ -45,5 +45,5 @@ export async function refreshPinterestAccountAnalytics(input:{workspaceId:string
   update:{startDate:new Date(startDate+"T00:00:00.000Z"),endDate:new Date(endDate+"T00:00:00.000Z"),metrics:normalized as Prisma.InputJsonValue,rawResponse:raw as Prisma.InputJsonValue,fetchedAt:new Date()},
  });
  await db.socialAccount.updateMany({where:{id:account.id,workspaceId:input.workspaceId,provider:"PINTEREST",status:"CONNECTED"},data:{lastValidatedAt:new Date(),lastErrorCode:null}});
- return {reportDate:startDate,windowStart:startDate,windowEnd:endDate,summary,dailyCount:daily.length};
+ return {reportDate:endDate,windowStart:startDate,windowEnd:endDate,summary,dailyCount:daily.length};
 }
