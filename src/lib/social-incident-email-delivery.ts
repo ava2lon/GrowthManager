@@ -61,6 +61,16 @@ export async function dispatchSocialIncidentEmails(batchSize=10):Promise<{claime
     });
     if(claim.count!==1)continue;
     result.claimed++;
+    const [currentIncident,currentPreference]=await Promise.all([
+      db.workspaceIncident.findFirst({where:{id:item.incidentId,workspaceId:item.workspaceId},select:{status:true}}),
+      db.workspaceNotificationPreference.findUnique({where:{workspaceId_userId:{workspaceId:item.workspaceId,userId:item.recipientUserId}},select:{emailSocialIncidents:true}}),
+    ]);
+    const expectedResolved=item.eventType==="RESOLVED";
+    if(!currentIncident||!currentPreference?.emailSocialIncidents||(expectedResolved?currentIncident.status!=="RESOLVED":currentIncident.status==="RESOLVED")){
+      await db.workspaceIncidentEmailDelivery.updateMany({where:{id:item.id,workspaceId:item.workspaceId,status:"PROCESSING",lockedAt:claimedAt},data:{status:"CANCELLED",lockedAt:null,lastErrorCode:"INCIDENT_OR_PREFERENCE_CHANGED"}});
+      result.cancelled++;
+      continue;
+    }
     const attempt=item.attempts+1;
     const heading=item.eventType==="RESOLVED"?"Social incident resolved":item.eventType==="ESCALATED"?"Social incident escalation":"Social incident detected";
     const subject="[GrowthManager] "+item.incident.severity+" — "+heading;
