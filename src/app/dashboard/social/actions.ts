@@ -36,6 +36,35 @@ export async function disconnectSocialAccount(formData: FormData) {
   });
   if (!account) throw new Error("Social account not found in the active workspace.");
 
+  // TikTok requires server-side token revocation on disconnect. Local credential
+  // removal remains authoritative even when the provider revoke endpoint is unavailable.
+  let providerRevocation: "NOT_APPLICABLE" | "REVOKED" | "FAILED" = "NOT_APPLICABLE";
+  if (account.provider === "TIKTOK" && account.credentialsEncrypted) {
+    try {
+      const credentials = decryptIntegrationCredentials(
+        account.credentialsEncrypted, context.workspace.id, account.id,
+      );
+      const accessToken = credentials.accessToken;
+      const clientKey = process.env.TIKTOK_CLIENT_KEY;
+      const clientSecret = process.env.TIKTOK_CLIENT_SECRET;
+      if (typeof accessToken !== "string" || !accessToken || !clientKey || !clientSecret) {
+        providerRevocation = "FAILED";
+      } else {
+        const body = new URLSearchParams({
+          client_key: clientKey, client_secret: clientSecret, token: accessToken,
+        });
+        const response = await fetch("https://open.tiktokapis.com/v2/oauth/revoke/", {
+          method: "POST",
+          headers: {"Content-Type": "application/x-www-form-urlencoded", "Cache-Control": "no-cache"},
+          body, cache: "no-store", redirect: "error", signal: AbortSignal.timeout(10000),
+        });
+        providerRevocation = response.ok ? "REVOKED" : "FAILED";
+      }
+    } catch {
+      providerRevocation = "FAILED";
+    }
+  }
+
   await db.$transaction(async (tx) => {
     const changed = await tx.socialAccount.updateMany({
       where: {
@@ -60,7 +89,7 @@ export async function disconnectSocialAccount(formData: FormData) {
         action: "social_account.disconnected",
         entityType: "SocialAccount",
         entityId: account.id,
-        metadata: {provider: account.provider, accountName: account.accountName, credentialDeleted: true},
+        metadata: {provider: account.provider, accountName: account.accountName, credentialDeleted: true, providerRevocation},
       },
     });
   });
