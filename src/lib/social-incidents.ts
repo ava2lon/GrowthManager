@@ -69,6 +69,7 @@ export async function synchronizeSocialIncidents():Promise<{created:number;reope
   ]);
   const signals:Signal[]=[];
   for(const account of accounts){
+    if(account.status==="DISCONNECTED")continue;
     const base={workspaceId:account.workspaceId,sourceType:"SOCIAL_ACCOUNT" as const,sourceId:account.id,socialAccountId:account.id,metadata:{provider:account.provider}};
     if(account.status==="ERROR")signals.push({...base,category:"CONNECTION_ERROR",severity:"CRITICAL",dedupeKey:"social-account:"+account.id+":CONNECTION_ERROR",message:account.accountName+" ("+account.provider+") is in a connection error state.",errorCode:safeCode(account.lastErrorCode,"PROVIDER_CONNECTION_ERROR")});
     else if(account.status!=="CONNECTED")signals.push({...base,category:"CONNECTION_STATE",severity:"WARNING",dedupeKey:"social-account:"+account.id+":CONNECTION_STATE",message:account.accountName+" ("+account.provider+") requires connection review: "+account.status+"."});
@@ -107,14 +108,14 @@ export async function synchronizeSocialIncidents():Promise<{created:number;reope
   let escalated=0;
   const escalationCutoff=new Date(now.getTime()-30*60_000);
   const dueEscalations=await db.workspaceIncident.findMany({
-    where:{status:{in:["OPEN","ACKNOWLEDGED"]},sourceType:{in:["SOCIAL_ACCOUNT","SOCIAL_PUBLISH_TARGET"]},escalatedAt:null,firstSeenAt:{lte:escalationCutoff}},
+    where:{status:"OPEN",sourceType:{in:["SOCIAL_ACCOUNT","SOCIAL_PUBLISH_TARGET"]},escalatedAt:null,firstSeenAt:{lte:escalationCutoff}},
     orderBy:{firstSeenAt:"asc"},take:500,select:{id:true,workspaceId:true,message:true,category:true,severity:true,occurrenceCount:true},
   });
   for(const incident of dueEscalations){
     await db.$transaction(async tx=>{
       const admins=await tx.workspaceMembership.findMany({where:{workspaceId:incident.workspaceId,role:{in:["OWNER","ADMIN"]}},select:{userId:true,user:{select:{email:true}}}});
       if(!admins.length)return;
-      const claimed=await tx.workspaceIncident.updateMany({where:{id:incident.id,workspaceId:incident.workspaceId,status:{in:["OPEN","ACKNOWLEDGED"]},escalatedAt:null},data:{escalatedAt:now}});
+      const claimed=await tx.workspaceIncident.updateMany({where:{id:incident.id,workspaceId:incident.workspaceId,status:"OPEN",escalatedAt:null},data:{escalatedAt:now}});
       if(!claimed.count)return;
       const prefs=await tx.workspaceNotificationPreference.findMany({where:{workspaceId:incident.workspaceId,userId:{in:admins.map(member=>member.userId)}},select:{userId:true,inAppSocialIncidents:true,emailSocialIncidents:true}});
       const byUser=new Map(prefs.map(item=>[item.userId,item]));
