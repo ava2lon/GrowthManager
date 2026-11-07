@@ -653,7 +653,8 @@ export async function publishLinkedInDraft(formData:FormData){
  const result=await publishLinkedInTarget({targetId,workspaceId:context.workspace.id,actorUserId:context.userId,allowedStatuses:["DRAFT"]});
  revalidatePath("/dashboard/social");
  if(result.status==="PROCESSING"){revalidatePath("/dashboard/social");return;}
-  if(result.status!=="PUBLISHED")throw new Error(result.status==="UNKNOWN"?"LinkedIn's response could not be confirmed. Verify the account's posts before attempting another publication.":result.status==="SKIPPED"?"This LinkedIn draft is already processing or is no longer eligible.":result.errorCode==="LINKEDIN_REAUTHORIZATION_REQUIRED"?"LinkedIn authorization expired. Reconnect the account.":result.errorCode==="LINKEDIN_ORGANIZATION_ROLE_REVOKED"?"The LinkedIn member no longer has an eligible Page role. Reconnect or restore Page access.":result.errorCode==="LINKEDIN_PERMISSION_DENIED"?"LinkedIn denied publishing. Verify the app product access and account permissions.":"LinkedIn rejected the post or its account is not eligible.");
+  if(result.status==="PROCESSING"){revalidatePath("/dashboard/social");return;}
+ if(result.status!=="PUBLISHED")throw new Error(result.status==="UNKNOWN"?"LinkedIn's response could not be confirmed. Verify the account's posts before attempting another publication.":result.status==="SKIPPED"?"This LinkedIn draft is already processing or is no longer eligible.":result.errorCode==="LINKEDIN_REAUTHORIZATION_REQUIRED"?"LinkedIn authorization expired. Reconnect the account.":result.errorCode==="LINKEDIN_ORGANIZATION_ROLE_REVOKED"?"The LinkedIn member no longer has an eligible Page role. Reconnect or restore Page access.":result.errorCode==="LINKEDIN_PERMISSION_DENIED"?"LinkedIn denied publishing. Verify the app product access and account permissions.":"LinkedIn rejected the post or its account is not eligible.");
 }
 
 export async function checkLinkedInAccountHealth(formData:FormData){
@@ -1552,7 +1553,7 @@ export async function retryXPublish(formData:FormData){
   const hasMedia=await db.contentPostMedia.count({where:{workspaceId:context.workspace.id,contentPostId:target.contentPostId}});
   if(hasMedia&&!target.socialAccount.scopes.includes("media.write"))throw new Error("Reconnect X with media.write permission before retrying.");
  await db.$transaction(async tx=>{
-  const changed=await tx.socialPostTarget.updateMany({where:{id:target.id,workspaceId:context.workspace.id,provider:"X",status:"FAILED",errorCode:target.errorCode},data:{status:"DRAFT",providerPostId:null,errorCode:null,publishedAt:null}});
+  const changed=await tx.socialPostTarget.updateMany({where:{id:target.id,workspaceId:context.workspace.id,provider:"X",status:"FAILED",errorCode:target.errorCode},data:{status:"DRAFT",providerPostId:null,errorCode:null,publishedAt:null,uploadMetadata:{},uploadOffset:null,uploadTotalBytes:null,nextCheckAt:null}});
   if(changed.count!==1)throw new Error("This X target changed concurrently. Refresh and retry.");
   await tx.contentPost.updateMany({where:{id:target.contentPostId,workspaceId:context.workspace.id,status:"FAILED"},data:{status:"DRAFT",publishedAt:null}});
   await tx.activityLog.create({data:{workspaceId:context.workspace.id,userId:context.userId,action:"social_post.retry_authorized",entityType:"ContentPost",entityId:target.contentPostId,metadata:{provider:"X",targetId:target.id,previousErrorCode:target.errorCode}}});
