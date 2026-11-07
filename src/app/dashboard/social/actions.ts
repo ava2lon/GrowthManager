@@ -652,8 +652,6 @@ export async function publishLinkedInDraft(formData:FormData){
  await enforcePublishLimit(context.workspace.id,context.userId);
  const result=await publishLinkedInTarget({targetId,workspaceId:context.workspace.id,actorUserId:context.userId,allowedStatuses:["DRAFT"]});
  revalidatePath("/dashboard/social");
- if(result.status==="PROCESSING"){revalidatePath("/dashboard/social");return;}
-  if(result.status==="PROCESSING"){revalidatePath("/dashboard/social");return;}
  if(result.status!=="PUBLISHED")throw new Error(result.status==="UNKNOWN"?"LinkedIn's response could not be confirmed. Verify the account's posts before attempting another publication.":result.status==="SKIPPED"?"This LinkedIn draft is already processing or is no longer eligible.":result.errorCode==="LINKEDIN_REAUTHORIZATION_REQUIRED"?"LinkedIn authorization expired. Reconnect the account.":result.errorCode==="LINKEDIN_ORGANIZATION_ROLE_REVOKED"?"The LinkedIn member no longer has an eligible Page role. Reconnect or restore Page access.":result.errorCode==="LINKEDIN_PERMISSION_DENIED"?"LinkedIn denied publishing. Verify the app product access and account permissions.":"LinkedIn rejected the post or its account is not eligible.");
 }
 
