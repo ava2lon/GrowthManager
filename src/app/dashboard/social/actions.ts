@@ -1328,3 +1328,20 @@ export async function publishPinterestDraft(formData:FormData){
  if(result.status==="SKIPPED")throw new Error("This Pinterest target is no longer a publishable draft. Refresh the page.");
  return result;
 }
+
+const RETRYABLE_PINTEREST_ERRORS=new Set(["PINTEREST_REAUTHORIZATION_REQUIRED","PINTEREST_REFRESH_UNAVAILABLE","PINTEREST_REFRESH_REJECTED","PINTEREST_AUTH_FAILED","PINTEREST_PERMISSION_DENIED","PINTEREST_RATE_LIMITED","PINTEREST_PUBLISH_REJECTED","PINTEREST_BOARD_NOT_FOUND","PINTEREST_IMAGE_INVALID","PINTEREST_PIN_METADATA_INVALID","PINTEREST_BOARD_NOT_DISCOVERED","PINTEREST_MEDIA_SIGNING_FAILED","PINTEREST_MEDIA_STORAGE_MISMATCH","PINTEREST_REQUIRED_SCOPE_MISSING"]);
+export async function retryPinterestPublish(formData:FormData){
+ const context=await requireWorkspaceRole("MEMBER"),targetId=String(formData.get("targetId")??"").trim();
+ if(!targetId||targetId.length>128)throw new Error("Invalid Pinterest publishing target.");
+ await enforceSocialRateLimit(context.workspace.id,context.userId,"publish");
+ const target=await db.socialPostTarget.findFirst({where:{id:targetId,workspaceId:context.workspace.id,provider:"PINTEREST",status:"FAILED"},select:{id:true,contentPostId:true,errorCode:true,socialAccount:{select:{id:true,status:true,scopes:true}}}});
+ if(!target||!RETRYABLE_PINTEREST_ERRORS.has(target.errorCode??""))throw new Error("This Pinterest failure is not eligible for a safe retry. Unknown publishing outcomes must be verified on Pinterest and are never retried.");
+ if(target.socialAccount.status!=="CONNECTED"||!["user_accounts:read","boards:read","pins:write"].every(scope=>target.socialAccount.scopes.includes(scope)))throw new Error("Reconnect Pinterest and restore the required permissions before retrying.");
+ await db.$transaction(async tx=>{
+  const changed=await tx.socialPostTarget.updateMany({where:{id:target.id,workspaceId:context.workspace.id,provider:"PINTEREST",status:"FAILED",errorCode:target.errorCode},data:{status:"DRAFT",providerPostId:null,errorCode:null,publishedAt:null}});
+  if(changed.count!==1)throw new Error("This Pinterest target changed concurrently. Refresh and retry.");
+  await tx.contentPost.updateMany({where:{id:target.contentPostId,workspaceId:context.workspace.id,status:"FAILED"},data:{status:"DRAFT",publishedAt:null}});
+  await tx.activityLog.create({data:{workspaceId:context.workspace.id,userId:context.userId,action:"social_post.retry_authorized",entityType:"ContentPost",entityId:target.contentPostId,metadata:{provider:"PINTEREST",targetId:target.id,previousErrorCode:target.errorCode}}});
+ });
+ revalidatePath("/dashboard/social");
+}
