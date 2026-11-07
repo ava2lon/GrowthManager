@@ -85,6 +85,8 @@ Only workspace ADMIN/OWNER roles can save or read integration credentials; only 
 
 The Resend integration supports API-key validation and manual health checks. The health check decrypts credentials only on the server, calls the fixed Resend domains endpoint with a 10-second timeout, and never returns or logs the API key. Checks are workspace-admin-only and rate-limited through Upstash Redis.
 
+Content-review assignment and decision emails use the platform-level Resend configuration in `RESEND_API_KEY` and `RESEND_FROM_EMAIL`. Configure a Resend webhook for `/api/webhooks/resend` and set its signing secret as `RESEND_WEBHOOK_SECRET` to record delivered, delayed, bounced, complained, and failed outcomes. The authenticated `/api/cron/content-review-emails` worker is invoked every five minutes by GitHub Actions. Review email records are queued transactionally with their in-app notification; delivery retries use a stable idempotency key and stop after bounded attempts. Add `RESEND_WEBHOOK_SECRET` to the Vercel production environment and GitHub Actions invokes the worker using the existing `GROWTHMANAGER_CRON_SECRET` secret.
+
 Integration records store:
 - `lastValidatedAt`: timestamp of the most recent successful provider validation.
 - `lastErrorAt`: timestamp of the most recent failed health check.
