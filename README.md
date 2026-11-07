@@ -180,3 +180,15 @@ Set `YOUTUBE_CLIENT_ID`, `YOUTUBE_CLIENT_SECRET`, and `YOUTUBE_REDIRECT_URI` in 
 Google may require OAuth consent-screen configuration and verification depending on the audience and requested scopes. YouTube Data API quota is project-scoped; review quota and API compliance before enabling production publishing.
 
 YouTube channel credentials are refreshed server-side through Google's OAuth token endpoint when the access token is near expiry. The refresh helper retains the long-lived refresh token, encrypts the replacement access token, and uses a conditional update to avoid overwriting concurrent refreshes. Workspace administrators can run **Check health** from the Social Media account inventory; the action verifies the connected channel identity, records a sanitized audit event, and only moves the channel to `ERROR` for definitive authorization, scope, or identity failures. Transient API/network failures do not automatically disconnect a channel.
+
+## YouTube resumable video publishing
+
+The Social Media workspace now supports YouTube video drafts and resumable uploads. A connected channel with the `youtube.upload` scope can create a draft with title, description, category ID, tags, and privacy (private by default). The draft must contain one READY MP4 or MOV asset from the same workspace and brand; the current media-library upload ceiling is 100 MB.
+
+Starting an upload creates a YouTube resumable session and stores its session URI encrypted with workspace/target-bound AES-GCM associated data. The background social-publishing worker reconciles the authoritative byte offset with YouTube before sending each 8 MiB range from private Supabase Storage. Network interruptions are reconciled from the provider session rather than blindly retransmitting bytes. Completed uploads persist the YouTube video ID and mark the publishing target as published. The session URI is cleared after completion or terminal failure.
+
+The worker uses the existing protected `/api/cron/social-publishing` endpoint and GitHub Actions schedule. Configure `CRON_SECRET` in Vercel and the matching `GROWTHMANAGER_CRON_SECRET` repository Actions secret before expecting background chunks to run. Each worker run processes up to 10 due YouTube targets. No video bytes are exposed to the browser.
+
+**Database migration required:** `prisma/migrations/20261107180000_youtube_resumable_upload/migration.sql`. The migration is committed but has not been applied. Apply it only after the GrowthManager Supabase database environment is configured and confirmed.
+
+Before enabling production uploads, configure YouTube Data API v3 and complete the applicable Google OAuth consent-screen verification. Google's API quota and unverified-project upload restrictions can affect whether uploaded videos may be public; validate the project in Google Cloud before enabling public publishing. The current composer defaults to private visibility. Scheduled publishing, thumbnails, captions, and channel analytics are not yet implemented.
