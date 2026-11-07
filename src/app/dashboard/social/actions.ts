@@ -1005,23 +1005,28 @@ export async function rescheduleFacebookPost(formData: FormData) {
   const scheduledAtRaw = String(formData.get("scheduledAt") ?? "").trim();
   if (!contentPostId || contentPostId.length > 128 ||
       !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(scheduledAtRaw)) {
-    throw new Error("Choose a valid calendar date and time.");
+    throw new Error("Choose a valid UTC calendar date and time.");
   }
   const scheduledAt = new Date(scheduledAtRaw + ":00Z");
-  if (!Number.isFinite(scheduledAt.getTime()) || scheduledAt.getTime() < Date.now() + 60_000 ||
-      scheduledAt.getTime() > Date.now() + 365 * 24 * 60 * 60_000) {
-    throw new Error("Rescheduled time must be at least one minute in the future and within one year.");
+  const now = Date.now();
+  if (!Number.isFinite(scheduledAt.getTime()) || scheduledAt.getTime() < now + 60_000 ||
+      scheduledAt.getTime() > now + 365 * 24 * 60 * 60_000) {
+    throw new Error("Rescheduled time must be at least one minute in the future and within one year (UTC).");
   }
+  await enforceSocialRateLimit(context.workspace.id, context.userId, "publish");
   await db.$transaction(async (tx) => {
     const post = await tx.contentPost.findFirst({
       where: {id: contentPostId, workspaceId: context.workspace.id, status: "SCHEDULED"},
       select: {id: true, scheduledAt: true},
     });
     if (!post) throw new Error("This scheduled post is no longer available.");
-    const scheduledTargets = await tx.socialPostTarget.count({
-      where: {workspaceId: context.workspace.id, contentPostId: post.id, provider: "FACEBOOK", status: "SCHEDULED"},
+    const scheduledTargets = await tx.socialPostTarget.findMany({
+      where: {workspaceId: context.workspace.id, contentPostId: post.id, status: "SCHEDULED"},
+      select: {id: true, provider: true},
     });
-    if (scheduledTargets < 1) throw new Error("This post has no scheduled Facebook targets.");
+    if (scheduledTargets.length < 1 || scheduledTargets.some((target) => target.provider !== "FACEBOOK")) {
+      throw new Error("Rescheduling is limited to posts whose pending destinations are all Facebook Pages.");
+    }
     const updated = await tx.contentPost.updateMany({
       where: {id: post.id, workspaceId: context.workspace.id, status: "SCHEDULED", scheduledAt: post.scheduledAt},
       data: {scheduledAt},
@@ -1030,7 +1035,7 @@ export async function rescheduleFacebookPost(formData: FormData) {
     await tx.activityLog.create({data: {
       workspaceId: context.workspace.id, userId: context.userId,
       action: "social_post.rescheduled", entityType: "ContentPost", entityId: post.id,
-      metadata: {previousScheduledAt: post.scheduledAt?.toISOString() ?? null, scheduledAt: scheduledAt.toISOString(), scheduledTargetCount: scheduledTargets},
+      metadata: {previousScheduledAt: post.scheduledAt?.toISOString() ?? null, scheduledAt: scheduledAt.toISOString(), scheduledTargetCount: scheduledTargets.length, provider: "FACEBOOK"},
     }});
   });
   revalidatePath("/dashboard/social");
@@ -1058,6 +1063,7 @@ export async function cancelFacebookSchedule(formData: FormData) {
   const context = await requireWorkspaceRole("MEMBER");
   const targetId = String(formData.get("targetId") ?? "").trim();
   if (!targetId || targetId.length > 128) throw new Error("Invalid publishing target.");
+  await enforceSocialRateLimit(context.workspace.id, context.userId, "publish");
   await db.$transaction(async tx => {
     const target = await tx.socialPostTarget.findFirst({
       where:{id:targetId,workspaceId:context.workspace.id,provider:{in:["FACEBOOK","INSTAGRAM"]},status:"SCHEDULED"},
