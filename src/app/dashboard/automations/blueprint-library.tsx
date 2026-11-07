@@ -1,12 +1,12 @@
 import {db} from "@/lib/db";
 import {requireWorkspaceContext} from "@/lib/workspace";
-import {createAutomationBlueprint,deleteAutomationBlueprint} from "./actions";
+import {createAutomationBlueprint,deleteAutomationBlueprint,provisionAutomationBlueprint} from "./actions";
 import {automationBlueprintTemplates} from "./templates";
 
 export default async function AutomationBlueprintLibrary(){
  const context=await requireWorkspaceContext();
  const canManage=["OWNER","ADMIN"].includes(context.membership.role);
- const saved=await db.automation.findMany({where:{workspaceId:context.workspace.id},orderBy:{createdAt:"desc"},take:50,select:{id:true,name:true,description:true,enabled:true,createdAt:true}});
+ const saved=await db.automation.findMany({where:{workspaceId:context.workspace.id},orderBy:{createdAt:"desc"},take:50,select:{id:true,name:true,description:true,enabled:true,createdAt:true,definition:true}});
  const savedNames=new Set(saved.map(item=>item.name));
  return <div className="space-y-5">
   <section className="rounded-2xl border border-slate-200 bg-white p-5 sm:p-6">
@@ -24,8 +24,14 @@ export default async function AutomationBlueprintLibrary(){
   </section>
   <section className="rounded-2xl border border-slate-200 bg-white p-5 sm:p-6">
    <div className="flex items-center justify-between gap-3"><div><h2 className="font-semibold text-slate-900">Workspace automation registry</h2><p className="mt-1 text-xs text-slate-500">Saved blueprints and automation records for this workspace.</p></div><span className="rounded-full bg-slate-100 px-3 py-1 text-xs text-slate-600">{saved.length} records</span></div>
-   {saved.length===0?<p className="mt-4 rounded-xl border border-dashed border-slate-200 p-5 text-center text-sm text-slate-500">No workspace automation blueprints saved yet.</p>:<div className="mt-4 divide-y divide-slate-100">{saved.map(item=><div key={item.id} className="flex flex-wrap items-center justify-between gap-3 py-3"><div className="min-w-0"><p className="text-sm font-semibold text-slate-800">{item.name}</p><p className="mt-1 text-xs text-slate-500">{item.description??"No description"} · Saved {item.createdAt.toLocaleDateString()} · {item.enabled?"Enabled record":"Planning draft"}</p></div>{canManage&&!item.enabled&&<form action={deleteAutomationBlueprint}><input type="hidden" name="automationId" value={item.id}/><button className="rounded-lg border border-rose-200 px-3 py-2 text-xs font-semibold text-rose-700 hover:bg-rose-50">Remove</button></form>}</div>)}</div>}
+   {saved.length===0?<p className="mt-4 rounded-xl border border-dashed border-slate-200 p-5 text-center text-sm text-slate-500">No workspace automation blueprints saved yet.</p>:<div className="mt-4 divide-y divide-slate-100">{saved.map(item=>{
+    const definition=item.definition&&typeof item.definition==="object"&&!Array.isArray(item.definition)?item.definition as Record<string,unknown>:{};
+    const workflowId=typeof definition.n8nWorkflowId==="string"?definition.n8nWorkflowId:null;
+    const provisioning=typeof definition.provisioningStatus==="string"?definition.provisioningStatus:"NOT_PROVISIONED";
+    const canProvision=definition.kind==="GROWTHMANAGER_AUTOMATION_BLUEPRINT"&&!workflowId&&provisioning!=="PROVISIONING"&&provisioning!=="CREATE_OUTCOME_UNKNOWN";
+    return <div key={item.id} className="flex flex-wrap items-center justify-between gap-3 py-3"><div className="min-w-0"><p className="text-sm font-semibold text-slate-800">{item.name}</p><p className="mt-1 text-xs text-slate-500">{item.description??"No description"} · Saved {item.createdAt.toLocaleDateString()} · {item.enabled?"Enabled record":"Planning draft"}</p>{workflowId&&<p className="mt-1 text-xs text-emerald-700">n8n workflow ID: {workflowId} · {provisioning.replaceAll("_"," ").toLowerCase()}</p>}{provisioning==="CREATE_OUTCOME_UNKNOWN"&&<p className="mt-1 text-xs text-amber-700">Creation outcome unknown. Check n8n before retrying.</p>}{provisioning==="CREATE_FAILED"&&<p className="mt-1 text-xs text-rose-700">Last provisioning attempt failed. You can retry.</p>}</div><div className="flex flex-wrap gap-2">{canManage&&canProvision&&<form action={provisionAutomationBlueprint}><input type="hidden" name="automationId" value={item.id}/><button className="rounded-lg bg-indigo-600 px-3 py-2 text-xs font-semibold text-white hover:bg-indigo-700">Create inactive n8n workflow</button></form>}{canManage&&!item.enabled&&!workflowId&&provisioning!=="PROVISIONING"&&provisioning!=="CREATE_OUTCOME_UNKNOWN"&&<form action={deleteAutomationBlueprint}><input type="hidden" name="automationId" value={item.id}/><button className="rounded-lg border border-rose-200 px-3 py-2 text-xs font-semibold text-rose-700 hover:bg-rose-50">Remove</button></form>}</div></div>;
+   })}</div>}
   </section>
-  <p className="text-[11px] leading-5 text-slate-400">Important: saving a blueprint creates a workspace-scoped planning record only. It does not create, import, run, or activate an n8n workflow. Live workflow activation and execution retry remain available under Integrations after connecting n8n.</p>
+  <p className="text-[11px] leading-5 text-slate-400">Provisioning creates a real n8n starter scaffold containing a manual trigger and implementation notes. It remains inactive and does not implement the listed business steps automatically. Configure the required nodes and credentials, test the workflow, then activate it from Integrations. An uncertain creation result is deliberately blocked from automatic retry to avoid duplicate workflows.</p>
  </div>;
 }
