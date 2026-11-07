@@ -1,6 +1,7 @@
 import {requireWorkspaceContext} from "@/lib/workspace";
 import {db} from "@/lib/db";
 import {ContentStrategist} from "./content-strategist";
+import {ContentProductionStudio} from "./content-production-studio";
 
 export default async function AiPage() {
   const {workspace} = await requireWorkspaceContext();
@@ -26,11 +27,14 @@ export default async function AiPage() {
   ]);
 
   return (
-    <ContentStrategist
+    <div className="space-y-6">
+      <ContentProductionStudio brands={brands.map(({id,name})=>({id,name}))} campaigns={campaigns.map(({id,name,brandId})=>({id,name,brandId}))} />
+      <ContentStrategist
       workspaceName={workspace.name}
       brands={brands}
       accounts={accounts}
       campaigns={campaigns}
-    />
+      />
+    </div>
   );
 }
