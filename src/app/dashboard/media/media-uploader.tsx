@@ -13,10 +13,39 @@ export function MediaUploader({brands}:{brands:BrandOption[]}) {
   const [message,setMessage]=useState("");
   const [error,setError]=useState("");
 
+  async function readMediaMetadata(file:File):Promise<{width:number;height:number;durationMs:number|null}> {
+    const url=URL.createObjectURL(file);
+    try {
+      if(file.type.startsWith("video/")) {
+        const video=document.createElement("video");
+        video.preload="metadata";
+        video.muted=true;
+        video.src=url;
+        await new Promise<void>((resolve,reject)=>{
+          video.onloadedmetadata=()=>resolve();
+          video.onerror=()=>reject(new Error("The selected video metadata could not be read."));
+        });
+        const width=video.videoWidth,height=video.videoHeight,durationMs=Math.round(video.duration*1000);
+        if(!Number.isSafeInteger(width)||!Number.isSafeInteger(height)||width<1||height<1||
+          !Number.isSafeInteger(durationMs)||durationMs<3000||durationMs>900000||width>1920||height>1920) {
+          throw new Error("Instagram Reels require a 3-second to 15-minute video with dimensions no larger than 1920 × 1920.");
+        }
+        return {width,height,durationMs};
+      }
+      const image=new Image();
+      image.src=url;
+      await image.decode();
+      return {width:image.naturalWidth,height:image.naturalHeight,durationMs:null};
+    } finally {
+      URL.revokeObjectURL(url);
+    }
+  }
+
   async function upload(file?:File) {
     if(!file||busy)return;
     setBusy(true);setMessage("");setError("");
     try {
+      const metadata=await readMediaMetadata(file);
       const init=await fetch("/api/media/upload",{
         method:"POST",headers:{"Content-Type":"application/json"},
         body:JSON.stringify({fileName:file.name,mimeType:file.type,sizeBytes:file.size,brandId:brandId||null}),
@@ -31,7 +60,7 @@ export function MediaUploader({brands}:{brands:BrandOption[]}) {
       if(!uploaded.ok)throw new Error("Storage rejected the upload. Check the file format and size, then retry.");
       const complete=await fetch("/api/media/complete",{
         method:"POST",headers:{"Content-Type":"application/json"},
-        body:JSON.stringify({assetId:initBody.assetId}),
+        body:JSON.stringify({assetId:initBody.assetId,...metadata}),
       });
       const completeBody=await complete.json().catch(()=>null);
       if(!complete.ok)throw new Error(completeBody?.error||"Upload verification failed.");
