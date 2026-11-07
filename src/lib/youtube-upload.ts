@@ -165,7 +165,8 @@ export async function processYouTubeUploadTarget(input: {targetId: string; works
       socialAccount: {select: {id: true, workspaceId: true, brandId: true, status: true, credentialsEncrypted: true}},
     },
   });
-  if (!target || !target.uploadSessionEncrypted || !target.uploadTotalBytes) return {status: "SKIPPED" as const};
+  if (!target || !target.uploadTotalBytes || (target.status === "PUBLISHING" && !target.uploadSessionEncrypted) ||
+      (target.status === "PROCESSING" && !target.providerPostId)) return {status: "SKIPPED" as const};
   try {
     if (target.contentPost.workspaceId !== input.workspaceId || target.socialAccount.workspaceId !== input.workspaceId ||
         target.contentPost.brandId !== target.socialAccount.brandId || target.socialAccount.status !== "CONNECTED" ||
@@ -291,7 +292,7 @@ export async function processYouTubeUploadTarget(input: {targetId: string; works
     throw new Error("YOUTUBE_CHUNK_UPLOAD_FAILED");
   } catch (error) {
     const code = error instanceof Error ? error.message : "YOUTUBE_UPLOAD_FAILED";
-    if (["YOUTUBE_REFRESH_UNAVAILABLE", "YOUTUBE_PROVIDER_UNAVAILABLE", "YOUTUBE_UPLOAD_COMPLETION_UNCERTAIN"].includes(code) ||
+    if (["YOUTUBE_REFRESH_UNAVAILABLE", "YOUTUBE_PROVIDER_UNAVAILABLE", "YOUTUBE_UPLOAD_COMPLETION_UNCERTAIN", "YOUTUBE_VIDEO_STATUS_UNKNOWN"].includes(code) ||
         error instanceof TypeError || (error instanceof Error && error.name === "AbortError")) {
       // A transport failure can happen after Google committed bytes. Reconcile from the session URI next run.
       await defer();
@@ -302,7 +303,7 @@ export async function processYouTubeUploadTarget(input: {targetId: string; works
 
   async function defer() {
     await db.socialPostTarget.updateMany({
-      where: {id: input.targetId, workspaceId: input.workspaceId, provider: "YOUTUBE", status: "PUBLISHING"},
+      where: {id: input.targetId, workspaceId: input.workspaceId, provider: "YOUTUBE", status: {in: ["PUBLISHING", "PROCESSING"]}},
       data: {nextCheckAt: new Date(Date.now() + 5 * 60_000)},
     });
   }
