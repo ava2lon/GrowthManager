@@ -7,7 +7,7 @@ import {consumeRateLimit,getClientIp} from "@/lib/rate-limit";
 export const runtime="nodejs";export const dynamic="force-dynamic";
 const COOKIE="gm_linkedin_oauth_state";
 const MEMBER_SCOPES=["openid","profile","w_member_social"];
-const ORGANIZATION_SCOPES=["w_organization_social","r_organization_admin"];
+const ORGANIZATION_SCOPES=["w_organization_social","r_organization_admin","rw_organization_admin"];
 function sign(value:string){const secret=process.env.AUTH_SECRET;if(!secret||secret.length<32)throw new Error("OAuth state signing is unavailable.");return createHmac("sha256",secret).update(value).digest("base64url")}
 export async function GET(request:Request){
  const session=await auth();if(!session?.user?.id)return NextResponse.redirect(new URL("/sign-in",request.url));
