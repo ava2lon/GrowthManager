@@ -1015,6 +1015,66 @@ export async function publishInstagramDraft(formData: FormData) {
   }
 }
 
+export async function createYouTubeDraft(formData: FormData) {
+  const context = await requireWorkspaceRole("MEMBER");
+  const accountId = String(formData.get("accountId") ?? "").trim();
+  const mediaAssetId = String(formData.get("mediaAssetId") ?? "").trim();
+  const title = String(formData.get("title") ?? "").trim();
+  const description = String(formData.get("description") ?? "").trim();
+  const privacyStatus = String(formData.get("privacyStatus") ?? "private");
+  const categoryId = String(formData.get("categoryId") ?? "22").trim();
+  const tags = String(formData.get("tags") ?? "").split(",").map(value => value.trim()).filter(Boolean);
+  if (!accountId || accountId.length > 128 || !mediaAssetId || mediaAssetId.length > 128 ||
+      !title || title.length > 100 || description.length > 5000 ||
+      !["private", "unlisted", "public"].includes(privacyStatus) ||
+      !/^\\d{1,3}$/.test(categoryId) || tags.length > 20 || tags.some(tag => tag.length > 30)) {
+    throw new Error("Check the YouTube title, description, category, tags, privacy, account and video.");
+  }
+  const account = await db.socialAccount.findFirst({
+    where: {id: accountId, workspaceId: context.workspace.id, provider: "YOUTUBE", status: "CONNECTED"},
+    select: {id: true, brandId: true, scopes: true},
+  });
+  if (!account || !account.scopes.includes("https://www.googleapis.com/auth/youtube.upload")) {
+    throw new Error("Select a connected YouTube channel with youtube.upload permission.");
+  }
+  const brand = await db.brand.findFirst({
+    where: {id: account.brandId, workspaceId: context.workspace.id, status: "ACTIVE"},
+    select: {id: true},
+  });
+  if (!brand) throw new Error("The YouTube channel must belong to an active brand.");
+  const asset = await db.mediaAsset.findFirst({
+    where: {id: mediaAssetId, workspaceId: context.workspace.id, status: "READY",
+      mimeType: {in: ["video/mp4", "video/quicktime"]}, OR: [{brandId: brand.id}, {brandId: null}]},
+    select: {id: true, sizeBytes: true},
+  });
+  if (!asset || Number(asset.sizeBytes) < 1 || Number(asset.sizeBytes) > 100 * 1024 * 1024) {
+    throw new Error("Select one ready MP4 or MOV video no larger than 100 MB.");
+  }
+  const metadata = {title, description, privacyStatus, categoryId, tags};
+  const post = await db.$transaction(async tx => {
+    const created = await tx.contentPost.create({
+      data: {workspaceId: context.workspace.id, brandId: brand.id, title, body: description, status: "DRAFT"},
+      select: {id: true},
+    });
+    const target = await tx.socialPostTarget.create({
+      data: {workspaceId: context.workspace.id, contentPostId: created.id, socialAccountId: account.id,
+        provider: "YOUTUBE", status: "DRAFT", uploadMetadata: metadata},
+      select: {id: true},
+    });
+    await tx.contentPostMedia.create({
+      data: {workspaceId: context.workspace.id, contentPostId: created.id, mediaAssetId: asset.id, position: 0},
+    });
+    await tx.activityLog.create({
+      data: {workspaceId: context.workspace.id, userId: context.userId, action: "social_post.draft_created",
+        entityType: "ContentPost", entityId: created.id,
+        metadata: {provider: "YOUTUBE", targetId: target.id, privacyStatus, mediaAssetCount: 1}},
+    });
+    return created;
+  });
+  revalidatePath("/dashboard/social");
+  return post.id;
+}
+
 export async function createTikTokDraft(formData:FormData){
   const context=await requireWorkspaceRole("MEMBER");
   const accountId=String(formData.get("accountId")??"").trim();
