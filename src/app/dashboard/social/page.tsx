@@ -4,7 +4,7 @@ import {YouTubeUploadButton} from "./youtube-upload-button";
 import {requireWorkspaceContext} from "@/lib/workspace";
 import {db} from "@/lib/db";
 import {socialProviders} from "@/lib/integration-providers";
-import {checkSocialAccountHealth, checkTikTokAccountHealth, checkYouTubeAccountHealth, checkLinkedInAccountHealth, checkPinterestAccountHealth, loadMorePinterestBoards, cancelPinterestSchedule, reschedulePinterestPin, createPinterestDraft, publishPinterestDraft, retryPinterestPublish, refreshPinterestAnalytics, refreshPinterestPinAnalyticsAction, refreshMetaAnalyticsAction, refreshLinkedInAnalyticsAction, refreshTikTokAnalyticsAction, refreshYouTubeAnalyticsAction, createLinkedInDraft, publishLinkedInDraft, retryLinkedInPublish, disconnectSocialAccount, refreshMetaAuthorization, createFacebookDraft, publishFacebookDraft, scheduleFacebookDraftTargets, createInstagramDraft, publishInstagramDraft, createInstagramReelDraft, publishInstagramReelDraft, scheduleInstagramDraftTargets, createTikTokDraft, createYouTubeDraft, retryYouTubeUpload, cancelFacebookSchedule} from "@/app/dashboard/social/actions";
+import {checkSocialAccountHealth, checkTikTokAccountHealth, checkYouTubeAccountHealth, checkLinkedInAccountHealth, checkPinterestAccountHealth, loadMorePinterestBoards, cancelPinterestSchedule, reschedulePinterestPin, createPinterestDraft, publishPinterestDraft, retryPinterestPublish, refreshPinterestAnalytics, refreshPinterestPinAnalyticsAction, refreshMetaAnalyticsAction, refreshLinkedInAnalyticsAction, refreshTikTokAnalyticsAction, refreshYouTubeAnalyticsAction, refreshXAnalyticsAction, createLinkedInDraft, publishLinkedInDraft, retryLinkedInPublish, disconnectSocialAccount, refreshMetaAuthorization, createFacebookDraft, publishFacebookDraft, scheduleFacebookDraftTargets, createInstagramDraft, publishInstagramDraft, createInstagramReelDraft, publishInstagramReelDraft, scheduleInstagramDraftTargets, createTikTokDraft, createYouTubeDraft, retryYouTubeUpload, cancelFacebookSchedule} from "@/app/dashboard/social/actions";
 
 
 
@@ -52,7 +52,7 @@ const capabilityLabels: Record<string,string> = {
   ANALYTICS:"Analytics", COMMENTS_READ:"Comments", MESSAGING:"Messaging",
 };
 
-export default async function SocialPage({searchParams}:{searchParams:Promise<{month?:string;linkedin?:string;pinterest?:string;pinterestPublish?:string;pinterestAnalytics?:string;pinterestPinAnalytics?:string;metaAnalytics?:string;linkedinAnalytics?:string;youtubeAnalytics?:string;accountId?:string;reportDate?:string}>}) {
+export default async function SocialPage({searchParams}:{searchParams:Promise<{month?:string;linkedin?:string;pinterest?:string;pinterestPublish?:string;pinterestAnalytics?:string;pinterestPinAnalytics?:string;metaAnalytics?:string;linkedinAnalytics?:string;youtubeAnalytics?:string;x?:string;xAnalytics?:string;accountId?:string;reportDate?:string}>}) {
   const params=await searchParams;
   const requestedMonth=typeof params.month==="string"&&/^\d{4}-\d{2}$/.test(params.month)?params.month:new Date().toISOString().slice(0,7);
   const monthDate=new Date(requestedMonth+"-01T00:00:00Z");
@@ -90,6 +90,10 @@ export default async function SocialPage({searchParams}:{searchParams:Promise<{m
   const tikTokAnalyticsSnapshots=tikTokAnalyticsAccounts.length?await db.tikTokAnalyticsSnapshot.findMany({where:{workspaceId:workspace.id,socialAccountId:{in:tikTokAnalyticsAccounts.map(account=>account.id)}},orderBy:{fetchedAt:"desc"},distinct:["socialAccountId","subjectType","subjectId"],take:100,select:{id:true,socialAccountId:true,subjectType:true,subjectId:true,targetId:true,reportDate:true,fetchedAt:true,metrics:true}}):[];
   const tikTokAccountSnapshots=tikTokAnalyticsSnapshots.filter(snapshot=>snapshot.subjectType==="ACCOUNT");
   const tikTokVideoSnapshots=tikTokAnalyticsSnapshots.filter(snapshot=>snapshot.subjectType==="VIDEO").slice(0,20);
+  const xAccounts=accounts.filter(account=>account.provider==="X"&&account.status==="CONNECTED"&&account.scopes.includes("tweet.read")&&account.scopes.includes("users.read"));
+  const xAnalyticsSnapshots=xAccounts.length?await db.xAnalyticsSnapshot.findMany({where:{workspaceId:workspace.id,socialAccountId:{in:xAccounts.map(account=>account.id)}},orderBy:{fetchedAt:"desc"},distinct:["socialAccountId","subjectType","subjectId"],take:100,select:{id:true,socialAccountId:true,subjectType:true,subjectId:true,targetId:true,reportDate:true,fetchedAt:true,metrics:true}}):[];
+  const xAccountSnapshots=xAnalyticsSnapshots.filter(snapshot=>snapshot.subjectType==="ACCOUNT");
+  const xPostSnapshots=xAnalyticsSnapshots.filter(snapshot=>snapshot.subjectType==="POST").slice(0,20);
   const youtubeAnalyticsScope="https://www.googleapis.com/auth/yt-analytics.readonly";
   const youtubeAnalyticsAccounts=youtubeAccounts.filter(account=>account.scopes.includes(youtubeAnalyticsScope));
   const youtubeAnalyticsSnapshots=youtubeAnalyticsAccounts.length?await db.youTubeAnalyticsSnapshot.findMany({where:{workspaceId:workspace.id,socialAccountId:{in:youtubeAnalyticsAccounts.map(account=>account.id)}},orderBy:{fetchedAt:"desc"},distinct:["socialAccountId","subjectType","subjectId"],take:100,select:{id:true,socialAccountId:true,subjectType:true,subjectId:true,targetId:true,reportDate:true,startDate:true,endDate:true,fetchedAt:true,metrics:true}}):[];
