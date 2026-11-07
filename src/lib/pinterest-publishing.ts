@@ -105,8 +105,8 @@ export async function publishPinterestTarget(input:{targetId:string;workspaceId:
  return {status,errorCode:errorCode??undefined};
  async function fail(code:string):Promise<Result>{
   await db.$transaction(async tx=>{
-   const changed=await tx.socialPostTarget.updateMany({where:{id:target.id,workspaceId:input.workspaceId,provider:"PINTEREST",status:"DRAFT"},data:{status:"FAILED",errorCode:code}});
-   if(changed.count){await tx.contentPost.updateMany({where:{id:target.contentPost.id,workspaceId:input.workspaceId,status:"DRAFT"},data:{status:"FAILED"}});await tx.activityLog.create({data:{workspaceId:input.workspaceId,userId:input.actorUserId??null,action:"social_post.publish_failed",entityType:"ContentPost",entityId:target.contentPost.id,metadata:{provider:"PINTEREST",targetId:target.id,errorCode:code,phase:"preflight"}}});}
+   const changed=await tx.socialPostTarget.updateMany({where:{id:target.id,workspaceId:input.workspaceId,provider:"PINTEREST",status:{in:allowedStatuses}},data:{status:"FAILED",errorCode:code}});
+   if(changed.count){await tx.contentPost.updateMany({where:{id:target.contentPost.id,workspaceId:input.workspaceId,status:{in:["DRAFT","SCHEDULED"]}},data:{status:"FAILED",scheduledAt:null}});await tx.activityLog.create({data:{workspaceId:input.workspaceId,userId:input.actorUserId??null,action:"social_post.publish_failed",entityType:"ContentPost",entityId:target.contentPost.id,metadata:{provider:"PINTEREST",targetId:target.id,errorCode:code,phase:"preflight"}}});}
   });return {status:"FAILED",errorCode:code};
  }
 }
