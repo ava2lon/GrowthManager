@@ -104,13 +104,17 @@ export async function assignContentReviewer(input:{postId:string;reviewerUserId:
       update:{assignedById:context.userId,status:"PENDING",feedback:null,reviewedAt:null},
       select:{id:true,updatedAt:true},
     });
-    await tx.workspaceNotification.create({data:{
+    const preferences=await tx.workspaceNotificationPreference.findUnique({
+      where:{workspaceId_userId:{workspaceId:context.workspace.id,userId:reviewerUserId}},
+      select:{inAppReviewAssigned:true,emailReviewAssigned:true},
+    });
+    if(preferences?.inAppReviewAssigned!==false) await tx.workspaceNotification.create({data:{
       workspaceId:context.workspace.id,userId:reviewerUserId,type:"CONTENT_REVIEW_ASSIGNED",
       title:"Content review assigned",
       message:"You have been assigned to review "+(post.title||"an untitled draft")+".",
       href:"/dashboard/ai",
     }});
-    await tx.contentReviewEmailDelivery.create({data:{
+    if(preferences?.emailReviewAssigned!==false) await tx.contentReviewEmailDelivery.create({data:{
       workspaceId:context.workspace.id,assignmentId:assignment.id,eventType:"CONTENT_REVIEW_ASSIGNED",
       eventKey:assignment.id+":ASSIGNED:"+assignment.updatedAt.toISOString(),
       recipientEmail:member.user.email,recipientName:member.user.name,
@@ -144,19 +148,25 @@ export async function submitContentReview(input:{assignmentId:string;decision:"A
       data:{status:decision,feedback:feedback||null,reviewedAt},
     });
     if(changed.count!==1) throw new Error("This review was already submitted. Refresh the page.");
-    if(assignment.assignedById!==context.userId) await tx.workspaceNotification.create({data:{
-      workspaceId:context.workspace.id,userId:assignment.assignedById,
-      type:decision==="APPROVED"?"CONTENT_REVIEW_COMPLETED":"CONTENT_CHANGES_REQUESTED",
-      title:decision==="APPROVED"?"Content review completed":"Changes requested",
-      message:(assignment.contentPost.title||"A content draft")+" — "+(decision==="APPROVED"?"reviewer recommends approval.":"reviewer requested changes: "+feedback),
-      href:"/dashboard/ai",
-    }});
-    if(assignment.assignedById!==context.userId) await tx.contentReviewEmailDelivery.create({data:{
-      workspaceId:context.workspace.id,assignmentId:assignment.id,
-      eventType:decision==="APPROVED"?"CONTENT_REVIEW_COMPLETED":"CONTENT_CHANGES_REQUESTED",
-      eventKey:assignment.id+":"+decision+":"+reviewedAt.toISOString(),
-      recipientEmail:assignment.assignedBy.email,recipientName:assignment.assignedBy.name,
-    }});
+    if(assignment.assignedById!==context.userId) {
+      const preferences=await tx.workspaceNotificationPreference.findUnique({
+        where:{workspaceId_userId:{workspaceId:context.workspace.id,userId:assignment.assignedById}},
+        select:{inAppReviewDecisions:true,emailReviewDecisions:true},
+      });
+      if(preferences?.inAppReviewDecisions!==false) await tx.workspaceNotification.create({data:{
+        workspaceId:context.workspace.id,userId:assignment.assignedById,
+        type:decision==="APPROVED"?"CONTENT_REVIEW_COMPLETED":"CONTENT_CHANGES_REQUESTED",
+        title:decision==="APPROVED"?"Content review completed":"Changes requested",
+        message:(assignment.contentPost.title||"A content draft")+" — "+(decision==="APPROVED"?"reviewer recommends approval.":"reviewer requested changes: "+feedback),
+        href:"/dashboard/ai",
+      }});
+      if(preferences?.emailReviewDecisions!==false) await tx.contentReviewEmailDelivery.create({data:{
+        workspaceId:context.workspace.id,assignmentId:assignment.id,
+        eventType:decision==="APPROVED"?"CONTENT_REVIEW_COMPLETED":"CONTENT_CHANGES_REQUESTED",
+        eventKey:assignment.id+":"+decision+":"+reviewedAt.toISOString(),
+        recipientEmail:assignment.assignedBy.email,recipientName:assignment.assignedBy.name,
+      }});
+    }
     await tx.activityLog.create({data:{
       workspaceId:context.workspace.id,userId:context.userId,action:decision==="APPROVED"?"content.review_recommended_approval":"content.review_changes_requested",
       entityType:"ContentReviewAssignment",entityId:assignment.id,
