@@ -9,6 +9,8 @@ import {publishFacebookTarget,publishInstagramTarget} from "@/lib/social-publish
 import {startInstagramReelTarget} from "@/lib/instagram-reels";
 import {getFreshTikTokCredentials} from "@/lib/tiktok-auth";
 import {getFreshYouTubeCredentials} from "@/lib/youtube-auth";
+import {getLinkedInCredentials,linkedinApiHeaders} from "@/lib/linkedin-auth";
+import {publishLinkedInTarget} from "@/lib/linkedin-publishing";
 
 function readMetadata(value: unknown): Record<string, unknown> {
   if (!value || typeof value !== "object" || Array.isArray(value)) return {};
@@ -591,6 +593,72 @@ async function enforcePublishLimit(workspaceId: string, userId: string) {
   if (!result.allowed || (process.env.NODE_ENV === "production" && !result.configured)) {
     throw new Error("Publishing limit reached or protection is unavailable. Try again later.");
   }
+}
+
+export async function createLinkedInDraft(formData:FormData){
+ const context=await requireWorkspaceRole("MEMBER");
+ const accountIds=[...new Set(formData.getAll("accountIds").map(v=>String(v).trim()).filter(Boolean))];
+ const body=String(formData.get("body")??"").trim();
+ if(accountIds.length<1||accountIds.length>10||accountIds.some(id=>id.length>128)||!body||body.length>3000)throw new Error("Select 1–10 LinkedIn accounts and enter post text up to 3,000 characters.");
+ const accounts=await db.socialAccount.findMany({where:{id:{in:accountIds},workspaceId:context.workspace.id,provider:"LINKEDIN",status:"CONNECTED"},select:{id:true,brandId:true,scopes:true,metadata:true}});
+ if(accounts.length!==accountIds.length||new Set(accounts.map(a=>a.brandId)).size!==1)throw new Error("Selected LinkedIn accounts must be connected and assigned to one brand.");
+ for(const account of accounts){
+  const meta=readMetadata(account.metadata),type=meta.accountType,scope=type==="ORGANIZATION"?"w_organization_social":"w_member_social";
+  if(!["MEMBER","ORGANIZATION"].includes(String(type))||!account.scopes.includes(scope))throw new Error("Every selected LinkedIn account must have its matching publishing permission.");
+  if(type==="ORGANIZATION"&&!["ADMINISTRATOR","DIRECT_SPONSORED_CONTENT_POSTER","CONTENT_ADMIN"].includes(String(meta.organizationRole)))throw new Error("An organization account is missing an eligible LinkedIn Page role.");
+ }
+ const brand=await db.brand.findFirst({where:{id:accounts[0].brandId,workspaceId:context.workspace.id,status:"ACTIVE"},select:{id:true}});
+ if(!brand)throw new Error("The selected LinkedIn accounts are not assigned to an active brand.");
+ const post=await db.$transaction(async tx=>{
+  const created=await tx.contentPost.create({data:{workspaceId:context.workspace.id,brandId:brand.id,body,status:"DRAFT"},select:{id:true}});
+  await tx.socialPostTarget.createMany({data:accounts.map(a=>({workspaceId:context.workspace.id,contentPostId:created.id,socialAccountId:a.id,provider:"LINKEDIN",status:"DRAFT"}))});
+  await tx.activityLog.create({data:{workspaceId:context.workspace.id,userId:context.userId,action:"social_post.draft_created",entityType:"ContentPost",entityId:created.id,metadata:{provider:"LINKEDIN",targetCount:accounts.length,accountIds:accounts.map(a=>a.id),mediaCount:0}}});
+  return created;
+ });
+ revalidatePath("/dashboard/social");return post.id;
+}
+
+export async function publishLinkedInDraft(formData:FormData){
+ const context=await requireWorkspaceRole("MEMBER"),targetId=String(formData.get("targetId")??"").trim();
+ if(!targetId||targetId.length>128)throw new Error("Invalid LinkedIn publishing target.");
+ await enforcePublishLimit(context.workspace.id,context.userId);
+ const result=await publishLinkedInTarget({targetId,workspaceId:context.workspace.id,actorUserId:context.userId,allowedStatuses:["DRAFT"]});
+ revalidatePath("/dashboard/social");
+ if(result.status!=="PUBLISHED")throw new Error(result.status==="UNKNOWN"?"LinkedIn's response could not be confirmed. Verify the account's posts before attempting another publication.":result.status==="SKIPPED"?"This LinkedIn draft is already processing or is no longer eligible.":result.errorCode==="LINKEDIN_REAUTHORIZATION_REQUIRED"?"LinkedIn authorization expired. Reconnect the account.":result.errorCode==="LINKEDIN_ORGANIZATION_ROLE_REVOKED"?"The LinkedIn member no longer has an eligible Page role. Reconnect or restore Page access.":result.errorCode==="LINKEDIN_PERMISSION_DENIED"?"LinkedIn denied publishing. Verify the app product access and account permissions.":"LinkedIn rejected the post or its account is not eligible.");
+}
+
+export async function checkLinkedInAccountHealth(formData:FormData){
+ const context=await requireWorkspaceRole("ADMIN"),accountId=String(formData.get("accountId")??"").trim();
+ if(!accountId||accountId.length>128)throw new Error("Invalid LinkedIn account.");
+ await enforceSocialRateLimit(context.workspace.id,context.userId,"health");
+ const account=await db.socialAccount.findFirst({where:{id:accountId,workspaceId:context.workspace.id,provider:"LINKEDIN",status:"CONNECTED"},select:{id:true,providerUserId:true,accountName:true,credentialsEncrypted:true,scopes:true,metadata:true}});
+ if(!account?.credentialsEncrypted||!account.providerUserId)throw new Error("A connected LinkedIn account with saved credentials is required.");
+ let failure:string|null=null,displayName=account.accountName;
+ try{
+  const credentials=await getLinkedInCredentials({workspaceId:context.workspace.id,accountId:account.id});
+  const meta=readMetadata(account.metadata);
+  if(meta.accountType==="MEMBER"){
+   const response=await fetch("https://api.linkedin.com/v2/userinfo",{headers:linkedinApiHeaders(credentials.accessToken),cache:"no-store",redirect:"error",signal:AbortSignal.timeout(10000)});
+   const payload=await response.json().catch(()=>null) as {sub?:string;name?:string}|null;
+   if(response.status===401||response.status===403)failure="LINKEDIN_AUTH_FAILED";
+   else if(!response.ok||!payload)failure="LINKEDIN_PROVIDER_ERROR";
+   else if(!payload.sub||"urn:li:person:"+payload.sub!==account.providerUserId)failure="LINKEDIN_ACCOUNT_MISMATCH";
+   else if(payload.name)displayName=payload.name.slice(0,255);
+  }else if(meta.accountType==="ORGANIZATION"){
+   const response=await fetch("https://api.linkedin.com/rest/organizationAcls?q=roleAssignee&state=APPROVED&count=100&start=0",{headers:linkedinApiHeaders(credentials.accessToken),cache:"no-store",redirect:"error",signal:AbortSignal.timeout(10000)});
+   const payload=await response.json().catch(()=>null) as {elements?:Array<{organization?:string;organizationTarget?:string;role?:string;state?:string}>}|null;
+   if(response.status===401||response.status===403)failure="LINKEDIN_AUTH_FAILED";
+   else if(!response.ok||!payload)failure="LINKEDIN_PROVIDER_ERROR";
+   else if(!payload.elements?.some(x=>(x.organization??x.organizationTarget)===account.providerUserId&&x.state==="APPROVED"&&["ADMINISTRATOR","DIRECT_SPONSORED_CONTENT_POSTER","CONTENT_ADMIN"].includes(x.role??"")))failure="LINKEDIN_ORGANIZATION_ROLE_REVOKED";
+  }else failure="LINKEDIN_ACCOUNT_IDENTITY_INVALID";
+ }catch(error){const code=error instanceof Error?error.message:"";failure=code==="LINKEDIN_REAUTHORIZATION_REQUIRED"?"LINKEDIN_REAUTHORIZATION_REQUIRED":code==="LINKEDIN_CREDENTIAL_DECRYPTION_FAILED"?"LINKEDIN_CREDENTIAL_DECRYPTION_FAILED":code==="LINKEDIN_NOT_CONFIGURED"?"LINKEDIN_NOT_CONFIGURED":"LINKEDIN_PROVIDER_UNAVAILABLE"}
+ const definitive=!!failure&&!["LINKEDIN_PROVIDER_ERROR","LINKEDIN_PROVIDER_UNAVAILABLE","LINKEDIN_NOT_CONFIGURED"].includes(failure);
+ await db.$transaction(async tx=>{
+  const changed=await tx.socialAccount.updateMany({where:{id:account.id,workspaceId:context.workspace.id,provider:"LINKEDIN",status:"CONNECTED",credentialsEncrypted:account.credentialsEncrypted},data:failure?{...(definitive?{status:"ERROR"}:{}),lastValidatedAt:new Date(),lastErrorCode:failure}:{accountName:displayName,status:"CONNECTED",lastValidatedAt:new Date(),lastErrorCode:null}});
+  if(changed.count!==1)throw new Error("LinkedIn account changed during the health check. Refresh and retry.");
+  await tx.activityLog.create({data:{workspaceId:context.workspace.id,userId:context.userId,action:failure?"social_account.health_check_failed":"social_account.health_check_succeeded",entityType:"SocialAccount",entityId:account.id,metadata:{provider:"LINKEDIN",errorCode:failure,authorizationStateChanged:definitive}}});
+ });
+ revalidatePath("/dashboard/social");if(failure)throw new Error(failure==="LINKEDIN_REAUTHORIZATION_REQUIRED"||failure==="LINKEDIN_AUTH_FAILED"?"LinkedIn authorization expired or was revoked. Reconnect this account.":failure==="LINKEDIN_ORGANIZATION_ROLE_REVOKED"?"The connected member no longer has an eligible role for this LinkedIn organization.":"LinkedIn could not validate this account. Retry the health check.");
 }
 
 export async function createFacebookDraft(formData: FormData) {
