@@ -325,7 +325,7 @@ export async function processYouTubeUploadTarget(input: {targetId: string; works
         data: {status: targetStatus, publishedAt: isScheduled ? null : finished, nextCheckAt: isScheduled ? scheduledAt : null, errorCode: null},
       });
       await tx.socialPublishAttempt.updateMany({
-        where: {workspaceId: input.workspaceId, targetId: input.targetId, status: "PROCESSING"},
+        where: {workspaceId: input.workspaceId, targetId: input.targetId, status: {in: ["PROCESSING", "SCHEDULED"]}},
         data: {status: isScheduled ? "SCHEDULED" : "PUBLISHED", providerPostId: videoId, finishedAt: finished},
       });
       const remaining = await tx.socialPostTarget.count({
