@@ -40,6 +40,19 @@ export default async function IncidentsPage({searchParams}:{searchParams:Promise
  const acknowledgedCount=rows.filter(row=>row.status==="ACKNOWLEDGED").length;
  const resolvedCount=rows.filter(row=>row.status==="RESOLVED").length;
  const criticalCount=rows.filter(row=>row.severity==="CRITICAL"&&row.status!=="RESOLVED").length;
+ const incidentIds=rows.map(row=>row.id);
+ const recentActivity=incidentIds.length?await db.activityLog.findMany({
+  where:{workspaceId:workspace.id,entityId:{in:incidentIds},entityType:{in:["workspace_incident","automation_alert"]}},
+  orderBy:{createdAt:"desc"},take:12,
+  select:{id:true,action:true,entityType:true,entityId:true,createdAt:true,user:{select:{name:true,email:true}}},
+ }):[];
+ const acknowledgedDurations=rows.filter(row=>row.acknowledgedAt).map(row=>Math.max(0,row.acknowledgedAt!.getTime()-row.firstSeen.getTime()));
+ const resolvedDurations=rows.filter(row=>row.resolvedAt).map(row=>Math.max(0,row.resolvedAt!.getTime()-row.firstSeen.getTime()));
+ const averageMinutes=(values:number[])=>values.length?Math.round(values.reduce((sum,value)=>sum+value,0)/values.length/60000):null;
+ const meanAcknowledgeMinutes=averageMinutes(acknowledgedDurations);
+ const meanResolveMinutes=averageMinutes(resolvedDurations);
+ const recurringCount=rows.filter(row=>row.count>1).length;
+ const recurrenceRate=rows.length?Math.round(recurringCount/rows.length*100):0;
  const canManage=membership.role==="OWNER"||membership.role==="ADMIN";
  const paramsSafe={status,severity,source};
  return <div className="space-y-6">
@@ -47,6 +60,16 @@ export default async function IncidentsPage({searchParams}:{searchParams:Promise
   <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
    {[["Open",openCount],["Acknowledged",acknowledgedCount],["Resolved",resolvedCount],["Critical active",criticalCount]].map(([label,value])=><div key={label} className="rounded-xl border border-slate-200 bg-white p-4"><p className="text-xs text-slate-500">{label}</p><p className="mt-1 text-2xl font-semibold tabular-nums text-slate-900">{value}</p></div>)}
   </div>
+  <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+   <div className="rounded-xl border border-slate-200 bg-white p-4"><p className="text-xs text-slate-500">Mean time to acknowledge</p><p className="mt-1 text-xl font-semibold text-slate-900">{meanAcknowledgeMinutes===null?"—":meanAcknowledgeMinutes+" min"}</p><p className="mt-1 text-[11px] text-slate-400">Average across loaded acknowledged incidents</p></div>
+   <div className="rounded-xl border border-slate-200 bg-white p-4"><p className="text-xs text-slate-500">Mean time to resolve</p><p className="mt-1 text-xl font-semibold text-slate-900">{meanResolveMinutes===null?"—":meanResolveMinutes+" min"}</p><p className="mt-1 text-[11px] text-slate-400">Average across loaded resolved incidents</p></div>
+   <div className="rounded-xl border border-slate-200 bg-white p-4"><p className="text-xs text-slate-500">Recurring incidents</p><p className="mt-1 text-xl font-semibold text-slate-900">{recurringCount} <span className="text-sm font-normal text-slate-500">({recurrenceRate}%)</span></p><p className="mt-1 text-[11px] text-slate-400">Records with more than one occurrence</p></div>
+   <div className="rounded-xl border border-slate-200 bg-white p-4"><p className="text-xs text-slate-500">Recent incident activity</p><p className="mt-1 text-xl font-semibold text-slate-900">{recentActivity.length}</p><p className="mt-1 text-[11px] text-slate-400">Latest audited actions in this result set</p></div>
+  </section>
+  <section className="rounded-2xl border border-slate-200 bg-white">
+   <div className="border-b border-slate-100 px-5 py-4"><h2 className="font-semibold text-slate-900">Incident activity timeline</h2><p className="mt-1 text-xs text-slate-500">Audited creation, acknowledgement, resolution and recovery events</p></div>
+   {recentActivity.length===0?<p className="p-5 text-sm text-slate-500">No audited incident actions are available for the current result set.</p>:<ol className="divide-y divide-slate-100">{recentActivity.map(event=><li key={event.id} className="flex flex-wrap items-start justify-between gap-2 px-5 py-3"><div><p className="text-sm font-medium text-slate-800">{event.action.replaceAll("."," · ").replaceAll("_"," ")}</p><p className="mt-1 text-xs text-slate-500">{event.user?.name||event.user?.email||"System"} · {event.entityType==="automation_alert"?"n8n automation":"Social incident"}</p></div><time className="text-xs text-slate-400">{event.createdAt.toLocaleString()}</time></li>)}</ol>}
+  </section>
   <section className="rounded-2xl border border-slate-200 bg-white p-4 sm:p-5">
    <div className="flex flex-wrap gap-4">
     {([["status","Status","ALL",["OPEN","ACKNOWLEDGED","RESOLVED"]],["severity","Severity","ALL",["CRITICAL","WARNING","INFO"]],["source","Source","ALL",["SOCIAL","N8N"]]] as const).map(([key,label,current,options])=><div key={key}><p className="mb-1 text-[10px] font-bold uppercase tracking-wide text-slate-400">{label}</p><div className="flex flex-wrap gap-1">{["ALL",...options].map(option=><Link key={option} href={filterLink(paramsSafe,key,option)} className={"rounded-lg px-2.5 py-1.5 text-xs font-semibold "+((paramsSafe[key]||"ALL")===option?"bg-slate-900 text-white":"border border-slate-200 text-slate-600")}>{option==="ALL"?"All":option}</Link>)}</div></div>)}
