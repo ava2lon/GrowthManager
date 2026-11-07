@@ -51,7 +51,7 @@ async function uploadPinterestVideo(asset:Asset,accessToken:string):Promise<stri
  }
  throw new Error("PINTEREST_VIDEO_PROCESSING_PENDING");
 }
-export async function publishPinterestTarget(input:{targetId:string;workspaceId:string;actorUserId:string;allowedStatuses?:Array<"DRAFT"|"SCHEDULED">}):Promise<Result>{
+export async function publishPinterestTarget(input:{targetId:string;workspaceId:string;actorUserId?:string;allowedStatuses?:Array<"DRAFT"|"SCHEDULED">}):Promise<Result>{
  const allowedStatuses=input.allowedStatuses??["DRAFT"];
  const target=await db.socialPostTarget.findFirst({where:{id:input.targetId,workspaceId:input.workspaceId,provider:"PINTEREST",status:{in:allowedStatuses}},include:{
   contentPost:{select:{id:true,workspaceId:true,brandId:true,title:true,body:true,mediaAssets:{orderBy:{position:"asc"},select:{mediaAsset:{select:{id:true,workspaceId:true,brandId:true,status:true,mimeType:true,sizeBytes:true,bucket:true,objectPath:true,originalFilename:true,width:true,height:true,durationMs:true}}}}}},
@@ -100,13 +100,13 @@ export async function publishPinterestTarget(input:{targetId:string;workspaceId:
   await tx.socialPublishAttempt.update({where:{id:claim},data:{status,providerPostId,errorCode,httpStatus,finishedAt:finished,durationMs:Math.max(0,Date.now()-started)}});
   await tx.socialPostTarget.update({where:{id:target.id},data:{status,providerPostId,errorCode,publishedAt:providerPostId?finished:null}});
   await tx.contentPost.update({where:{id:target.contentPost.id},data:{status:status==="PUBLISHED"?"PUBLISHED":status==="UNKNOWN"?"PUBLISHING":"FAILED",publishedAt:providerPostId?finished:null}});
-  await tx.activityLog.create({data:{workspaceId:input.workspaceId,userId:input.actorUserId,action:providerPostId?"social_post.published":status==="UNKNOWN"?"social_post.publish_outcome_unknown":"social_post.publish_failed",entityType:"ContentPost",entityId:target.contentPost.id,metadata:{provider:"PINTEREST",targetId:target.id,providerPostId,errorCode,httpStatus,mediaCount:assets.length,boardId,mediaType:video?"video":"image",source:"dashboard"}}});
+  await tx.activityLog.create({data:{workspaceId:input.workspaceId,userId:input.actorUserId??null,action:providerPostId?"social_post.published":status==="UNKNOWN"?"social_post.publish_outcome_unknown":"social_post.publish_failed",entityType:"ContentPost",entityId:target.contentPost.id,metadata:{provider:"PINTEREST",targetId:target.id,providerPostId,errorCode,httpStatus,mediaCount:assets.length,boardId,mediaType:video?"video":"image",source:"dashboard"}}});
  });
  return {status,errorCode:errorCode??undefined};
  async function fail(code:string):Promise<Result>{
   await db.$transaction(async tx=>{
    const changed=await tx.socialPostTarget.updateMany({where:{id:target.id,workspaceId:input.workspaceId,provider:"PINTEREST",status:"DRAFT"},data:{status:"FAILED",errorCode:code}});
-   if(changed.count){await tx.contentPost.updateMany({where:{id:target.contentPost.id,workspaceId:input.workspaceId,status:"DRAFT"},data:{status:"FAILED"}});await tx.activityLog.create({data:{workspaceId:input.workspaceId,userId:input.actorUserId,action:"social_post.publish_failed",entityType:"ContentPost",entityId:target.contentPost.id,metadata:{provider:"PINTEREST",targetId:target.id,errorCode:code,phase:"preflight"}}});}
+   if(changed.count){await tx.contentPost.updateMany({where:{id:target.contentPost.id,workspaceId:input.workspaceId,status:"DRAFT"},data:{status:"FAILED"}});await tx.activityLog.create({data:{workspaceId:input.workspaceId,userId:input.actorUserId??null,action:"social_post.publish_failed",entityType:"ContentPost",entityId:target.contentPost.id,metadata:{provider:"PINTEREST",targetId:target.id,errorCode:code,phase:"preflight"}}});}
   });return {status:"FAILED",errorCode:code};
  }
 }
