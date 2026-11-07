@@ -32,7 +32,7 @@ export async function GET(request:Request){
   const response=await fetch("https://www.linkedin.com/oauth/v2/accessToken",{method:"POST",headers:{"Content-Type":"application/x-www-form-urlencoded","Cache-Control":"no-cache"},body:new URLSearchParams({grant_type:"authorization_code",code,client_id:clientId,client_secret:clientSecret,redirect_uri:redirectUri}),cache:"no-store",redirect:"error",signal:AbortSignal.timeout(12000)});
   const token=await response.json().catch(()=>null) as {access_token?:string;expires_in?:number;scope?:string;refresh_token?:string;refresh_token_expires_in?:number}|null;
   if(!response.ok||!token?.access_token||!Number.isFinite(token.expires_in)||!token.scope)throw new Error("LINKEDIN_TOKEN_EXCHANGE_FAILED");
-  const scopes=token.scope.split(/[ ,]+/).filter(Boolean);if(!scopes.includes("openid")||!scopes.includes("profile")||!scopes.includes("w_member_social"))throw new Error("LINKEDIN_SCOPE_MISSING");
+  let scopeText=token.scope.replaceAll("+"," ");try{scopeText=decodeURIComponent(scopeText)}catch{}const scopes=scopeText.split(/[ ,]+/).filter(Boolean);if(!scopes.includes("openid")||!scopes.includes("profile")||!scopes.includes("w_member_social"))throw new Error("LINKEDIN_SCOPE_MISSING");
   const expiresAt=new Date(Date.now()+Number(token.expires_in)*1000);
   const user=await getJson("https://api.linkedin.com/v2/userinfo",token.access_token) as {sub?:string;name?:string;given_name?:string;family_name?:string};
   if(!user.sub)throw new Error("LINKEDIN_MEMBER_ID_MISSING");
