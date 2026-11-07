@@ -6,6 +6,7 @@ import {db} from "@/lib/db";
 import {consumeRateLimit} from "@/lib/rate-limit";
 import {decryptIntegrationCredentials, encryptIntegrationCredentials} from "@/lib/integration-crypto";
 import {publishFacebookTarget,publishInstagramTarget} from "@/lib/social-publishing";
+import {startInstagramReelTarget} from "@/lib/instagram-reels";
 
 function readMetadata(value: unknown): Record<string, unknown> {
   if (!value || typeof value !== "object" || Array.isArray(value)) return {};
@@ -405,6 +406,31 @@ export async function createFacebookDraft(formData: FormData) {
 }
 
 
+export async function createInstagramReelDraft(formData:FormData){
+  const context=await requireWorkspaceRole("MEMBER");
+  const accountIds=[...new Set(formData.getAll("accountIds").map(v=>String(v).trim()).filter(Boolean))];
+  const mediaAssetId=String(formData.get("mediaAssetId")??"").trim();
+  const body=String(formData.get("body")??"").trim();
+  if(accountIds.length<1||accountIds.length>10||accountIds.some(id=>id.length>128)||!mediaAssetId||mediaAssetId.length>128||!body||body.length>2200)
+    throw new Error("Select 1–10 Instagram accounts, one video, and a caption up to 2,200 characters.");
+  const accounts=await db.socialAccount.findMany({where:{id:{in:accountIds},workspaceId:context.workspace.id,provider:"INSTAGRAM",status:"CONNECTED"},select:{id:true,brandId:true,scopes:true}});
+  if(accounts.length!==accountIds.length||new Set(accounts.map(a=>a.brandId)).size!==1||accounts.some(a=>!a.scopes.includes("instagram_basic")||!a.scopes.includes("instagram_content_publish")))
+    throw new Error("Selected Instagram accounts must be connected, belong to one brand, and have publishing permissions.");
+  const brand=await db.brand.findFirst({where:{id:accounts[0].brandId,workspaceId:context.workspace.id,status:"ACTIVE"},select:{id:true}});
+  if(!brand)throw new Error("The selected Instagram accounts are not assigned to an active brand.");
+  const asset=await db.mediaAsset.findFirst({where:{id:mediaAssetId,workspaceId:context.workspace.id,status:"READY",mimeType:{in:["video/mp4","video/quicktime"]},OR:[{brandId:brand.id},{brandId:null}]},select:{id:true,sizeBytes:true,durationMs:true,width:true,height:true}});
+  if(!asset||Number(asset.sizeBytes)>100*1024*1024||!asset.durationMs||asset.durationMs<3000||asset.durationMs>900000||!asset.width||!asset.height||asset.width>1920||asset.height>1920)
+    throw new Error("Select one ready MP4/MOV video within the supported size, duration, and dimension limits.");
+  const post=await db.$transaction(async tx=>{
+    const created=await tx.contentPost.create({data:{workspaceId:context.workspace.id,brandId:brand.id,body,status:"DRAFT"},select:{id:true}});
+    await tx.socialPostTarget.createMany({data:accounts.map(a=>({workspaceId:context.workspace.id,contentPostId:created.id,socialAccountId:a.id,provider:"INSTAGRAM",status:"DRAFT"}))});
+    await tx.contentPostMedia.create({data:{workspaceId:context.workspace.id,contentPostId:created.id,mediaAssetId:asset.id,position:0}});
+    await tx.activityLog.create({data:{workspaceId:context.workspace.id,userId:context.userId,action:"social_post.draft_created",entityType:"ContentPost",entityId:created.id,metadata:{provider:"INSTAGRAM",format:"REEL",targetCount:accounts.length,mediaAssetCount:1}}});
+    return created;
+  });
+  revalidatePath("/dashboard/social");return post.id;
+}
+
 export async function createInstagramDraft(formData: FormData) {
   const context = await requireWorkspaceRole("MEMBER");
   const accountIds = [...new Set(formData.getAll("accountIds").map((value) => String(value).trim()).filter(Boolean))];
@@ -699,6 +725,16 @@ export async function cancelFacebookSchedule(formData: FormData) {
     }});
   });
   revalidatePath("/dashboard/social");
+}
+
+export async function publishInstagramReelDraft(formData:FormData){
+  const context=await requireWorkspaceRole("MEMBER");
+  const targetId=String(formData.get("targetId")??"").trim();
+  if(!targetId||targetId.length>128)throw new Error("Invalid publishing target.");
+  await enforcePublishLimit(context.workspace.id,context.userId);
+  const result=await startInstagramReelTarget({targetId,workspaceId:context.workspace.id,actorUserId:context.userId,allowedStatuses:["DRAFT"]});
+  revalidatePath("/dashboard/social");
+  if(result.status!=="PROCESSING")throw new Error(result.errorCode==="INSTAGRAM_REEL_MEDIA_CONSTRAINT"?"The video does not meet Instagram's Reels media requirements.":result.status==="UNKNOWN"?"The Meta request outcome is uncertain. Verify the Instagram account before retrying.":"The Reel could not be queued for processing.");
 }
 
 export async function publishInstagramDraft(formData: FormData) {
