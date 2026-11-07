@@ -138,7 +138,7 @@ export default async function SocialPage({searchParams}:{searchParams:Promise<{m
       <section className="rounded-2xl border border-rose-100 bg-rose-50/30 p-5 sm:p-6">
         <div><h2 className="font-semibold text-slate-900">Connect Pinterest</h2><p className="mt-1 text-sm text-slate-600">Connect a Pinterest profile, verify its identity, and discover its first 100 boards. This foundation prepares board-targeted image Pin publishing.</p></div>
         <div className="mt-4 flex flex-wrap gap-2">{brands.map(brand=><a key={brand.id} href={"/api/integrations/pinterest/connect?brandId="+encodeURIComponent(brand.id)} className="rounded-xl bg-rose-700 px-4 py-2.5 text-sm font-semibold text-white hover:bg-rose-800">Connect Pinterest · {brand.name}</a>)}{brands.length===0&&<p className="text-sm text-slate-500">Create an active brand before connecting Pinterest.</p>}</div>
-        <p className="mt-3 text-xs leading-5 text-slate-500">Requires PINTEREST_APP_ID, PINTEREST_APP_SECRET, and PINTEREST_REDIRECT_URI. Register /api/integrations/pinterest/callback exactly in the Pinterest developer app. Requested scopes: user_accounts:read, boards:read, pins:read, pins:write. Pinterest Trial access may restrict created Pins to creator-visible content.</p>
+        <p className="mt-3 text-xs leading-5 text-slate-500">Requires PINTEREST_APP_ID, PINTEREST_APP_SECRET, and PINTEREST_REDIRECT_URI. Register /api/integrations/pinterest/callback exactly in the Pinterest developer app. Requested scopes: user_accounts:read, boards:read, pins:write. Pinterest Trial access may restrict created Pins to creator-visible content.</p>
       </section>
 
       <section className="rounded-2xl border border-sky-100 bg-sky-50/40 p-5 sm:p-6">
