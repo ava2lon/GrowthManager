@@ -84,6 +84,72 @@ function isRetryable(status: number): boolean {
  * idempotency key makes an ambiguous network retry safe within Resend's
  * idempotency retention window.
  */
+/**
+ * Escalates unresolved, already-notified incidents to active workspace owners
+ * and admins after 30 minutes. The delivery unique key makes this one-time per
+ * event/recipient even when the cron runs repeatedly.
+ */
+export async function enqueueAutomationAlertEscalations(): Promise<{eventsChecked: number; deliveriesQueued: number}> {
+  const policies = await db.automationAlertPolicy.findMany({
+    where: {enabled: true, emailNotificationsEnabled: true},
+    select: {workspaceId: true},
+    take: 100,
+  });
+  let eventsChecked = 0;
+  let deliveriesQueued = 0;
+  const cutoff = new Date(Date.now() - 30 * 60_000);
+
+  for (const policy of policies) {
+    const events = await db.automationAlertEvent.findMany({
+      where: {workspaceId: policy.workspaceId, status: "OPEN", lastNotifiedAt: {lte: cutoff}},
+      select: {id: true, integrationId: true},
+      take: 100,
+    });
+    if (!events.length) continue;
+    eventsChecked += events.length;
+
+    const [resend, recipients] = await Promise.all([
+      db.integration.findFirst({
+        where: {workspaceId: policy.workspaceId, provider: "resend", status: "CONNECTED", credentialsEncrypted: {not: null}},
+        select: {id: true},
+      }),
+      db.workspaceMembership.findMany({
+        where: {workspaceId: policy.workspaceId, role: {in: ["OWNER", "ADMIN"]}},
+        select: {user: {select: {email: true}}},
+      }),
+    ]);
+    if (!resend) continue;
+    const uniqueRecipients = [...new Set(recipients.map((item) => item.user.email.trim().toLowerCase()).filter(Boolean))];
+    if (!uniqueRecipients.length) continue;
+
+    for (const event of events) {
+      const inserted = await db.automationAlertDelivery.createMany({
+        data: uniqueRecipients.map((recipient) => ({
+          workspaceId: policy.workspaceId,
+          alertEventId: event.id,
+          integrationId: resend.id,
+          channel: "EMAIL",
+          recipient,
+        })),
+        skipDuplicates: true,
+      });
+      deliveriesQueued += inserted.count;
+      if (inserted.count) {
+        await db.activityLog.create({
+          data: {
+            workspaceId: policy.workspaceId,
+            action: "automation.alert_escalated",
+            entityType: "automation_alert",
+            entityId: event.id,
+            metadata: {recipientCount: inserted.count, escalationAfterMinutes: 30},
+          },
+        });
+      }
+    }
+  }
+  return {eventsChecked, deliveriesQueued};
+}
+
 export async function dispatchAutomationAlertEmails(limit = 20): Promise<{
   claimed: number; sent: number; retried: number; failed: number;
 }> {
