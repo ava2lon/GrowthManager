@@ -5,7 +5,7 @@ import {Sparkles,Copy,Check} from "lucide-react";
 
 type Brand = {id:string;name:string};
 type Campaign = {id:string;name:string;brandId:string|null};
-type Draft = {id:string;title:string|null;platform:string;format:string;hook:string;cta:string};
+type Draft = {id:string;title:string|null;platform:string;format:string;hook:string;cta:string;copy:string;hashtags:string[]};
 
 const platforms = ["INSTAGRAM","FACEBOOK","LINKEDIN","X","TIKTOK","YOUTUBE","PINTEREST"];
 
@@ -39,7 +39,7 @@ export function ContentProductionStudio({brands,campaigns}:{brands:Brand[];campa
   async function copyDraft(id:string) {
     const draft=drafts.find(item=>item.id===id);
     if (!draft) return;
-    await navigator.clipboard.writeText(draft.title ?? "");
+    await navigator.clipboard.writeText(draft.copy + (draft.hashtags.length ? "\n\n" + draft.hashtags.map(tag=>tag.startsWith("#")?tag:"#"+tag).join(" ") : ""));
     setCopied(id);
   }
 
@@ -60,7 +60,7 @@ export function ContentProductionStudio({brands,campaigns}:{brands:Brand[];campa
       <button type="button" disabled={busy||!objective.trim()||selected.length===0} onClick={generate} className="inline-flex items-center gap-2 rounded-xl bg-indigo-600 px-4 py-3 text-sm font-semibold text-white disabled:opacity-40"><Sparkles size={16}/>{busy?"Generating drafts…":"Generate and save drafts"}</button>
     </>}
     {error&&<p role="alert" className="rounded-lg bg-rose-50 p-3 text-sm text-rose-700">{error}</p>}
-    {drafts.length>0&&<div className="space-y-3"><div className="flex items-center justify-between"><h3 className="font-semibold">Saved drafts</h3><span className="text-xs text-slate-500">{drafts.length} draft(s) · not published</span></div>{drafts.map(d=><article key={d.id} className="rounded-xl border border-slate-200 p-4"><div className="flex flex-wrap items-center justify-between gap-2"><div><p className="text-sm font-semibold">{d.title}</p><p className="mt-1 text-xs text-slate-500">{d.platform} · {d.format||"Format unspecified"} · Draft</p></div><button type="button" onClick={()=>copyDraft(d.id)} className="inline-flex items-center gap-1 rounded-lg border px-3 py-2 text-xs font-semibold"><Copy size={13}/>{copied===d.id?<><Check size={13}/>Copied title</>:"Copy title"}</button></div>{d.hook&&<p className="mt-3 text-sm"><strong>Hook:</strong> {d.hook}</p>}{d.cta&&<p className="mt-1 text-sm"><strong>CTA:</strong> {d.cta}</p>}<p className="mt-2 text-xs text-slate-500">Open the Social workspace to edit the full saved copy and attach media before approval.</p></article>)}</div>}
+    {drafts.length>0&&<div className="space-y-3"><div className="flex items-center justify-between"><h3 className="font-semibold">Saved drafts</h3><span className="text-xs text-slate-500">{drafts.length} draft(s) · not published</span></div>{drafts.map(d=><article key={d.id} className="rounded-xl border border-slate-200 p-4"><div className="flex flex-wrap items-center justify-between gap-2"><div><p className="text-sm font-semibold">{d.title}</p><p className="mt-1 text-xs text-slate-500">{d.platform} · {d.format||"Format unspecified"} · Draft</p></div><button type="button" onClick={()=>copyDraft(d.id)} className="inline-flex items-center gap-1 rounded-lg border px-3 py-2 text-xs font-semibold"><Copy size={13}/>{copied===d.id?<><Check size={13}/>Copied title</>:"Copy title"}</button></div><p className="mt-3 whitespace-pre-wrap text-sm text-slate-700">{d.copy}</p>{d.hashtags.length>0&&<p className="mt-2 text-xs text-indigo-700">{d.hashtags.map(tag=>tag.startsWith("#")?tag:"#"+tag).join(" ")}</p>}{d.hook&&<p className="mt-3 text-sm"><strong>Hook:</strong> {d.hook}</p>}{d.cta&&<p className="mt-1 text-sm"><strong>CTA:</strong> {d.cta}</p>}<p className="mt-2 text-xs text-slate-500">Open the Social workspace to edit the full saved copy and attach media before approval.</p></article>)}</div>}
     <p className="text-xs text-slate-400">AI output is saved as DRAFT content. It is not approved, scheduled, or published. Provider credentials remain server-side.</p>
   </section>;
 }
