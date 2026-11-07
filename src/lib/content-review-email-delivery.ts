@@ -1,3 +1,4 @@
+import {createHash} from "node:crypto";
 import {db} from "@/lib/db";
 import {nextAllowedSendAt} from "@/lib/notification-quiet-hours";
 
@@ -325,7 +326,8 @@ export async function dispatchContentReviewEmailDigests(batchSize = 10) {
     }
 
     const ids = group.map((item) => item.id).sort();
-    const digestKey = first.workspaceId + ":" + first.recipientUserId + ":" + due.periodKey + ":" + ids.join(",");
+    const eventHash = createHash("sha256").update(ids.join("\\n")).digest("hex");
+    const digestKey = first.workspaceId + ":" + first.recipientUserId + ":" + due.periodKey + ":" + eventHash;
     const items = group.map((item) => ({
       eventType: item.eventType,
       title: item.assignment.contentPost.title || "Untitled content draft",
