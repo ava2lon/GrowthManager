@@ -299,6 +299,7 @@ model Integration {
   status      String    @default("DISCONNECTED")
   credentialsEncrypted String? @db.Text
   lastValidatedAt DateTime?
+  lastExecutionSyncAt DateTime?
   lastErrorAt DateTime?
   lastErrorCode String?
   createdAt   DateTime  @default(now())
@@ -311,6 +312,7 @@ model Integration {
   @@unique([workspaceId, provider])
   @@unique([workspaceId, id])
   @@index([workspaceId, status, updatedAt])
+  @@index([provider, status, lastExecutionSyncAt])
 }
 
 model N8nExecutionSnapshot {
