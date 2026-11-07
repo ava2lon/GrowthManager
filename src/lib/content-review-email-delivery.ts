@@ -52,15 +52,15 @@ export async function dispatchContentReviewEmails(batchSize = 10): Promise<Deliv
     },
     orderBy: {createdAt: "asc"},
     take: Math.max(1, Math.min(batchSize, 25)),
-    select: {id: true, workspaceId: true, assignmentId: true, eventType: true, recipientEmail: true, recipientName: true, attempts: true, createdAt: true, assignment: {select: {reviewerUserId: true, assignedById: true}}},
+    select: {id: true, workspaceId: true, assignmentId: true, eventType: true, recipientUserId: true, recipientEmail: true, recipientName: true, attempts: true, createdAt: true, assignment: {select: {reviewerUserId: true, assignedById: true}}},
   });
 
   const result: DeliveryResult = {claimed: 0, sent: 0, retried: 0, failed: 0, deferred: 0};
 
   for (const item of candidates) {
-    const recipientUserId = item.eventType === "CONTENT_REVIEW_ASSIGNED"
+    const recipientUserId = item.recipientUserId || (item.eventType === "CONTENT_REVIEW_ASSIGNED"
       ? item.assignment.reviewerUserId
-      : item.assignment.assignedById;
+      : item.assignment.assignedById);
     const preferences = await db.workspaceNotificationPreference.findUnique({
       where: {workspaceId_userId: {workspaceId: item.workspaceId, userId: recipientUserId}},
       select: {quietHoursEnabled: true, timezone: true, quietHoursStart: true, quietHoursEnd: true},
@@ -75,7 +75,7 @@ export async function dispatchContentReviewEmails(batchSize = 10): Promise<Deliv
       );
       if (nextAllowed) {
         await db.contentReviewEmailDelivery.updateMany({
-          where: {id: item.id, workspaceId: item.workspaceId, status: {in: ["PENDING", "RETRY", "PROCESSING"]}},
+          where: {id: item.id, workspaceId: item.workspaceId, status: {in: ["PENDING", "RETRY", "PROCESSING"]}, OR: [{lockedAt: null}, {lockedAt: {lte: staleLock}}]},
           data: {nextAttemptAt: nextAllowed, lockedAt: null},
         });
         result.deferred += 1;
