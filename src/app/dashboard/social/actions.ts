@@ -652,7 +652,8 @@ export async function publishLinkedInDraft(formData:FormData){
  await enforcePublishLimit(context.workspace.id,context.userId);
  const result=await publishLinkedInTarget({targetId,workspaceId:context.workspace.id,actorUserId:context.userId,allowedStatuses:["DRAFT"]});
  revalidatePath("/dashboard/social");
- if(result.status!=="PUBLISHED")throw new Error(result.status==="UNKNOWN"?"LinkedIn's response could not be confirmed. Verify the account's posts before attempting another publication.":result.status==="SKIPPED"?"This LinkedIn draft is already processing or is no longer eligible.":result.errorCode==="LINKEDIN_REAUTHORIZATION_REQUIRED"?"LinkedIn authorization expired. Reconnect the account.":result.errorCode==="LINKEDIN_ORGANIZATION_ROLE_REVOKED"?"The LinkedIn member no longer has an eligible Page role. Reconnect or restore Page access.":result.errorCode==="LINKEDIN_PERMISSION_DENIED"?"LinkedIn denied publishing. Verify the app product access and account permissions.":"LinkedIn rejected the post or its account is not eligible.");
+ if(result.status==="PROCESSING"){revalidatePath("/dashboard/social");return;}
+  if(result.status!=="PUBLISHED")throw new Error(result.status==="UNKNOWN"?"LinkedIn's response could not be confirmed. Verify the account's posts before attempting another publication.":result.status==="SKIPPED"?"This LinkedIn draft is already processing or is no longer eligible.":result.errorCode==="LINKEDIN_REAUTHORIZATION_REQUIRED"?"LinkedIn authorization expired. Reconnect the account.":result.errorCode==="LINKEDIN_ORGANIZATION_ROLE_REVOKED"?"The LinkedIn member no longer has an eligible Page role. Reconnect or restore Page access.":result.errorCode==="LINKEDIN_PERMISSION_DENIED"?"LinkedIn denied publishing. Verify the app product access and account permissions.":"LinkedIn rejected the post or its account is not eligible.");
 }
 
 export async function checkLinkedInAccountHealth(formData:FormData){
@@ -1511,18 +1512,22 @@ export async function createXDraft(formData:FormData){
  const accountIds=[...new Set(formData.getAll("accountIds").map(v=>String(v).trim()).filter(Boolean))];
  const body=String(formData.get("body")??"").trim();
  const rawSchedule=String(formData.get("scheduledAt")??"").trim();
+ const mediaAssetId=String(formData.get("mediaAssetId")??"").trim();
  if(accountIds.length<1||accountIds.length>10||accountIds.some(id=>id.length>128)||!body||body.length>280)throw new Error("Select 1–10 X accounts and enter post text up to 280 characters.");
  let scheduledAt:Date|null=null;
  if(rawSchedule){if(!/[zZ]$|[+-][0-9]{2}:[0-9]{2}$/.test(rawSchedule)||!Number.isFinite(Date.parse(rawSchedule)))throw new Error("Schedule must be a timezone-qualified ISO 8601 date.");scheduledAt=new Date(rawSchedule);if(scheduledAt.getTime()<Date.now()+15*60_000||scheduledAt.getTime()>Date.now()+365*24*60*60_000)throw new Error("Schedule must be 15 minutes to 1 year in the future.");}
  const accounts=await db.socialAccount.findMany({where:{id:{in:accountIds},workspaceId:context.workspace.id,provider:"X",status:"CONNECTED"},select:{id:true,brandId:true,scopes:true}});
- if(accounts.length!==accountIds.length||new Set(accounts.map(a=>a.brandId)).size!==1||accounts.some(a=>!a.scopes.includes("tweet.write")))throw new Error("Every selected X account must be connected with tweet.write permission and assigned to the same brand.");
+ if(accounts.length!==accountIds.length||new Set(accounts.map(a=>a.brandId)).size!==1||accounts.some(a=>!a.scopes.includes("tweet.write")||(mediaAssetId&&!a.scopes.includes("media.write"))))throw new Error("Every selected X account must have tweet.write"+(mediaAssetId?" and media.write":"")+" permission and belong to the same brand.");
+ const brandId=accounts[0].brandId;
+ const mediaAsset=mediaAssetId?await db.mediaAsset.findFirst({where:{id:mediaAssetId,workspaceId:context.workspace.id,status:"READY",OR:[{brandId:null},{brandId:brandId}],mimeType:{in:["image/jpeg","image/png","video/mp4","video/quicktime"]},sizeBytes:{lte:20n*1024n*1024n}},select:{id:true}}):null;
+ if(mediaAssetId&&!mediaAsset)throw new Error("Choose one ready JPEG, PNG, MP4, or MOV asset up to 20 MB from this workspace or brand.");
  const brand=await db.brand.findFirst({where:{id:accounts[0].brandId,workspaceId:context.workspace.id,status:"ACTIVE"},select:{id:true}});
  if(!brand)throw new Error("The selected X accounts must belong to an active brand.");
  await enforcePublishLimit(context.workspace.id,context.userId);
  const post=await db.$transaction(async tx=>{
   const created=await tx.contentPost.create({data:{workspaceId:context.workspace.id,brandId:brand.id,body,status:scheduledAt?"SCHEDULED":"DRAFT",scheduledAt},select:{id:true}});
   await tx.socialPostTarget.createMany({data:accounts.map(a=>({workspaceId:context.workspace.id,contentPostId:created.id,socialAccountId:a.id,provider:"X",status:scheduledAt?"SCHEDULED":"DRAFT"}))});
-  await tx.activityLog.create({data:{workspaceId:context.workspace.id,userId:context.userId,action:"social_post.draft_created",entityType:"ContentPost",entityId:created.id,metadata:{provider:"X",targetCount:accounts.length,scheduledAt:scheduledAt?.toISOString()??null,mediaCount:0}}});
+  await tx.activityLog.create({data:{workspaceId:context.workspace.id,userId:context.userId,action:"social_post.draft_created",entityType:"ContentPost",entityId:created.id,metadata:{provider:"X",targetCount:accounts.length,scheduledAt:scheduledAt?.toISOString()??null,mediaCount:mediaAsset?1:0}}});
   return created;
  });
  revalidatePath("/dashboard/social");return post.id;
@@ -1540,10 +1545,12 @@ export async function publishXDraft(formData:FormData){
 export async function retryXPublish(formData:FormData){
  const context=await requireWorkspaceRole("MEMBER"),targetId=String(formData.get("targetId")??"").trim();
  if(!targetId||targetId.length>128)throw new Error("Invalid X publishing target.");
- const retryable=new Set(["X_REAUTHORIZATION_REQUIRED","X_REFRESH_UNAVAILABLE","X_REFRESH_REJECTED","X_RATE_LIMITED","X_PERMISSION_DENIED","X_PUBLISH_REJECTED","X_PUBLISH_SCOPE_MISSING","X_NOT_CONFIGURED","X_CREDENTIAL_DECRYPTION_FAILED"]);
+ const retryable=new Set(["X_REAUTHORIZATION_REQUIRED","X_REFRESH_UNAVAILABLE","X_REFRESH_REJECTED","X_RATE_LIMITED","X_PERMISSION_DENIED","X_PUBLISH_REJECTED","X_PUBLISH_SCOPE_MISSING","X_MEDIA_SCOPE_MISSING","X_MEDIA_INVALID","X_MEDIA_SIZE_OR_STORAGE_INVALID","X_MEDIA_DOWNLOAD_FAILED","X_MEDIA_SIZE_MISMATCH","X_MEDIA_UPLOAD_REJECTED","X_MEDIA_PROCESSING_FAILED","X_NOT_CONFIGURED","X_CREDENTIAL_DECRYPTION_FAILED"]);
  const target=await db.socialPostTarget.findFirst({where:{id:targetId,workspaceId:context.workspace.id,provider:"X",status:"FAILED"},select:{id:true,contentPostId:true,errorCode:true,socialAccount:{select:{status:true,scopes:true}}}});
  if(!target||!retryable.has(target.errorCode??""))throw new Error("This X failure is not eligible for a safe retry. Unknown outcomes must be verified on X and are never retried.");
  if(target.socialAccount.status!=="CONNECTED"||!target.socialAccount.scopes.includes("tweet.write"))throw new Error("Reconnect X with tweet.write permission before retrying.");
+  const hasMedia=await db.contentPostMedia.count({where:{workspaceId:context.workspace.id,contentPostId:target.contentPostId}});
+  if(hasMedia&&!target.socialAccount.scopes.includes("media.write"))throw new Error("Reconnect X with media.write permission before retrying.");
  await db.$transaction(async tx=>{
   const changed=await tx.socialPostTarget.updateMany({where:{id:target.id,workspaceId:context.workspace.id,provider:"X",status:"FAILED",errorCode:target.errorCode},data:{status:"DRAFT",providerPostId:null,errorCode:null,publishedAt:null}});
   if(changed.count!==1)throw new Error("This X target changed concurrently. Refresh and retry.");
