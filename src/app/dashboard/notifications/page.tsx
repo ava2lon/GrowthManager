@@ -35,7 +35,7 @@ export default async function NotificationsPage({searchParams}:{searchParams:Pro
   const canManage=membership.role==="OWNER"||membership.role==="ADMIN";
   return <div className="space-y-6">
     <div className="flex flex-wrap items-end justify-between gap-3">
-      <div><p className="text-xs font-bold uppercase tracking-widest text-indigo-600">Workspace operations</p><h1 className="mt-2 text-2xl font-bold tracking-tight text-slate-900">Notification center</h1><p className="mt-1 text-sm text-slate-500">Review assignments, automation alerts, publishing exceptions and observed workflow failures.</p></div>
+      <div><p className="text-xs font-bold uppercase tracking-widest text-indigo-600">Workspace operations</p><h1 className="mt-2 text-2xl font-bold tracking-tight text-slate-900">Notification center</h1><p className="mt-1 text-sm text-slate-500">Review assignments, social incidents and escalations, automation alerts, publishing exceptions and observed workflow failures.</p></div>
       <div className="flex items-center gap-2"><Link href="/dashboard/notifications" className={"rounded-lg px-3 py-2 text-xs font-semibold "+(filter==="all"?"bg-slate-900 text-white":"border border-slate-200 bg-white text-slate-600")}>All</Link><Link href="/dashboard/notifications?filter=unread" className={"rounded-lg px-3 py-2 text-xs font-semibold "+(filter==="unread"?"bg-slate-900 text-white":"border border-slate-200 bg-white text-slate-600")}>Unread ({unreadCount})</Link></div>
     </div>
     <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
