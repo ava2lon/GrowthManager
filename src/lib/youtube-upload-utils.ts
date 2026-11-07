@@ -24,7 +24,7 @@ export function validateYouTubeMetadata(value: unknown, fallbackTitle: string): 
   if (tags.some(tag => tag.length > 30) || tags.join("").length > 500) {
     throw new Error("YOUTUBE_TAGS_INVALID");
   }
-  const categoryId = typeof raw.categoryId === "string" && /^\\d{1,3}$/.test(raw.categoryId)
+  const categoryId = typeof raw.categoryId === "string" && /^\d{1,3}$/.test(raw.categoryId)
     ? raw.categoryId : undefined;
   return {title, description, privacyStatus, ...(categoryId ? {categoryId} : {}), ...(tags.length ? {tags} : {})};
 }
@@ -42,7 +42,7 @@ export function validateYouTubeSessionUrl(value: string): URL {
 
 export function parseYouTubeCommittedOffset(range: string | null, totalBytes: number): number {
   if (range === null) return 0;
-  const match = /^bytes=0-(\\d+)$/.exec(range);
+  const match = /^bytes=0-(\d+)$/.exec(range);
   if (!match) throw new Error("YOUTUBE_UPLOAD_RANGE_INVALID");
   const offset = Number(match[1]) + 1;
   if (!Number.isSafeInteger(offset) || offset < 0 || offset > totalBytes) {
