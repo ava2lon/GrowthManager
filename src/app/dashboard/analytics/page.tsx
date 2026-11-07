@@ -52,7 +52,7 @@ export default async function AnalyticsPage(){
     else if(hasImage)formatCounts.image++;
     else formatCounts.text++;
     for(const target of post.publishTargets)providerDistribution.set(target.provider,(providerDistribution.get(target.provider)??0)+1);
-    for(const match of post.body.matchAll(/(^|\\s)#([\\p{L}\\p{N}_]{2,50})/gu)){
+    for(const match of post.body.matchAll(/(^|\s)#([\p{L}\p{N}_]{2,50})/gu)){
       const tag=match[2].toLowerCase();
       hashtagCounts.set(tag,(hashtagCounts.get(tag)??0)+1);
     }
