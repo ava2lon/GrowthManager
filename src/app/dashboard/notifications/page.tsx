@@ -8,7 +8,7 @@ type SearchParams={filter?:string};
 export default async function NotificationsPage({searchParams}:{searchParams:Promise<SearchParams>}) {
   const [{workspace,membership},params]=await Promise.all([requireWorkspaceContext(),searchParams]);
   const filter=params.filter==="unread"?"unread":"all";
-  const [preferences,notifications,alerts,publishingFailures,automationFailures]=await Promise.all([
+  const [preferences,notifications,alerts,publishingFailures,automationFailures,socialIncidents]=await Promise.all([
     db.workspaceNotificationPreference.findUnique({where:{workspaceId_userId:{workspaceId:workspace.id,userId:membership.userId}}}),
     db.workspaceNotification.findMany({
       where:{workspaceId:workspace.id,userId:membership.userId,...(filter==="unread"?{readAt:null}:{})},
@@ -30,6 +30,7 @@ export default async function NotificationsPage({searchParams}:{searchParams:Pro
       orderBy:{startedAt:"desc"},take:30,
       select:{id:true,workflowId:true,status:true,startedAt:true,integration:{select:{name:true}}},
     }),
+    db.workspaceIncident.count({where:{workspaceId:workspace.id,status:{in:["OPEN","ACKNOWLEDGED"]},sourceType:{in:["SOCIAL_ACCOUNT","SOCIAL_PUBLISH_TARGET"]}}}),
   ]);
   const unreadCount=await db.workspaceNotification.count({where:{workspaceId:workspace.id,userId:membership.userId,readAt:null}});
   const canManage=membership.role==="OWNER"||membership.role==="ADMIN";
@@ -38,15 +39,16 @@ export default async function NotificationsPage({searchParams}:{searchParams:Pro
       <div><p className="text-xs font-bold uppercase tracking-widest text-indigo-600">Workspace operations</p><h1 className="mt-2 text-2xl font-bold tracking-tight text-slate-900">Notification center</h1><p className="mt-1 text-sm text-slate-500">Review assignments, social incidents and escalations, automation alerts, publishing exceptions and observed workflow failures.</p></div>
       <div className="flex items-center gap-2"><Link href="/dashboard/notifications" className={"rounded-lg px-3 py-2 text-xs font-semibold "+(filter==="all"?"bg-slate-900 text-white":"border border-slate-200 bg-white text-slate-600")}>All</Link><Link href="/dashboard/notifications?filter=unread" className={"rounded-lg px-3 py-2 text-xs font-semibold "+(filter==="unread"?"bg-slate-900 text-white":"border border-slate-200 bg-white text-slate-600")}>Unread ({unreadCount})</Link></div>
     </div>
-    <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+    <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
       <div className="rounded-xl border border-slate-200 bg-white p-4"><p className="text-xs text-slate-500">Unread in-app</p><p className="mt-1 text-2xl font-semibold">{unreadCount}</p></div>
+      <div className="rounded-xl border border-slate-200 bg-white p-4"><p className="text-xs text-slate-500">Open social incidents</p><p className="mt-1 text-2xl font-semibold">{socialIncidents}</p><Link href="/dashboard/social" className="mt-1 inline-block text-[11px] font-semibold text-indigo-700">Manage incidents</Link></div>
       <div className="rounded-xl border border-slate-200 bg-white p-4"><p className="text-xs text-slate-500">Open automation alerts</p><p className="mt-1 text-2xl font-semibold">{alerts.length}</p></div>
       <div className="rounded-xl border border-slate-200 bg-white p-4"><p className="text-xs text-slate-500">Publishing exceptions</p><p className="mt-1 text-2xl font-semibold">{publishingFailures.length}</p></div>
       <div className="rounded-xl border border-slate-200 bg-white p-4"><p className="text-xs text-slate-500">Failed n8n snapshots</p><p className="mt-1 text-2xl font-semibold">{automationFailures.length}</p></div>
     </div>
     <section className="rounded-2xl border border-slate-200 bg-white p-5 sm:p-6">
       <h2 className="font-semibold text-slate-900">Notification preferences</h2>
-      <p className="mt-1 text-xs text-slate-500">Choose which content-review events reach you in-app and by email. Defaults are enabled.</p>
+      <p className="mt-1 text-xs text-slate-500">Choose content-review and social incident notifications. Social incident emails are opt-in; quiet hours defer supported email delivery.</p>
       <form action={saveNotificationPreferences} className="mt-4 space-y-4">
         <div className="grid gap-3 sm:grid-cols-2">
           {[
