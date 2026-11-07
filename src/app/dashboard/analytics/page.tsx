@@ -2,6 +2,7 @@ import Link from "next/link";
 import {requireWorkspaceContext} from "@/lib/workspace";
 import {db} from "@/lib/db";
 import AnalyticsExport from "./analytics-export";
+import {extractSocialPostMetric} from "@/lib/social-analytics-normalize";
 
 const providers = [
   {key:"FACEBOOK",label:"Facebook"},
@@ -28,11 +29,11 @@ export default async function AnalyticsPage({searchParams}:{searchParams:Promise
       orderBy:{publishedAt:"desc"},take:2000,
       select:{id:true,provider:true,publishedAt:true,contentPost:{select:{title:true,body:true}}},
     }),
-    db.metaAnalyticsSnapshot.findMany({where:{workspaceId:workspace.id,subjectType:"MEDIA",targetId:{not:null},fetchedAt:{gte:since}},distinct:["targetId"],select:{targetId:true}}),
-    db.tikTokAnalyticsSnapshot.findMany({where:{workspaceId:workspace.id,subjectType:"VIDEO",targetId:{not:null},fetchedAt:{gte:since}},distinct:["targetId"],select:{targetId:true}}),
-    db.youTubeAnalyticsSnapshot.findMany({where:{workspaceId:workspace.id,subjectType:"VIDEO",targetId:{not:null},fetchedAt:{gte:since}},distinct:["targetId"],select:{targetId:true}}),
-    db.linkedInAnalyticsSnapshot.findMany({where:{workspaceId:workspace.id,subjectType:"MEDIA",targetId:{not:null},fetchedAt:{gte:since}},distinct:["targetId"],select:{targetId:true}}),
-    db.xAnalyticsSnapshot.findMany({where:{workspaceId:workspace.id,subjectType:"POST",targetId:{not:null},fetchedAt:{gte:since}},distinct:["targetId"],select:{targetId:true}}),
+    db.metaAnalyticsSnapshot.findMany({where:{workspaceId:workspace.id,subjectType:"MEDIA",targetId:{not:null},fetchedAt:{gte:since}},orderBy:{fetchedAt:"desc"},distinct:["targetId"],select:{targetId:true,metrics:true,fetchedAt:true}}),
+    db.tikTokAnalyticsSnapshot.findMany({where:{workspaceId:workspace.id,subjectType:"VIDEO",targetId:{not:null},fetchedAt:{gte:since}},orderBy:{fetchedAt:"desc"},distinct:["targetId"],select:{targetId:true,metrics:true,fetchedAt:true}}),
+    db.youTubeAnalyticsSnapshot.findMany({where:{workspaceId:workspace.id,subjectType:"VIDEO",targetId:{not:null},fetchedAt:{gte:since}},orderBy:{fetchedAt:"desc"},distinct:["targetId"],select:{targetId:true,metrics:true,fetchedAt:true}}),
+    db.linkedInAnalyticsSnapshot.findMany({where:{workspaceId:workspace.id,subjectType:"MEDIA",targetId:{not:null},fetchedAt:{gte:since}},orderBy:{fetchedAt:"desc"},distinct:["targetId"],select:{targetId:true,metrics:true,fetchedAt:true}}),
+    db.xAnalyticsSnapshot.findMany({where:{workspaceId:workspace.id,subjectType:"POST",targetId:{not:null},fetchedAt:{gte:since}},orderBy:{fetchedAt:"desc"},distinct:["targetId"],select:{targetId:true,metrics:true,fetchedAt:true}}),
     db.socialPostTarget.findMany({
       where:{workspaceId:workspace.id,status:{in:["FAILED","UNKNOWN"]},updatedAt:{gte:recentSince},provider:{in:providers.map(item=>item.key)}},
       orderBy:{updatedAt:"desc"},take:100,
@@ -68,23 +69,25 @@ export default async function AnalyticsPage({searchParams}:{searchParams:Promise
   const pinterestTargetIds=publishedTargets.filter(item=>item.provider==="PINTEREST").map(item=>item.id);
   const pinterestSnapshots=pinterestTargetIds.length?await db.pinterestPinAnalyticsSnapshot.findMany({
     where:{workspaceId:workspace.id,targetId:{in:pinterestTargetIds},fetchedAt:{gte:since}},
-    distinct:["targetId"],select:{targetId:true},
+    orderBy:{fetchedAt:"desc"},distinct:["targetId"],select:{targetId:true,metrics:true,fetchedAt:true},
   }):[];
-  const measuredByProvider:Record<string,Set<string>>={
-    FACEBOOK:new Set(meta.map(item=>item.targetId).filter((id):id is string=>Boolean(id))),
-    INSTAGRAM:new Set(meta.map(item=>item.targetId).filter((id):id is string=>Boolean(id))),
-    TIKTOK:new Set(tiktok.map(item=>item.targetId).filter((id):id is string=>Boolean(id))),
-    YOUTUBE:new Set(youtube.map(item=>item.targetId).filter((id):id is string=>Boolean(id))),
-    LINKEDIN:new Set(linkedin.map(item=>item.targetId).filter((id):id is string=>Boolean(id))),
-    PINTEREST:new Set(pinterestSnapshots.map(item=>item.targetId)),
-    X:new Set(x.map(item=>item.targetId).filter((id):id is string=>Boolean(id))),
-  };
+  const snapshotByTarget=new Map<string,{provider:string;metrics:unknown;fetchedAt:Date}>();
+  const addSnapshots=(provider:string,snapshots:Array<{targetId:string|null;metrics:unknown;fetchedAt:Date}>)=>{for(const snapshot of snapshots)if(snapshot.targetId&&!snapshotByTarget.has(snapshot.targetId))snapshotByTarget.set(snapshot.targetId,{provider,metrics:snapshot.metrics,fetchedAt:snapshot.fetchedAt});};
+  const providerForTarget=new Map(publishedTargets.map(target=>[target.id,target.provider]));
+  addSnapshots("FACEBOOK",meta.filter(item=>providerForTarget.get(item.targetId??"")==="FACEBOOK"));
+  addSnapshots("INSTAGRAM",meta.filter(item=>providerForTarget.get(item.targetId??"")==="INSTAGRAM"));
+  addSnapshots("TIKTOK",tiktok);addSnapshots("YOUTUBE",youtube);addSnapshots("LINKEDIN",linkedin);addSnapshots("X",x);addSnapshots("PINTEREST",pinterestSnapshots);
+  const measuredByProvider:Record<string,Set<string>>={};for(const provider of providers)measuredByProvider[provider.key]=new Set<string>();
+  const performanceRows:Array<{targetId:string;provider:string;label:string;value:number;unit:"count"|"minutes";fetchedAt:Date}>=[];
+  for(const target of publishedTargets){const snapshot=snapshotByTarget.get(target.id);if(!snapshot||snapshot.provider!==target.provider)continue;measuredByProvider[target.provider]?.add(target.id);const metric=extractSocialPostMetric(target.provider,snapshot.metrics);if(metric)performanceRows.push({targetId:target.id,provider:target.provider,...metric,fetchedAt:snapshot.fetchedAt});}
+  const titleByTarget=new Map(publishedTargets.map(target=>[target.id,target.contentPost.title||target.contentPost.body.slice(0,180)]));
+  const performanceGroups=providers.map(provider=>({key:provider.key,label:provider.label,items:performanceRows.filter(item=>item.provider===provider.key).sort((a,b)=>b.value-a.value).slice(0,5)}));
   const rows=providers.map(provider=>{
     const targets=publishedTargets.filter(item=>item.provider===provider.key);
     const measured=measuredByProvider[provider.key];
     return {key:provider.key,label:provider.label,published:targets.length,measured:targets.filter(item=>measured.has(item.id)).length,connected:connectedAccounts.some(account=>account.provider===provider.key)};
   });
-  const exportRows=publishedTargets.map(target=>({provider:target.provider,title:target.contentPost.title||target.contentPost.body.slice(0,180),publishedAt:target.publishedAt?.toISOString()??"",analyticsSnapshotAvailable:measuredByProvider[target.provider]?.has(target.id)??false}));
+  const exportRows=publishedTargets.map(target=>{const snapshot=snapshotByTarget.get(target.id);const metric=snapshot&&snapshot.provider===target.provider?extractSocialPostMetric(target.provider,snapshot.metrics):null;return {provider:target.provider,title:titleByTarget.get(target.id)??"",publishedAt:target.publishedAt?.toISOString()??"",analyticsSnapshotAvailable:Boolean(snapshot),metricName:metric?.label??"",metricValue:metric?.value??"",metricUnit:metric?.unit??""};});
   const totalPublished=publishedTargets.length;
   const totalMeasured=rows.reduce((sum,row)=>sum+row.measured,0);
   const latestPublished=publishedTargets.find(item=>item.publishedAt)?.publishedAt??null;
@@ -154,6 +157,11 @@ export default async function AnalyticsPage({searchParams}:{searchParams:Promise
       <div className="rounded-2xl border border-slate-200 bg-white p-5"><p className="text-xs text-slate-500">Published targets · {days} days</p><p className="mt-2 text-2xl font-semibold text-slate-950">{number(totalPublished)}</p></div>
       <div className="rounded-2xl border border-slate-200 bg-white p-5"><p className="text-xs text-slate-500">Targets with analytics snapshots</p><p className="mt-2 text-2xl font-semibold text-slate-950">{number(totalMeasured)}</p></div>
       <div className="rounded-2xl border border-slate-200 bg-white p-5"><p className="text-xs text-slate-500">Latest published target</p><p className="mt-2 text-sm font-semibold text-slate-950">{latestPublished?latestPublished.toLocaleString():"No published targets in this period"}</p></div>
+    </section>
+    <section className="rounded-2xl border border-slate-200 bg-white p-5 sm:p-6">
+      <div><h2 className="font-semibold text-slate-900">Post performance by platform</h2><p className="mt-1 text-sm text-slate-500">Top five posts per platform, ranked by the first available provider-specific metric. Metrics from different platforms are not directly comparable.</p></div>
+      <div className="mt-4 grid gap-4 lg:grid-cols-2">{performanceGroups.map(group=><div key={group.key} className="rounded-xl border border-slate-100 p-4"><h3 className="text-sm font-semibold text-slate-800">{group.label}</h3>{group.items.length===0?<p className="mt-3 text-sm text-slate-500">No supported post-level metric available in this reporting window.</p>:<ol className="mt-3 space-y-3">{group.items.map((item,index)=><li key={item.targetId} className="flex items-start justify-between gap-3"><div className="min-w-0"><p className="text-xs font-medium text-slate-500">#{index+1}</p><p className="truncate text-sm text-slate-800">{titleByTarget.get(item.targetId)??"Published post"}</p><p className="text-xs text-slate-500">{item.label} · synced {item.fetchedAt.toLocaleDateString()}</p></div><span className="shrink-0 text-sm font-semibold tabular-nums">{number(item.value)}</span></li>)}</ol>}</div>)}</div>
+      <p className="mt-3 text-xs text-slate-500">Only available successful snapshots are ranked. These are indicative platform-specific rankings, not a normalized engagement score.</p>
     </section>
     <section className="space-y-3">
       <div><h2 className="font-semibold text-slate-900">Growth insights</h2><p className="mt-1 text-sm text-slate-500">Recommendations are generated from workspace publishing and collection records. They are operational signals, not predictions of audience response.</p></div>
