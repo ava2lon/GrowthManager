@@ -1,13 +1,15 @@
 import Link from "next/link";
 import {requireWorkspaceContext} from "@/lib/workspace";
 import {db} from "@/lib/db";
-import {markAllNotificationsRead,markNotificationRead} from "./actions";\nimport {saveNotificationPreferences} from "./preferences-actions";
+import {markAllNotificationsRead,markNotificationRead} from "./actions";
+import {saveNotificationPreferences} from "./preferences-actions";
 
 type SearchParams={filter?:string};
 export default async function NotificationsPage({searchParams}:{searchParams:Promise<SearchParams>}) {
   const [{workspace,membership},params]=await Promise.all([requireWorkspaceContext(),searchParams]);
   const filter=params.filter==="unread"?"unread":"all";
-  const [preferences,notifications,alerts,publishingFailures,automationFailures]=await Promise.all([\n    db.workspaceNotificationPreference.findUnique({where:{workspaceId_userId:{workspaceId:workspace.id,userId:membership.userId}}}),
+  const [preferences,notifications,alerts,publishingFailures,automationFailures]=await Promise.all([
+    db.workspaceNotificationPreference.findUnique({where:{workspaceId_userId:{workspaceId:workspace.id,userId:membership.userId}}}),
     db.workspaceNotification.findMany({
       where:{workspaceId:workspace.id,userId:membership.userId,...(filter==="unread"?{readAt:null}:{})},
       orderBy:{createdAt:"desc"},take:100,
