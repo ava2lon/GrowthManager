@@ -139,7 +139,7 @@ export async function processTikTokInboxTarget(input:{targetId:string;workspaceI
   return {status:"PUBLISHED" as const};
  }
  if(status==="FAILED")return mark("FAILED","TIKTOK_"+(payload.data?.fail_reason??"UPLOAD_FAILED").toUpperCase().replace(/[^A-Z0-9]+/g,"_"));
- await db.socialPostTarget.updateMany({where:{id:target.id,workspaceId:input.workspaceId,status:"PROCESSING"},data:{nextCheckAt:new Date(Date.now()+5*60_000)}});
+ await db.socialPostTarget.updateMany({where:{id:target.id,workspaceId:input.workspaceId,status:{in:["PROCESSING","UPLOADED"]}},data:{nextCheckAt:new Date(Date.now()+5*60_000)}});
  return {status:"PROCESSING" as const};
 
  async function mark(result:"FAILED",code:string){
