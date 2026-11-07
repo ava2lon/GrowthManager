@@ -14,6 +14,7 @@ import {
   configureResendIntegration,
   saveResendWebhookSecret,
   disconnectIntegration,
+  syncN8nExecutionHistory,
 } from "./actions";
 import {N8nWorkflowStateControl} from "@/components/n8n-workflow-state-control";
 import {N8nExecutionRetryControl} from "@/components/n8n-execution-retry-control";
@@ -56,6 +57,17 @@ export default async function IntegrationsPage({searchParams}: {searchParams: Pr
   let selectedWorkflow: N8nWorkflowDetail | null = null;
   let selectedWorkflowUnavailable = false;
   const n8nIntegration = integrations.find((item) => item.provider === "n8n");
+  const storedExecutionSnapshots = n8nIntegration ? await db.n8nExecutionSnapshot.findMany({
+    where: {
+      workspaceId: context.workspace.id,
+      integrationId: n8nIntegration.id,
+      ...(safeExecutionWorkflowId ? {workflowId: safeExecutionWorkflowId} : {}),
+      ...(safeExecutionStatus ? {status: safeExecutionStatus} : {}),
+    },
+    orderBy: [{startedAt: "desc"}, {syncedAt: "desc"}],
+    take: 30,
+    select: {id: true, executionId: true, workflowId: true, status: true, mode: true, startedAt: true, stoppedAt: true, retryOf: true, retrySuccessId: true, syncedAt: true},
+  }) : [];
   if (n8nIntegration?.status === "CONNECTED" && n8nIntegration.credentialsEncrypted) {
     const limit = await consumeRateLimit(
       "n8n-workflow-list:" + context.workspace.id + ":" + context.userId,
@@ -290,6 +302,7 @@ export default async function IntegrationsPage({searchParams}: {searchParams: Pr
         <div className="flex flex-col gap-1">
           <h2 className="font-semibold text-slate-900">n8n execution monitor</h2>
           <p className="text-sm text-slate-500">Recent execution metadata only. Retry controls are available to administrators for failed runs. Execution payloads are never displayed.</p>
+          {canManage && n8nIntegration && <form action={syncN8nExecutionHistory} className="mt-3"><input type="hidden" name="integrationId" value={n8nIntegration.id}/><button className="rounded-lg border border-indigo-200 px-3 py-2 text-xs font-semibold text-indigo-700 hover:bg-indigo-50">Sync recent history to GrowthManager</button></form>}
         </div>
         {n8nExecutions.kind === "not-connected" ? (
           <p className="mt-4 rounded-xl bg-slate-50 px-4 py-3 text-sm text-slate-500">Connect n8n to monitor workflow executions.</p>
@@ -348,6 +361,33 @@ export default async function IntegrationsPage({searchParams}: {searchParams: Pr
             <p className="mt-3 text-xs text-slate-400">Showing {n8nExecutions.executions.length} executions. {n8nExecutions.hasMore ? "Additional history exists; results are capped at 150 per request." : "End of available results."}</p>
           </>
         )}
+      </section>
+
+      <section className="rounded-2xl border border-slate-200 bg-white p-5 sm:p-6">
+        <div className="flex flex-col gap-1">
+          <h2 className="font-semibold text-slate-900">Stored execution history</h2>
+          <p className="text-sm text-slate-500">Workspace-scoped snapshots retained by GrowthManager. Sync captures up to 150 recent metadata records per run; execution payloads are excluded.</p>
+        </div>
+        {storedExecutionSnapshots.length === 0 ? (
+          <p className="mt-4 rounded-xl bg-slate-50 px-4 py-3 text-sm text-slate-500">No execution snapshots stored yet. An administrator can sync recent history above.</p>
+        ) : (
+          <div className="mt-4 overflow-x-auto rounded-xl border border-slate-100">
+            <table className="w-full min-w-[620px] text-left text-xs">
+              <thead className="bg-slate-50 text-[11px] uppercase tracking-wide text-slate-500"><tr><th className="px-3 py-3">Execution</th><th className="px-3 py-3">Workflow</th><th className="px-3 py-3">Status</th><th className="px-3 py-3">Started</th><th className="px-3 py-3">Retry lineage</th><th className="px-3 py-3">Last synced</th></tr></thead>
+              <tbody className="divide-y divide-slate-100">
+                {storedExecutionSnapshots.map((execution) => <tr key={execution.id}>
+                  <td className="px-3 py-3 font-mono text-slate-700">{execution.executionId}</td>
+                  <td className="px-3 py-3 font-mono text-slate-500">{execution.workflowId}</td>
+                  <td className="px-3 py-3">{execution.status}</td>
+                  <td className="px-3 py-3 text-slate-500">{execution.startedAt?.toLocaleString() ?? "—"}</td>
+                  <td className="px-3 py-3 text-slate-500">{execution.retryOf ? "Retry of " + execution.retryOf : execution.retrySuccessId ? "Succeeded as " + execution.retrySuccessId : "—"}</td>
+                  <td className="px-3 py-3 text-slate-500">{execution.syncedAt.toLocaleString()}</td>
+                </tr>)}
+              </tbody>
+            </table>
+          </div>
+        )}
+        <p className="mt-3 text-xs text-slate-400">Showing up to 30 stored records. Records remain isolated by workspace and connected integration. Disconnecting the integration removes its snapshots through the database relation.</p>
       </section>
 
       <section>
