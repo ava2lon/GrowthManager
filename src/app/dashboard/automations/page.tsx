@@ -97,7 +97,7 @@ export default async function AutomationsPage(){
     <div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-end"><div><p className="text-xs font-semibold uppercase tracking-widest text-indigo-600">Operations center</p><h1 className="mt-2 text-3xl font-bold tracking-tight text-slate-950">Automation health</h1><p className="mt-2 text-sm text-slate-500">Live n8n reliability snapshot for {context.workspace.name}.</p></div><Link href="/dashboard/integrations" className="text-sm font-semibold text-indigo-700 hover:underline">Manage n8n integration</Link></div>
     <section className="rounded-2xl border border-slate-200 bg-white p-5 sm:p-6">
       <div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-start">
-        <div><h2 className="font-semibold text-slate-900">Alert policy</h2><p className="mt-1 text-xs text-slate-500">Configure workspace thresholds. The evaluator runs daily; email is sent only when explicitly enabled and a verified Resend sender is connected.</p></div>
+        <div><h2 className="font-semibold text-slate-900">Alert policy</h2><p className="mt-1 text-xs text-slate-500">Configure workspace thresholds. The scheduled evaluator checks n8n failures; unresolved emailed incidents are escalated once to active workspace owners and admins after 30 minutes.</p></div>
         <span className={"rounded-full px-3 py-1 text-xs font-semibold "+(policy?.enabled?"bg-emerald-50 text-emerald-700":"bg-slate-100 text-slate-600")}>{policy?.enabled?"Enabled":"Not enabled"}</span>
       </div>
       <form action={saveAutomationAlertPolicy} className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
