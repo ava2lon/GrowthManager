@@ -229,6 +229,7 @@ export async function publishInstagramTarget(input:{targetId:string;workspaceId:
         const child=await graphPost(new URL("https://graph.facebook.com/"+version+"/"+accountId+"/media"),payload);
         childIds.push(child.id);httpStatus=child.httpStatus;
       }
+      for(const childId of childIds)await waitForInstagramContainer(childId,version,token);
       const payload=new URLSearchParams({media_type:"CAROUSEL",children:childIds.join(","),caption:target.contentPost.body,access_token:token});
       const container=await graphPost(new URL("https://graph.facebook.com/"+version+"/"+accountId+"/media"),payload);
       creationId=container.id;httpStatus=container.httpStatus;
