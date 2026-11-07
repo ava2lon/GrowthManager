@@ -3,28 +3,77 @@ import "server-only";
 import {randomUUID} from "node:crypto";
 import {db} from "@/lib/db";
 import {decryptIntegrationCredentials} from "@/lib/integration-crypto";
+import {getSupabaseStorageConfig,storageHeaders} from "@/lib/media-storage";
 
 type PublishResult = {status:"PUBLISHED"|"FAILED"|"UNKNOWN"|"SKIPPED";errorCode?:string};
+type GraphError = {error?:{code?:number;error_subcode?:number;message?:string}};
+type GraphResponse = {id?:string}&GraphError;
+
+async function createMetaMediaUrl(asset:{bucket:string;objectPath:string}):Promise<string>{
+  const storage=getSupabaseStorageConfig();
+  if(asset.bucket!==storage.bucket)throw new Error("MEDIA_STORAGE_CONFIGURATION_MISMATCH");
+  const path=asset.objectPath.split("/").map(encodeURIComponent).join("/");
+  const endpoint=storage.baseUrl+"/storage/v1/object/sign/"+encodeURIComponent(asset.bucket)+"/"+path;
+  const response=await fetch(endpoint,{
+    method:"POST",headers:{...storageHeaders(storage.serviceKey),"Content-Type":"application/json"},
+    body:JSON.stringify({expiresIn:3600}),cache:"no-store",redirect:"error",signal:AbortSignal.timeout(10000),
+  });
+  const payload=await response.json().catch(()=>null) as {signedURL?:string;signedUrl?:string}|null;
+  const signedPath=payload?.signedURL??payload?.signedUrl;
+  if(!response.ok||typeof signedPath!=="string")throw new Error("MEDIA_SIGNING_FAILED");
+  const normalized=signedPath.startsWith("/object/")?"/storage/v1"+signedPath:signedPath;
+  const signedUrl=new URL(normalized,storage.baseUrl);
+  if(signedUrl.origin!==storage.baseUrl||!signedUrl.pathname.startsWith("/storage/v1/object/sign/")) {
+    throw new Error("MEDIA_SIGNING_FAILED");
+  }
+  return signedUrl.toString();
+}
+
+function mapGraphError(response:Response,result:GraphResponse|null):string{
+  const code=result?.error?.code;
+  if(code===190)return "META_AUTH_FAILED";
+  if(code===10||code===200)return "META_PERMISSION_DENIED";
+  if(response.status===429)return "META_RATE_LIMITED";
+  return "META_PUBLISH_REJECTED";
+}
+
+async function graphPost(endpoint:URL,payload:URLSearchParams):Promise<{id:string;httpStatus:number}>{
+  const response=await fetch(endpoint,{
+    method:"POST",headers:{"Content-Type":"application/x-www-form-urlencoded"},
+    body:payload.toString(),cache:"no-store",redirect:"error",signal:AbortSignal.timeout(20000),
+  });
+  const result=await response.json().catch(()=>null) as GraphResponse|null;
+  if(!response.ok||typeof result?.id!=="string")throw Object.assign(new Error(mapGraphError(response,result)),{httpStatus:response.status});
+  return {id:result.id,httpStatus:response.status};
+}
 
 export async function publishFacebookTarget(input:{targetId:string;workspaceId:string;actorUserId?:string|null;allowedStatuses?:("DRAFT"|"SCHEDULED")[]}):Promise<PublishResult>{
   const allowed=input.allowedStatuses??["DRAFT","SCHEDULED"];
   const target=await db.socialPostTarget.findFirst({
     where:{id:input.targetId,workspaceId:input.workspaceId,provider:"FACEBOOK",status:{in:allowed}},
     include:{
-      contentPost:{select:{id:true,workspaceId:true,body:true,brandId:true,mediaAssets:{select:{mediaAssetId:true}}}},
+      contentPost:{select:{id:true,workspaceId:true,body:true,brandId:true,mediaAssets:{
+        orderBy:{position:"asc"},select:{mediaAsset:{select:{id:true,status:true,mimeType:true,bucket:true,objectPath:true,workspaceId:true,brandId:true}}}
+      }}},
       socialAccount:{select:{id:true,workspaceId:true,brandId:true,provider:true,status:true,scopes:true,credentialsEncrypted:true,metadata:true}},
     },
   });
   if(!target||target.contentPost.workspaceId!==input.workspaceId||target.socialAccount.workspaceId!==input.workspaceId||
     target.contentPost.brandId!==target.socialAccount.brandId||target.socialAccount.status!=="CONNECTED"||
     !target.socialAccount.credentialsEncrypted)return {status:"SKIPPED"};
-  if(target.contentPost.mediaAssets.length>0)return failBeforeClaim("MEDIA_PUBLISHING_NOT_SUPPORTED");
+  const assets=target.contentPost.mediaAssets.map(item=>item.mediaAsset);
+  if(assets.length>10)return failBeforeClaim("FACEBOOK_MEDIA_LIMIT_EXCEEDED");
+  if(assets.some(asset=>asset.workspaceId!==input.workspaceId||asset.status!=="READY"||
+    (asset.brandId!==null&&asset.brandId!==target.contentPost.brandId)))return failBeforeClaim("MEDIA_ASSET_NOT_READY");
+  if(assets.some(asset=>asset.mimeType!=="image/jpeg"&&asset.mimeType!=="image/png")) {
+    return failBeforeClaim("FACEBOOK_UNSUPPORTED_MEDIA_TYPE");
+  }
   if(!target.socialAccount.scopes.includes("pages_manage_posts"))return failBeforeClaim("META_PERMISSION_DENIED");
   const metadata=target.socialAccount.metadata&&typeof target.socialAccount.metadata==="object"&&!Array.isArray(target.socialAccount.metadata)
     ?target.socialAccount.metadata as Record<string,unknown>:{};
   if(typeof metadata.pageId!=="string")return failBeforeClaim("META_PAGE_ID_MISSING");
   const version=process.env.META_GRAPH_API_VERSION;
-  if(!version||!/^v\d+\.\d+$/.test(version))return failBeforeClaim("META_API_NOT_CONFIGURED");
+  if(!version||!/^v\\d+\\.\\d+$/.test(version))return failBeforeClaim("META_API_NOT_CONFIGURED");
   let credentials:Record<string,unknown>;
   try{credentials=decryptIntegrationCredentials(target.socialAccount.credentialsEncrypted,input.workspaceId,target.socialAccount.id);}
   catch{return failBeforeClaim("CREDENTIAL_DECRYPTION_FAILED");}
@@ -43,17 +92,30 @@ export async function publishFacebookTarget(input:{targetId:string;workspaceId:s
   },select:{id:true}});
   let providerPostId:string|null=null,errorCode:string|null=null,httpStatus:number|null=null;
   try{
-    const endpoint=new URL("https://graph.facebook.com/"+version+"/"+encodeURIComponent(metadata.pageId)+"/feed");
-    const payload=new URLSearchParams({message:target.contentPost.body,access_token:credentials.accessToken});
-    const response=await fetch(endpoint,{method:"POST",headers:{"Content-Type":"application/x-www-form-urlencoded"},body:payload.toString(),
-      cache:"no-store",redirect:"error",signal:AbortSignal.timeout(20000)});
-    httpStatus=response.status;
-    const result=await response.json().catch(()=>null) as {id?:string;error?:{code?:number}}|null;
-    if(!response.ok||typeof result?.id!=="string"){
-      const code=result?.error?.code;
-      errorCode=code===190?"META_AUTH_FAILED":code===10||code===200?"META_PERMISSION_DENIED":response.status===429?"META_RATE_LIMITED":"META_PUBLISH_REJECTED";
-    }else providerPostId=result.id;
-  }catch{errorCode="PUBLISH_OUTCOME_UNKNOWN";}
+    const base="https://graph.facebook.com/"+version+"/";
+    const pageId=encodeURIComponent(metadata.pageId);
+    if(assets.length===0){
+      const payload=new URLSearchParams({message:target.contentPost.body,access_token:credentials.accessToken});
+      const result=await graphPost(new URL(base+pageId+"/feed"),payload);
+      providerPostId=result.id;httpStatus=result.httpStatus;
+    }else{
+      const signedUrls=await Promise.all(assets.map(asset=>createMetaMediaUrl(asset)));
+      const staged=await Promise.all(signedUrls.map(async url=>{
+        const payload=new URLSearchParams({url,published:"false",access_token:credentials.accessToken as string});
+        return graphPost(new URL(base+pageId+"/photos"),payload);
+      }));
+      const payload=new URLSearchParams({message:target.contentPost.body,access_token:credentials.accessToken});
+      staged.forEach((photo,index)=>payload.set("attached_media["+index+"]",JSON.stringify({media_fbid:photo.id})));
+      const result=await graphPost(new URL(base+pageId+"/feed"),payload);
+      providerPostId=result.id;httpStatus=result.httpStatus;
+    }
+  }catch(error){
+    const code=error instanceof Error?error.message:"PUBLISH_OUTCOME_UNKNOWN";
+    const known=["META_AUTH_FAILED","META_PERMISSION_DENIED","META_RATE_LIMITED","META_PUBLISH_REJECTED",
+      "MEDIA_STORAGE_CONFIGURATION_MISMATCH","MEDIA_SIGNING_FAILED"];
+    errorCode=known.includes(code)?code:"PUBLISH_OUTCOME_UNKNOWN";
+    if(error&&typeof error==="object"&&"httpStatus" in error&&typeof error.httpStatus==="number")httpStatus=error.httpStatus;
+  }
   const finishedAt=new Date();
   const finalStatus=providerPostId?"PUBLISHED":errorCode==="PUBLISH_OUTCOME_UNKNOWN"?"UNKNOWN":"FAILED";
   await db.$transaction(async tx=>{
@@ -68,7 +130,7 @@ export async function publishFacebookTarget(input:{targetId:string;workspaceId:s
       workspaceId:input.workspaceId,userId:input.actorUserId??null,
       action:providerPostId?"social_post.published":"social_post.publish_failed",
       entityType:"ContentPost",entityId:target.contentPost.id,
-      metadata:{provider:"FACEBOOK",targetId:target.id,errorCode,httpStatus,source:input.actorUserId?"dashboard":"scheduled_worker"},
+      metadata:{provider:"FACEBOOK",targetId:target.id,errorCode,httpStatus,mediaCount:assets.length,source:input.actorUserId?"dashboard":"scheduled_worker"},
     }});
   });
   return {status:finalStatus,errorCode:errorCode??undefined};
