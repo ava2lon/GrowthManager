@@ -102,7 +102,7 @@ export async function processTikTokInboxTarget(input:{targetId:string;workspaceI
    body:JSON.stringify({publish_id:target.providerContainerId}),cache:"no-store",redirect:"error",signal:AbortSignal.timeout(12000),
   });
  }catch{
-  await db.socialPostTarget.updateMany({where:{id:target.id,workspaceId:input.workspaceId,status:"PROCESSING"},data:{nextCheckAt:new Date(Date.now()+5*60_000)}});
+  await db.socialPostTarget.updateMany({where:{id:target.id,workspaceId:input.workspaceId,status:{in:["PROCESSING","UPLOADED"]}},data:{nextCheckAt:new Date(Date.now()+5*60_000)}});
   return {status:"PROCESSING" as const};
  }
  const payload=await response.json().catch(()=>null) as {data?:{status?:string;fail_reason?:string;publicaly_available_post_id?:Array<string|number>};error?:{code?:string}}|null;
@@ -114,7 +114,7 @@ export async function processTikTokInboxTarget(input:{targetId:string;workspaceI
  }
  const status=payload.data?.status;
  if(status==="PROCESSING_UPLOAD"||status==="PROCESSING_DOWNLOAD"){
-  await db.socialPostTarget.updateMany({where:{id:target.id,workspaceId:input.workspaceId,status:"PROCESSING"},data:{nextCheckAt:new Date(Date.now()+60_000)}});
+  await db.socialPostTarget.updateMany({where:{id:target.id,workspaceId:input.workspaceId,status:{in:["PROCESSING","UPLOADED"]}},data:{nextCheckAt:new Date(Date.now()+60_000)}});
   return {status:"PROCESSING" as const};
  }
  if(status==="SEND_TO_USER_INBOX"){
@@ -131,7 +131,7 @@ export async function processTikTokInboxTarget(input:{targetId:string;workspaceI
   const now=new Date();
   await db.$transaction(async tx=>{
    await tx.socialPostTarget.update({where:{id:target.id},data:{status:"PUBLISHED",providerPostId:ids.length?String(ids[0]):null,publishedAt:now,nextCheckAt:null,errorCode:null}});
-   await tx.socialPublishAttempt.updateMany({where:{workspaceId:input.workspaceId,targetId:target.id,status:"PROCESSING"},data:{status:"PUBLISHED",providerPostId:ids.length?String(ids[0]):null,finishedAt:now}});
+   await tx.socialPublishAttempt.updateMany({where:{workspaceId:input.workspaceId,targetId:target.id,status:{in:["PROCESSING","UPLOADED"]}},data:{status:"PUBLISHED",providerPostId:ids.length?String(ids[0]):null,finishedAt:now}});
    const remaining=await tx.socialPostTarget.count({where:{workspaceId:input.workspaceId,contentPostId:target.contentPost.id,status:{not:"PUBLISHED"}}});
    if(remaining===0)await tx.contentPost.update({where:{id:target.contentPost.id},data:{status:"PUBLISHED",publishedAt:now}});
    await tx.activityLog.create({data:{workspaceId:input.workspaceId,action:"social_post.tiktok_creator_published",entityType:"ContentPost",entityId:target.contentPost.id,metadata:{provider:"TIKTOK",targetId:target.id,providerPostId:ids.length?String(ids[0]):null}}});
@@ -145,7 +145,7 @@ export async function processTikTokInboxTarget(input:{targetId:string;workspaceI
  async function mark(result:"FAILED",code:string){
   await db.$transaction(async tx=>{
    await tx.socialPostTarget.update({where:{id:target.id},data:{status:result,errorCode:code,nextCheckAt:null}});
-   await tx.socialPublishAttempt.updateMany({where:{workspaceId:input.workspaceId,targetId:target.id,status:"PROCESSING"},data:{status:result,errorCode:code,finishedAt:new Date()}});
+   await tx.socialPublishAttempt.updateMany({where:{workspaceId:input.workspaceId,targetId:target.id,status:{in:["PROCESSING","UPLOADED"]}},data:{status:result,errorCode:code,finishedAt:new Date()}});
    await tx.activityLog.create({data:{workspaceId:input.workspaceId,action:"social_post.tiktok_upload_failed",entityType:"ContentPost",entityId:target.contentPost.id,metadata:{provider:"TIKTOK",targetId:target.id,errorCode:code}}});
   });
   return {status:result as "FAILED",errorCode:code};
