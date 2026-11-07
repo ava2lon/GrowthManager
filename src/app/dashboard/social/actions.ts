@@ -20,6 +20,7 @@ import {refreshMetaAnalytics} from "@/lib/meta-analytics";
 import {refreshLinkedInAnalytics} from "@/lib/linkedin-analytics";
 import {refreshTikTokAccountAnalytics,refreshTikTokVideoAnalytics} from "@/lib/tiktok-analytics";
 import {refreshYouTubeChannelAnalytics,refreshYouTubeVideoAnalytics} from "@/lib/youtube-analytics";
+import {refreshXAnalytics} from "@/lib/x-analytics";
 
 function readMetadata(value: unknown): Record<string, unknown> {
   if (!value || typeof value !== "object" || Array.isArray(value)) return {};
@@ -1489,4 +1490,16 @@ export async function refreshYouTubeAnalyticsAction(formData:FormData){
  else await refreshYouTubeChannelAnalytics({workspaceId:context.workspace.id,accountId});
  revalidatePath("/dashboard/social");
  redirect("/dashboard/social?youtubeAnalytics=refreshed");
+}
+
+
+export async function refreshXAnalyticsAction(formData:FormData){
+ const context=await requireWorkspaceRole("MEMBER");
+ const accountId=String(formData.get("accountId")??"").trim();
+ const targetId=String(formData.get("targetId")??"").trim();
+ if(!accountId||accountId.length>128||targetId.length>128)throw new Error("Invalid X analytics target.");
+ await enforceSocialRateLimit(context.workspace.id,context.userId,"x-analytics");
+ await refreshXAnalytics({workspaceId:context.workspace.id,accountId,...(targetId?{targetId}:{})});
+ revalidatePath("/dashboard/social");
+ redirect("/dashboard/social?xAnalytics=refreshed");
 }
