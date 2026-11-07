@@ -22,8 +22,11 @@ export async function POST(request: Request) {
     });
   }
 
-  const body = await request.json().catch(() => null) as {assetId?: unknown} | null;
-  if (!body || typeof body.assetId !== "string" || body.assetId.length > 128) {
+  const body = await request.json().catch(() => null) as {assetId?: unknown;width?:unknown;height?:unknown;durationMs?:unknown} | null;
+  if (!body || typeof body.assetId !== "string" || body.assetId.length > 128 ||
+      !Number.isSafeInteger(body.width) || Number(body.width)<1 || Number(body.width)>20000 ||
+      !Number.isSafeInteger(body.height) || Number(body.height)<1 || Number(body.height)>20000 ||
+      (body.durationMs!==null && body.durationMs!==undefined && (!Number.isSafeInteger(body.durationMs)||Number(body.durationMs)<1))) {
     return NextResponse.json({error: "A valid asset ID is required."}, {status: 400});
   }
   const asset = await db.mediaAsset.findFirst({
@@ -31,6 +34,13 @@ export async function POST(request: Request) {
     select: {id: true, bucket: true, objectPath: true, mimeType: true, sizeBytes: true, brandId: true},
   });
   if (!asset) return NextResponse.json({error: "Pending media asset not found."}, {status: 404});
+  const isVideo=asset.mimeType.startsWith("video/");
+  const durationMs=body.durationMs===null||body.durationMs===undefined?null:Number(body.durationMs);
+  if ((isVideo && (durationMs===null||durationMs<3000||durationMs>900000||Number(body.width)>1920||Number(body.height)>1920)) ||
+      (!isVideo && durationMs!==null)) {
+    await db.mediaAsset.updateMany({where:{id:asset.id,workspaceId:context.workspace.id,status:"PENDING"},data:{status:"FAILED"}});
+    return NextResponse.json({error:"Media dimensions or duration are outside the supported upload policy."},{status:422});
+  }
 
   let storage;
   try {
@@ -63,7 +73,7 @@ export async function POST(request: Request) {
 
   const changed = await db.mediaAsset.updateMany({
     where: {id: asset.id, workspaceId: context.workspace.id, status: "PENDING"},
-    data: {status: "READY", uploadedAt: new Date()},
+    data: {status: "READY", uploadedAt: new Date(), width:Number(body.width), height:Number(body.height), durationMs},
   });
   if (changed.count !== 1) return NextResponse.json({error: "Asset state changed. Refresh and retry."}, {status: 409});
   await db.activityLog.create({
