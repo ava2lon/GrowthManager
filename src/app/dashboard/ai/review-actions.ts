@@ -57,3 +57,30 @@ export async function reopenApprovedContent(postId:string) {
   revalidatePath("/dashboard/ai");
   revalidatePath("/dashboard/social");
 }
+
+export async function bulkApproveContentDrafts(postIds:string[]) {
+  const context=await requireWorkspaceRole("ADMIN");
+  await limit(context.workspace.id,context.userId,"bulk-approve");
+  if(!Array.isArray(postIds)||postIds.length<1||postIds.length>10||postIds.some(id=>typeof id!=="string"||!id.trim()||id.length>128)) throw new Error("Select between 1 and 10 valid drafts.");
+  const ids=[...new Set(postIds.map(id=>id.trim()))];
+  if(ids.length!==postIds.length) throw new Error("Duplicate draft selections are not allowed.");
+  await db.$transaction(async tx=>{
+    const eligible=await tx.contentPost.findMany({
+      where:{id:{in:ids},workspaceId:context.workspace.id,status:"DRAFT",publishTargets:{none:{}}},
+      select:{id:true},
+    });
+    if(eligible.length!==ids.length) throw new Error("One or more selected drafts are no longer eligible. Refresh the review queue.");
+    const changed=await tx.contentPost.updateMany({
+      where:{id:{in:ids},workspaceId:context.workspace.id,status:"DRAFT",publishTargets:{none:{}}},
+      data:{status:"APPROVED"},
+    });
+    if(changed.count!==ids.length) throw new Error("The selection changed during approval. No partial approval was recorded.");
+    await tx.activityLog.create({data:{
+      workspaceId:context.workspace.id,userId:context.userId,action:"content.drafts_bulk_approved",
+      entityType:"ContentPost",entityId:ids[0],
+      metadata:{postIds:ids,count:ids.length,approval:"ADMIN",nextStep:"MANUAL_SCHEDULING"},
+    }});
+  });
+  revalidatePath("/dashboard/ai");
+  revalidatePath("/dashboard/social");
+}
