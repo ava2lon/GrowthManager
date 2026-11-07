@@ -98,7 +98,7 @@ async function uploadXMedia(token:string,asset:{id:string;bucket:string;objectPa
   catch{throw new Error("X_MEDIA_APPEND_UNCERTAIN")}
   if(!append.ok)throw new Error(append.status===401?"X_REAUTHORIZATION_REQUIRED":append.status===403?"X_PERMISSION_DENIED":append.status===429?"X_RATE_LIMITED":append.status>=500?"X_MEDIA_APPEND_UNCERTAIN":"X_MEDIA_APPEND_REJECTED");
   segmentIndex=index+1;
-  await db.socialPostTarget.update({where:{id:targetId},data:{uploadMetadata:{xMedia:{mediaId,mediaAssetId:asset.id,phase:"UPLOADING",segmentIndex}}}});
+  await saveXMediaState(workspaceId,targetId,{mediaId,mediaAssetId:asset.id,phase:"UPLOADING",segmentIndex});
   if(index-startSegment>=1&&segmentIndex<totalChunks)return {mediaId,mediaAssetId:asset.id,phase:"UPLOADING",segmentIndex};
  }
  let finalize:Response;
