@@ -217,18 +217,18 @@ export async function publishInstagramTarget(input:{targetId:string;workspaceId:
     const accountId=encodeURIComponent(metadata.instagramUserId);
     const token=credentials.accessToken;
     const signedUrls=await Promise.all(assets.map(asset=>createMetaMediaUrl(asset)));
-    const childIds:string[]=[];
-    for(const url of signedUrls){
-      const payload=new URLSearchParams({image_url:url,is_carousel_item:"true",access_token:token});
-      const child=await graphPost(new URL("https://graph.facebook.com/"+version+"/"+accountId+"/media"),payload);
-      childIds.push(child.id);httpStatus=child.httpStatus;
-    }
     let creationId:string;
-    if(childIds.length===1){
+    if(signedUrls.length===1){
       const payload=new URLSearchParams({image_url:signedUrls[0],caption:target.contentPost.body,access_token:token});
       const container=await graphPost(new URL("https://graph.facebook.com/"+version+"/"+accountId+"/media"),payload);
       creationId=container.id;httpStatus=container.httpStatus;
     }else{
+      const childIds:string[]=[];
+      for(const url of signedUrls){
+        const payload=new URLSearchParams({image_url:url,is_carousel_item:"true",access_token:token});
+        const child=await graphPost(new URL("https://graph.facebook.com/"+version+"/"+accountId+"/media"),payload);
+        childIds.push(child.id);httpStatus=child.httpStatus;
+      }
       const payload=new URLSearchParams({media_type:"CAROUSEL",children:childIds.join(","),caption:target.contentPost.body,access_token:token});
       const container=await graphPost(new URL("https://graph.facebook.com/"+version+"/"+accountId+"/media"),payload);
       creationId=container.id;httpStatus=container.httpStatus;
