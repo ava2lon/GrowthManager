@@ -41,7 +41,7 @@ export async function refreshPinterestPinAnalytics(input:{workspaceId:string;tar
  const group=Object.values(raw).find(value=>value&&typeof value==="object"&&!Array.isArray(value));
  if(!group)throw new Error("PINTEREST_PIN_ANALYTICS_EMPTY_RESPONSE");
  const daily=(Array.isArray(group.daily_metrics)?group.daily_metrics:[]).flatMap(item=>{
-  if(!item||typeof item.date!=="string"||!/^\\d{4}-\\d{2}-\\d{2}$/.test(item.date))return [];
+  if(!item||typeof item.date!=="string"||!/^\d{4}-\d{2}-\d{2}$/.test(item.date))return [];
   return [{date:item.date,dataStatus:typeof item.data_status==="string"?item.data_status:null,metrics:normalize(item.metrics)}];
  });
  const metrics={metricTypes:METRIC_TYPES,summary:normalize(group.summary_metrics),lifetime:normalize(group.lifetime_metrics),daily};
