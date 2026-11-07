@@ -22,6 +22,7 @@ import {refreshTikTokAccountAnalytics,refreshTikTokVideoAnalytics} from "@/lib/t
 import {refreshYouTubeChannelAnalytics,refreshYouTubeVideoAnalytics} from "@/lib/youtube-analytics";
 import {refreshXAnalytics} from "@/lib/x-analytics";
 import {publishXTarget,deleteXPublishedTarget} from "@/lib/x-publishing";
+import {deletePublishedSocialTarget} from "@/lib/social-deletion";
 
 function readMetadata(value: unknown): Record<string, unknown> {
   if (!value || typeof value !== "object" || Array.isArray(value)) return {};
@@ -1612,6 +1613,17 @@ export async function deleteXPost(formData:FormData){
  if(!targetId||targetId.length>128)throw new Error("Invalid X publishing target.");
  await enforceSocialRateLimit(context.workspace.id,context.userId,"publish");
  try{await deleteXPublishedTarget({targetId,workspaceId:context.workspace.id,actorUserId:context.userId});}
+ catch(error){revalidatePath("/dashboard/social");throw error;}
+ revalidatePath("/dashboard/social");
+}
+
+export async function deletePublishedPost(formData:FormData){
+ const context=await requireWorkspaceRole("MEMBER");
+ const targetId=String(formData.get("targetId")??"").trim();
+ const provider=String(formData.get("provider")??"").trim();
+ if(!targetId||targetId.length>128||!["FACEBOOK","LINKEDIN","PINTEREST","YOUTUBE"].includes(provider))throw new Error("Invalid provider post deletion request.");
+ await enforceSocialRateLimit(context.workspace.id,context.userId,"publish");
+ try{await deletePublishedSocialTarget({targetId,workspaceId:context.workspace.id,actorUserId:context.userId,provider:provider as "FACEBOOK"|"LINKEDIN"|"PINTEREST"|"YOUTUBE"});}
  catch(error){revalidatePath("/dashboard/social");throw error;}
  revalidatePath("/dashboard/social");
 }
