@@ -100,7 +100,8 @@ export async function POST(request: Request) {
     requiredSections: ["strategic angle and measurable KPIs", "three content pillars", "two-week publishing plan", "platform-native copy variations", "creative direction and accessibility guidance", "test hypotheses and decision rules", "risks, missing inputs and assumptions"],
   });
 
-  let generated: Record<string, unknown>;\n  let tokenUsage: {prompt_tokens?: number; completion_tokens?: number; total_tokens?: number} = {};
+  let generated: Record<string, unknown>;
+  let tokenUsage: {prompt_tokens?: number; completion_tokens?: number; total_tokens?: number} = {};
   try {
     const baseUrl = (process.env.OPENAI_BASE_URL || "https://api.openai.com/v1").replace(/\/$/, "");
     const response = await fetch(baseUrl + "/chat/completions", {
@@ -108,7 +109,8 @@ export async function POST(request: Request) {
       headers: {"Authorization": "Bearer " + apiKey, "Content-Type": "application/json"},
       body: JSON.stringify({
         model,
-        temperature: 0.7,\n        max_tokens: 5000,
+        temperature: 0.7,
+        max_tokens: 5000,
         response_format: {type: "json_object"},
         messages: [{role: "system", content: systemPrompt}, {role: "user", content: userPrompt}],
       }),
@@ -119,7 +121,8 @@ export async function POST(request: Request) {
       const status = response.status;
       return NextResponse.json({error: status === 429 ? "AI provider rate limit reached. Retry later." : status === 401 || status === 403 ? "AI provider credentials were rejected." : "AI provider request failed."}, {status: status === 429 ? 429 : 502});
     }
-    const payload = await response.json() as {choices?: Array<{message?: {content?: string}}> ; usage?: {prompt_tokens?: number; completion_tokens?: number; total_tokens?: number}};\n    tokenUsage = payload.usage ?? {};
+    const payload = await response.json() as {choices?: Array<{message?: {content?: string}}> ; usage?: {prompt_tokens?: number; completion_tokens?: number; total_tokens?: number}};
+    tokenUsage = payload.usage ?? {};
     const content = payload.choices?.[0]?.message?.content;
     if (typeof content !== "string" || !content.trim()) throw new Error("EMPTY_AI_RESPONSE");
     const parsed: unknown = JSON.parse(content);
