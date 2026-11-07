@@ -1,6 +1,6 @@
 import {createHmac, timingSafeEqual, randomUUID} from "node:crypto";
 import {NextResponse} from "next/server";
-import {Prisma} from "@prisma/client";
+import type {Prisma} from "@prisma/client";
 import {cookies} from "next/headers";
 import {auth} from "@/auth";
 import {db} from "@/lib/db";
