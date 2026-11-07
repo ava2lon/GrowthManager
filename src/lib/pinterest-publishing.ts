@@ -1,7 +1,7 @@
 import "server-only";
 import {randomUUID} from "node:crypto";
 import {db} from "@/lib/db";
-import {getPinterestCredentials,pinterestApi} from "@/lib/pinterest-auth";
+import {getPinterestCredentials} from "@/lib/pinterest-auth";
 import {getSupabaseStorageConfig,storageHeaders} from "@/lib/media-storage";
 
 type Result={status:"PUBLISHED"|"FAILED"|"UNKNOWN"|"SKIPPED";errorCode?:string};
