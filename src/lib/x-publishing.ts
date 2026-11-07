@@ -113,6 +113,16 @@ export async function publishXTarget(input:{targetId:string;workspaceId:string;a
   socialAccount:{select:{id:true,workspaceId:true,brandId:true,status:true,scopes:true,credentialsEncrypted:true,providerUserId:true}}
  }});
  if(!target||target.contentPost.workspaceId!==input.workspaceId||target.socialAccount.workspaceId!==input.workspaceId||target.contentPost.brandId!==target.socialAccount.brandId||target.socialAccount.status!=="CONNECTED"||!target.socialAccount.credentialsEncrypted)return {status:"SKIPPED"};
+ if(target.status==="PUBLISHING"){
+  const startedAttempt=await db.socialPublishAttempt.findFirst({where:{workspaceId:input.workspaceId,targetId:target.id,status:"STARTED"},orderBy:{attemptNumber:"desc"},select:{id:true}});
+  if(startedAttempt){
+   await db.$transaction(async tx=>{
+    await tx.socialPublishAttempt.update({where:{id:startedAttempt.id},data:{status:"UNKNOWN",errorCode:"PUBLISH_OUTCOME_UNKNOWN",finishedAt:new Date()}});
+    await tx.socialPostTarget.updateMany({where:{id:target.id,workspaceId:input.workspaceId,status:"PUBLISHING"},data:{status:"UNKNOWN",errorCode:"PUBLISH_OUTCOME_UNKNOWN",nextCheckAt:null}});
+   });
+   return {status:"UNKNOWN",errorCode:"PUBLISH_OUTCOME_UNKNOWN"};
+  }
+ }
  const attachments=target.contentPost.mediaAssets.map(x=>x.mediaAsset);
  if(attachments.length>1)return failBeforeClaim("X_MEDIA_COUNT_INVALID");
  const asset=attachments[0];
