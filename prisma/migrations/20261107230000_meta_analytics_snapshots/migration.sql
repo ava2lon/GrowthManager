@@ -1,0 +1,5 @@
+CREATE TABLE "MetaAnalyticsSnapshot" ("id" TEXT NOT NULL,"workspaceId" TEXT NOT NULL,"socialAccountId" TEXT NOT NULL,"subjectType" TEXT NOT NULL,"subjectId" TEXT NOT NULL,"reportDate" DATE NOT NULL,"startDate" DATE NOT NULL,"endDate" DATE NOT NULL,"metrics" JSONB NOT NULL,"rawResponse" JSONB NOT NULL,"fetchedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,CONSTRAINT "MetaAnalyticsSnapshot_pkey" PRIMARY KEY ("id"));
+CREATE UNIQUE INDEX "MetaAnalyticsSnapshot_workspaceId_socialAccountId_subjectType_subjectId_reportDate_key" ON "MetaAnalyticsSnapshot"("workspaceId","socialAccountId","subjectType","subjectId","reportDate");
+CREATE INDEX "MetaAnalyticsSnapshot_workspaceId_reportDate_idx" ON "MetaAnalyticsSnapshot"("workspaceId","reportDate");
+CREATE INDEX "MetaAnalyticsSnapshot_workspaceId_socialAccountId_subjectType_fetchedAt_idx" ON "MetaAnalyticsSnapshot"("workspaceId","socialAccountId","subjectType","fetchedAt");
+ALTER TABLE "MetaAnalyticsSnapshot" ADD CONSTRAINT "MetaAnalyticsSnapshot_workspaceId_socialAccountId_fkey" FOREIGN KEY ("workspaceId","socialAccountId") REFERENCES "SocialAccount"("workspaceId","id") ON DELETE CASCADE ON UPDATE CASCADE;
