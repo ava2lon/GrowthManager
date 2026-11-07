@@ -3,6 +3,7 @@ import {requireWorkspaceContext} from "@/lib/workspace";
 import {db} from "@/lib/db";
 import AnalyticsExport from "./analytics-export";
 import {extractSocialPostMetric} from "@/lib/social-analytics-normalize";
+import {extractAudienceMetric} from "@/lib/audience-growth-normalize";
 
 const providers = [
   {key:"FACEBOOK",label:"Facebook"},
@@ -41,6 +42,33 @@ export default async function AnalyticsPage({searchParams}:{searchParams:Promise
     }),
     db.socialAccount.findMany({where:{workspaceId:workspace.id,status:"CONNECTED"},select:{provider:true}}),
   ]);
+  const audienceSince=new Date(now.getTime()-365*24*60*60*1000);
+  const [tiktokAudience,youtubeAudience,xAudience]=await Promise.all([
+    db.tikTokAnalyticsSnapshot.findMany({where:{workspaceId:workspace.id,subjectType:"ACCOUNT",reportDate:{gte:audienceSince}},orderBy:{reportDate:"asc"},take:3000,select:{socialAccountId:true,reportDate:true,metrics:true,fetchedAt:true,socialAccount:{select:{accountName:true}}}}),
+    db.youTubeAnalyticsSnapshot.findMany({where:{workspaceId:workspace.id,subjectType:"CHANNEL",reportDate:{gte:audienceSince}},orderBy:{reportDate:"asc"},take:3000,select:{socialAccountId:true,reportDate:true,metrics:true,fetchedAt:true,socialAccount:{select:{accountName:true}}}}),
+    db.xAnalyticsSnapshot.findMany({where:{workspaceId:workspace.id,subjectType:"ACCOUNT",reportDate:{gte:audienceSince}},orderBy:{reportDate:"asc"},take:3000,select:{socialAccountId:true,reportDate:true,metrics:true,fetchedAt:true,socialAccount:{select:{accountName:true}}}}),
+  ]);
+  const audienceByAccount=new Map<string,{provider:string;name:string;points:Array<{date:Date;value:number;fetchedAt:Date;unit:string}>}>();
+  const addAudience=(provider:string,snapshots:Array<{socialAccountId:string;reportDate:Date;metrics:unknown;fetchedAt:Date;socialAccount:{accountName:string}}>)=>{
+    for(const snapshot of snapshots){
+      const metric=extractAudienceMetric(provider,snapshot.metrics);
+      if(!metric)continue;
+      const current=audienceByAccount.get(snapshot.socialAccountId)??{provider,name:snapshot.socialAccount.accountName,points:[]};
+      current.points.push({date:snapshot.reportDate,value:metric.value,fetchedAt:snapshot.fetchedAt,unit:metric.unit});
+      audienceByAccount.set(snapshot.socialAccountId,current);
+    }
+  };
+  addAudience("TIKTOK",tiktokAudience);
+  addAudience("YOUTUBE",youtubeAudience);
+  addAudience("X",xAudience);
+  const audienceRows=[...audienceByAccount.entries()].map(([accountId,account])=>{
+    const points=account.points.sort((a,b)=>a.date.getTime()-b.date.getTime());
+    const first=points[0],latest=points[points.length-1],change=points.length>1?latest.value-first.value:null;
+    const weekCutoff=new Date(now.getTime()-7*24*60*60*1000);
+    const weekPoints=points.filter(point=>point.date>=weekCutoff);
+    const weeklyChange=weekPoints.length>1?weekPoints[weekPoints.length-1].value-weekPoints[0].value:null;
+    return {accountId,provider:account.provider,name:account.name,unit:latest.unit,first,latest,change,weeklyChange,samples:points.length};
+  }).sort((a,b)=>a.provider.localeCompare(b.provider)||a.name.localeCompare(b.name));
   const recentContent=await db.contentPost.findMany({
     where:{workspaceId:workspace.id,publishTargets:{some:{workspaceId:workspace.id,status:"PUBLISHED",publishedAt:{gte:since}}}},
     orderBy:{updatedAt:"desc"},take:100,
@@ -159,7 +187,15 @@ export default async function AnalyticsPage({searchParams}:{searchParams:Promise
       <div className="rounded-2xl border border-slate-200 bg-white p-5"><p className="text-xs text-slate-500">Latest published target</p><p className="mt-2 text-sm font-semibold text-slate-950">{latestPublished?latestPublished.toLocaleString():"No published targets in this period"}</p></div>
     </section>
     <section className="rounded-2xl border border-slate-200 bg-white p-5 sm:p-6">
-      <div><h2 className="font-semibold text-slate-900">Post performance by platform</h2><p className="mt-1 text-sm text-slate-500">Top five posts per platform, ranked by the first available provider-specific metric. Metrics from different platforms are not directly comparable.</p></div>
+      <div><h2 className="font-semibold text-slate-900">Audience growth by account</h2><p className="mt-1 text-sm text-slate-500">Historical point-in-time audience counts from successful provider account snapshots, retained for up to 365 days. Only platforms with an explicit follower or subscriber count are included.</p></div>
+      {audienceRows.length===0?<p className="mt-4 rounded-xl bg-slate-50 p-4 text-sm text-slate-600">No historical audience snapshots are available yet. Refresh account analytics in Social media to begin building a trend history. A single snapshot establishes a baseline; growth requires at least two dated snapshots.</p>:<div className="mt-4 overflow-x-auto"><table className="w-full min-w-[760px] text-left text-sm">
+        <thead className="border-b border-slate-100 text-xs text-slate-500"><tr><th className="pb-3 pr-4 font-medium">Account</th><th className="pb-3 pr-4 font-medium">Platform</th><th className="pb-3 pr-4 font-medium">Latest audience</th><th className="pb-3 pr-4 font-medium">365-day observed change</th><th className="pb-3 pr-4 font-medium">7-day observed change</th><th className="pb-3 font-medium">Snapshots</th></tr></thead>
+        <tbody className="divide-y divide-slate-100">{audienceRows.map(row=><tr key={row.accountId}><td className="py-3 pr-4 font-medium text-slate-800">{row.name}</td><td className="py-3 pr-4 text-slate-600">{row.provider}</td><td className="py-3 pr-4 font-semibold tabular-nums text-slate-900">{number(row.latest.value)} <span className="font-normal text-slate-500">{row.unit}</span><p className="text-xs font-normal text-slate-500">as of {row.latest.date.toLocaleDateString()}</p></td><td className="py-3 pr-4 tabular-nums">{row.change===null?"Baseline only":(row.change>0?"+":"")+number(row.change)}</td><td className="py-3 pr-4 tabular-nums">{row.weeklyChange===null?"Insufficient weekly samples":(row.weeklyChange>0?"+":"")+number(row.weeklyChange)}</td><td className="py-3 tabular-nums">{row.samples}</td></tr>)}</tbody>
+      </table></div>}
+      <p className="mt-3 text-xs leading-5 text-slate-500">Change is latest successful count minus the earliest successful count in the selected 365-day history; weekly change uses the earliest and latest available samples within the last seven days. These are observed endpoint differences, not daily net-growth totals. Meta and Pinterest are excluded because current account reports do not provide a consistent point-in-time follower count. LinkedIn follower-report payloads are not converted until a verified count field is available.</p>
+    </section>
+    <section className="rounded-2xl border border-slate-200 bg-white p-5 sm:p-6">
+<p className="mt-1 text-sm text-slate-500">Top five posts per platform, ranked by the first available provider-specific metric. Metrics from different platforms are not directly comparable.</p></div>
       <div className="mt-4 grid gap-4 lg:grid-cols-2">{performanceGroups.map(group=><div key={group.key} className="rounded-xl border border-slate-100 p-4"><h3 className="text-sm font-semibold text-slate-800">{group.label}</h3>{group.items.length===0?<p className="mt-3 text-sm text-slate-500">No supported post-level metric available in this reporting window.</p>:<ol className="mt-3 space-y-3">{group.items.map((item,index)=><li key={item.targetId} className="flex items-start justify-between gap-3"><div className="min-w-0"><p className="text-xs font-medium text-slate-500">#{index+1}</p><p className="truncate text-sm text-slate-800">{titleByTarget.get(item.targetId)??"Published post"}</p><p className="text-xs text-slate-500">{item.label} · synced {item.fetchedAt.toLocaleDateString()}</p></div><span className="shrink-0 text-sm font-semibold tabular-nums">{number(item.value)}</span></li>)}</ol>}</div>)}</div>
       <p className="mt-3 text-xs text-slate-500">Only available successful snapshots are ranked. These are indicative platform-specific rankings, not a normalized engagement score.</p>
     </section>
