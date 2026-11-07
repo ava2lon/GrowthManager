@@ -43,7 +43,7 @@ export async function GET(request:Request){
    try{
     const acl=await getJson("https://api.linkedin.com/rest/organizationAcls?q=roleAssignee&state=APPROVED&count=100&start=0",token.access_token) as {elements?:Acl[]};
     const eligible=new Map<string,string>();
-    for(const item of acl.elements??[]){const urn=item.organization??item.organizationTarget;if(urn&&/^urn:li:organization:\d+$/.test(urn)&&["ADMINISTRATOR","DIRECT_SPONSORED_CONTENT_POSTER","CONTENT_ADMIN"].includes(item.role??""))eligible.set(urn,item.role??"")}
+    for(const item of acl.elements??[]){const urn=item.organization??item.organizationTarget;if(urn&&/^urn:li:organization:\d+$/.test(urn)&&["ADMINISTRATOR","DIRECT_SPONSORED_CONTENT_POSTER","CONTENT_ADMIN","CONTENT_ADMINISTRATOR"].includes(item.role??""))eligible.set(urn,item.role??"")}
     for(const [urn,role] of eligible){
      let name="LinkedIn organization "+urn.split(":").pop();
      try{const id=urn.split(":").pop()!;const org=await getJson("https://api.linkedin.com/rest/organizations/"+encodeURIComponent(id)+"?projection=(id,localizedName)",token.access_token) as {localizedName?:string};if(org.localizedName)name=org.localizedName.slice(0,255)}catch{}
