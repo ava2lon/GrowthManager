@@ -17,7 +17,7 @@ function retryable(status:number){return status===408||status===429||status>=500
 
 export async function dispatchSocialIncidentEmails(batchSize=10):Promise<{claimed:number;sent:number;retried:number;failed:number;cancelled:number;deferred:number}>{
   const apiKey=process.env.RESEND_API_KEY,from=process.env.RESEND_FROM_EMAIL;
-  if(!apiKey||apiKey.length<10||!from||from.length>320)throw new Error("RESEND_CONFIGURATION_MISSING");
+  if(!apiKey||apiKey.length<10||!from||from.length>320)return {claimed:0,sent:0,retried:0,failed:0,cancelled:0,deferred:0,configurationMissing:true};
   const now=new Date(),staleLock=new Date(now.getTime()-LOCK_TTL_MS),limit=Math.max(1,Math.min(batchSize,25));
   const candidates=await db.workspaceIncidentEmailDelivery.findMany({
     where:{status:{in:["PENDING","RETRY","PROCESSING"]},nextAttemptAt:{lte:now},OR:[{lockedAt:null},{lockedAt:{lte:staleLock}}]},
