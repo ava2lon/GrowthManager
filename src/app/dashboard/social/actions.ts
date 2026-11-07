@@ -605,7 +605,7 @@ export async function createLinkedInDraft(formData:FormData){
  for(const account of accounts){
   const meta=readMetadata(account.metadata),type=meta.accountType,scope=type==="ORGANIZATION"?"w_organization_social":"w_member_social";
   if(!["MEMBER","ORGANIZATION"].includes(String(type))||!account.scopes.includes(scope))throw new Error("Every selected LinkedIn account must have its matching publishing permission.");
-  if(type==="ORGANIZATION"&&!["ADMINISTRATOR","DIRECT_SPONSORED_CONTENT_POSTER","CONTENT_ADMIN"].includes(String(meta.organizationRole)))throw new Error("An organization account is missing an eligible LinkedIn Page role.");
+  if(type==="ORGANIZATION"&&!["ADMINISTRATOR","DIRECT_SPONSORED_CONTENT_POSTER","CONTENT_ADMIN","CONTENT_ADMINISTRATOR"].includes(String(meta.organizationRole)))throw new Error("An organization account is missing an eligible LinkedIn Page role.");
  }
  const brand=await db.brand.findFirst({where:{id:accounts[0].brandId,workspaceId:context.workspace.id,status:"ACTIVE"},select:{id:true}});
  if(!brand)throw new Error("The selected LinkedIn accounts are not assigned to an active brand.");
@@ -649,7 +649,7 @@ export async function checkLinkedInAccountHealth(formData:FormData){
    const payload=await response.json().catch(()=>null) as {elements?:Array<{organization?:string;organizationTarget?:string;role?:string;state?:string}>}|null;
    if(response.status===401||response.status===403)failure="LINKEDIN_AUTH_FAILED";
    else if(!response.ok||!payload)failure="LINKEDIN_PROVIDER_ERROR";
-   else if(!payload.elements?.some(x=>(x.organization??x.organizationTarget)===account.providerUserId&&x.state==="APPROVED"&&["ADMINISTRATOR","DIRECT_SPONSORED_CONTENT_POSTER","CONTENT_ADMIN"].includes(x.role??"")))failure="LINKEDIN_ORGANIZATION_ROLE_REVOKED";
+   else if(!payload.elements?.some(x=>(x.organization??x.organizationTarget)===account.providerUserId&&x.state==="APPROVED"&&["ADMINISTRATOR","DIRECT_SPONSORED_CONTENT_POSTER","CONTENT_ADMIN","CONTENT_ADMINISTRATOR"].includes(x.role??"")))failure="LINKEDIN_ORGANIZATION_ROLE_REVOKED";
   }else failure="LINKEDIN_ACCOUNT_IDENTITY_INVALID";
  }catch(error){const code=error instanceof Error?error.message:"";failure=code==="LINKEDIN_REAUTHORIZATION_REQUIRED"?"LINKEDIN_REAUTHORIZATION_REQUIRED":code==="LINKEDIN_CREDENTIAL_DECRYPTION_FAILED"?"LINKEDIN_CREDENTIAL_DECRYPTION_FAILED":code==="LINKEDIN_NOT_CONFIGURED"?"LINKEDIN_NOT_CONFIGURED":"LINKEDIN_PROVIDER_UNAVAILABLE"}
  const definitive=!!failure&&!["LINKEDIN_PROVIDER_ERROR","LINKEDIN_PROVIDER_UNAVAILABLE","LINKEDIN_NOT_CONFIGURED"].includes(failure);
