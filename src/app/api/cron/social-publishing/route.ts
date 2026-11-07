@@ -155,7 +155,7 @@ export async function GET(request:Request){
   let pinterestAnalyticsRefreshed=0,pinterestAnalyticsFailed=0;
   for(const account of pinterestAnalyticsDue){
     try{
-      await refreshPinterestAccountAnalytics({workspaceId:account.workspaceId,accountId:account.id});
+      await refreshPinterestAccountAnalytics({workspaceId:account.workspaceId,accountId:account.id,asOf:now});
       pinterestAnalyticsRefreshed++;
     }catch(error){
       pinterestAnalyticsFailed++;
