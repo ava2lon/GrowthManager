@@ -2,6 +2,7 @@ import {timingSafeEqual} from "node:crypto";
 import {NextResponse} from "next/server";
 import {db} from "@/lib/db";
 import {publishFacebookTarget,publishInstagramTarget} from "@/lib/social-publishing";
+import {startInstagramReelTarget,processInstagramReelTarget} from "@/lib/instagram-reels";
 
 export const runtime="nodejs";
 export const dynamic="force-dynamic";
@@ -45,6 +46,21 @@ export async function GET(request:Request){
     }
   }
 
+  const processing=await db.socialPostTarget.findMany({
+    where:{provider:"INSTAGRAM",status:"PROCESSING",OR:[{nextCheckAt:null},{nextCheckAt:{lte:now}}]},
+    select:{id:true,workspaceId:true},orderBy:{nextCheckAt:"asc"},take:10,
+  });
+  let reelsPublished=0,reelsFailed=0,reelsProcessing=0,reelsUnknown=0;
+  for(const target of processing){
+    try{
+      const result=await processInstagramReelTarget({targetId:target.id,workspaceId:target.workspaceId});
+      if(result.status==="PUBLISHED")reelsPublished++;
+      else if(result.status==="FAILED")reelsFailed++;
+      else if(result.status==="UNKNOWN")reelsUnknown++;
+      else if(result.status==="PROCESSING")reelsProcessing++;
+    }catch{reelsUnknown++;}
+  }
+
   const due=await db.socialPostTarget.findMany({
     where:{provider:{in:["FACEBOOK","INSTAGRAM"]},status:"SCHEDULED",contentPost:{scheduledAt:{lte:now}}},
     select:{id:true,workspaceId:true,provider:true},
@@ -54,8 +70,13 @@ export async function GET(request:Request){
   let published=0,failed=0,unknown=0,skipped=0;
   for(const target of due){
     try{
+      const reel=target.provider==="INSTAGRAM"?await db.contentPostMedia.findFirst({
+        where:{workspaceId:target.workspaceId,contentPost:{publishTargets:{some:{id:target.id}}},mediaAsset:{mimeType:{in:["video/mp4","video/quicktime"]}}},
+        select:{id:true},
+      }):null;
       const result=target.provider==="INSTAGRAM"
-        ?await publishInstagramTarget({targetId:target.id,workspaceId:target.workspaceId,allowedStatuses:["SCHEDULED"]})
+        ?reel?await startInstagramReelTarget({targetId:target.id,workspaceId:target.workspaceId,allowedStatuses:["SCHEDULED"]})
+          :await publishInstagramTarget({targetId:target.id,workspaceId:target.workspaceId,allowedStatuses:["SCHEDULED"]})
         :await publishFacebookTarget({targetId:target.id,workspaceId:target.workspaceId,allowedStatuses:["SCHEDULED"]});
       if(result.status==="PUBLISHED")published++;
       else if(result.status==="FAILED")failed++;
@@ -66,5 +87,5 @@ export async function GET(request:Request){
       failed++;
     }
   }
-  return NextResponse.json({due:due.length,published,failed,unknown,skipped,recoveredUnknown});
+  return NextResponse.json({due:due.length,published,failed,unknown,skipped,recoveredUnknown,reels:{checked:processing.length,published:reelsPublished,failed:reelsFailed,processing:reelsProcessing,unknown:reelsUnknown}});
 }
