@@ -6,7 +6,7 @@ import {requireWorkspaceRole} from "@/lib/workspace";
 import {consumeRateLimit} from "@/lib/rate-limit";
 import {decryptIntegrationCredentials} from "@/lib/integration-crypto";
 import {listN8nExecutions} from "@/lib/n8n-client";
-import {dispatchAutomationAlertEmails, recordAutomationAlert} from "@/lib/automation-alert-notifications";
+import {dispatchAutomationAlertEmails, enqueueAutomationAlertEscalations, recordAutomationAlert} from "@/lib/automation-alert-notifications";
 
 function boundedInteger(value: FormDataEntryValue | null, min: number, max: number, fallback: number) {
   const parsed = Number(value);
@@ -117,6 +117,7 @@ export async function evaluateAutomationAlerts() {
       sampleSize: recent.length,
     });
   }
+  await enqueueAutomationAlertEscalations();
   await dispatchAutomationAlertEmails(5);
   await db.activityLog.create({
     data: {
