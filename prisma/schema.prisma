@@ -154,6 +154,7 @@ model SocialAccount {
   metaAnalyticsSnapshots MetaAnalyticsSnapshot[]
   linkedinAnalyticsSnapshots LinkedInAnalyticsSnapshot[]
   tikTokAnalyticsSnapshots TikTokAnalyticsSnapshot[]
+  youTubeAnalyticsSnapshots YouTubeAnalyticsSnapshot[]
   @@unique([workspaceId, provider, providerUserId])
   @@unique([workspaceId, id])
   @@index([workspaceId, brandId, provider])
@@ -528,6 +529,29 @@ model LinkedInAnalyticsSnapshot {
   @@index([targetId], map: "linkedin_analytics_target_idx")
 }
 
+
+
+
+model YouTubeAnalyticsSnapshot {
+  id String @id @default(cuid())
+  workspaceId String
+  socialAccountId String
+  subjectType String
+  subjectId String
+  targetId String?
+  reportDate DateTime @db.Date
+  startDate DateTime @db.Date
+  endDate DateTime @db.Date
+  metrics Json
+  rawResponse Json
+  fetchedAt DateTime @default(now())
+  socialAccount SocialAccount @relation(fields: [workspaceId, socialAccountId], references: [workspaceId, id], onDelete: Cascade)
+  target SocialPostTarget? @relation(fields: [workspaceId, targetId], references: [workspaceId, id], onDelete: Cascade)
+  @@unique([workspaceId, socialAccountId, subjectType, subjectId, reportDate], map: "youtube_analytics_subject_report_uq")
+  @@index([workspaceId, reportDate], map: "youtube_analytics_workspace_date_idx")
+  @@index([workspaceId, socialAccountId, subjectType, fetchedAt], map: "youtube_analytics_account_type_fetched_idx")
+  @@index([targetId], map: "youtube_analytics_target_idx")
+}
 
 model TikTokAnalyticsSnapshot {
   id String @id @default(cuid())
