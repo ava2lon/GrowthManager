@@ -80,7 +80,10 @@ export async function publishFacebookTarget(input:{targetId:string;workspaceId:s
   if(typeof credentials.accessToken!=="string"||!credentials.accessToken)return failBeforeClaim("META_TOKEN_MISSING");
 
   const claim=await db.socialPostTarget.updateMany({
-    where:{id:target.id,workspaceId:input.workspaceId,status:{in:allowed}},
+    where:{
+      id:target.id,workspaceId:input.workspaceId,status:{in:allowed},
+      ...(allowed.includes("SCHEDULED") ? {contentPost:{scheduledAt:{lte:new Date()}}} : {}),
+    },
     data:{status:"PUBLISHING",errorCode:null},
   });
   if(claim.count!==1)return {status:"SKIPPED"};
@@ -202,7 +205,10 @@ export async function publishInstagramTarget(input:{targetId:string;workspaceId:
   if(typeof credentials.accessToken!=="string"||!credentials.accessToken)return failBeforeClaim("META_TOKEN_MISSING");
 
   const claim=await db.socialPostTarget.updateMany({
-    where:{id:target.id,workspaceId:input.workspaceId,status:{in:allowed}},
+    where:{
+      id:target.id,workspaceId:input.workspaceId,status:{in:allowed},
+      ...(allowed.includes("SCHEDULED") ? {contentPost:{scheduledAt:{lte:new Date()}}} : {}),
+    },
     data:{status:"PUBLISHING",errorCode:null},
   });
   if(claim.count!==1)return {status:"SKIPPED"};
