@@ -6,7 +6,7 @@ import {requireWorkspaceRole} from "@/lib/workspace";
 import {consumeRateLimit,getClientIp} from "@/lib/rate-limit";
 export const runtime="nodejs";export const dynamic="force-dynamic";
 const COOKIE="gm_pinterest_oauth_state";
-const SCOPES=["user_accounts:read","boards:read","pins:write"];
+const SCOPES=["user_accounts:read","boards:read","pins:read","pins:write"];
 function sign(value:string){const secret=process.env.AUTH_SECRET;if(!secret||secret.length<32)throw new Error("OAuth state signing is unavailable.");return createHmac("sha256",secret).update(value).digest("base64url")}
 export async function GET(request:Request){
  const session=await auth();if(!session?.user?.id)return NextResponse.redirect(new URL("/sign-in",request.url));
