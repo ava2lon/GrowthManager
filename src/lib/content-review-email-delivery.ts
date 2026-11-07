@@ -1,4 +1,5 @@
 import {db} from "@/lib/db";
+import {nextAllowedSendAt} from "@/lib/notification-quiet-hours";
 
 const MAX_ATTEMPTS = 5;
 const IDEMPOTENCY_WINDOW_MS = 20 * 60 * 60_000;
@@ -66,7 +67,6 @@ export async function dispatchContentReviewEmails(batchSize = 10): Promise<Deliv
       select: {quietHoursEnabled: true, timezone: true, quietHoursStart: true, quietHoursEnd: true},
     });
     if (preferences?.quietHoursEnabled) {
-      const {nextAllowedSendAt} = await import("@/lib/notification-quiet-hours");
       const nextAllowed = nextAllowedSendAt(
         now,
         preferences.timezone,
@@ -74,11 +74,11 @@ export async function dispatchContentReviewEmails(batchSize = 10): Promise<Deliv
         preferences.quietHoursEnd,
       );
       if (nextAllowed) {
-        await db.contentReviewEmailDelivery.updateMany({
+        const deferred = await db.contentReviewEmailDelivery.updateMany({
           where: {id: item.id, workspaceId: item.workspaceId, status: {in: ["PENDING", "RETRY", "PROCESSING"]}, OR: [{lockedAt: null}, {lockedAt: {lte: staleLock}}]},
           data: {nextAttemptAt: nextAllowed, lockedAt: null},
         });
-        result.deferred += 1;
+        if (deferred.count === 1) result.deferred += 1;
         continue;
       }
     }
