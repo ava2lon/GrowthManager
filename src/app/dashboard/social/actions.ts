@@ -768,8 +768,6 @@ export async function createInstagramReelDraft(formData:FormData){
   const context=await requireWorkspaceRole("MEMBER");
   const accountIds=[...new Set(formData.getAll("accountIds").map(v=>String(v).trim()).filter(Boolean))];
   const mediaAssetId=String(formData.get("mediaAssetId")??"").trim();
-  const altText=String(formData.get("altText")??"").trim();
- const altText=String(formData.get("altText")??"").trim();
   const body=String(formData.get("body")??"").trim();
   if(accountIds.length<1||accountIds.length>10||accountIds.some(id=>id.length>128)||!mediaAssetId||mediaAssetId.length>128||!body||body.length>2200)
     throw new Error("Select 1–10 Instagram accounts, one video, and a caption up to 2,200 characters.");
@@ -1514,6 +1512,7 @@ export async function createXDraft(formData:FormData){
  const body=String(formData.get("body")??"").trim();
  const rawSchedule=String(formData.get("scheduledAt")??"").trim();
  const mediaAssetId=String(formData.get("mediaAssetId")??"").trim();
+ const altText=String(formData.get("altText")??"").trim();
  if(accountIds.length<1||accountIds.length>10||accountIds.some(id=>id.length>128)||!body||body.length>280)throw new Error("Select 1–10 X accounts and enter post text up to 280 characters.");
  let scheduledAt:Date|null=null;
  if(rawSchedule){if(!/[zZ]$|[+-][0-9]{2}:[0-9]{2}$/.test(rawSchedule)||!Number.isFinite(Date.parse(rawSchedule)))throw new Error("Schedule must be a timezone-qualified ISO 8601 date.");scheduledAt=new Date(rawSchedule);if(scheduledAt.getTime()<Date.now()+15*60_000||scheduledAt.getTime()>Date.now()+365*24*60*60_000)throw new Error("Schedule must be 15 minutes to 1 year in the future.");}
