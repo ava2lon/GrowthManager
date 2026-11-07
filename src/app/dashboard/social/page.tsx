@@ -4,14 +4,14 @@ import {YouTubeUploadButton} from "./youtube-upload-button";
 import {requireWorkspaceContext} from "@/lib/workspace";
 import {db} from "@/lib/db";
 import {socialProviders} from "@/lib/integration-providers";
-import {checkSocialAccountHealth, checkTikTokAccountHealth, checkYouTubeAccountHealth, checkLinkedInAccountHealth, checkPinterestAccountHealth, loadMorePinterestBoards, cancelPinterestSchedule, reschedulePinterestPin, createPinterestDraft, publishPinterestDraft, retryPinterestPublish, refreshPinterestAnalytics, createLinkedInDraft, publishLinkedInDraft, retryLinkedInPublish, disconnectSocialAccount, refreshMetaAuthorization, createFacebookDraft, publishFacebookDraft, scheduleFacebookDraftTargets, createInstagramDraft, publishInstagramDraft, createInstagramReelDraft, publishInstagramReelDraft, scheduleInstagramDraftTargets, createTikTokDraft, createYouTubeDraft, retryYouTubeUpload, cancelFacebookSchedule} from "@/app/dashboard/social/actions";
+import {checkSocialAccountHealth, checkTikTokAccountHealth, checkYouTubeAccountHealth, checkLinkedInAccountHealth, checkPinterestAccountHealth, loadMorePinterestBoards, cancelPinterestSchedule, reschedulePinterestPin, createPinterestDraft, publishPinterestDraft, retryPinterestPublish, refreshPinterestAnalytics, refreshPinterestPinAnalyticsAction, createLinkedInDraft, publishLinkedInDraft, retryLinkedInPublish, disconnectSocialAccount, refreshMetaAuthorization, createFacebookDraft, publishFacebookDraft, scheduleFacebookDraftTargets, createInstagramDraft, publishInstagramDraft, createInstagramReelDraft, publishInstagramReelDraft, scheduleInstagramDraftTargets, createTikTokDraft, createYouTubeDraft, retryYouTubeUpload, cancelFacebookSchedule} from "@/app/dashboard/social/actions";
 
 const capabilityLabels: Record<string,string> = {
   PROFILE_READ:"Profile", PUBLISH_TEXT:"Text publishing", PUBLISH_MEDIA:"Media publishing",
   ANALYTICS:"Analytics", COMMENTS_READ:"Comments", MESSAGING:"Messaging",
 };
 
-export default async function SocialPage({searchParams}:{searchParams:Promise<{month?:string;linkedin?:string;pinterest?:string;pinterestPublish?:string;pinterestAnalytics?:string;accountId?:string;reportDate?:string}>}) {
+export default async function SocialPage({searchParams}:{searchParams:Promise<{month?:string;linkedin?:string;pinterest?:string;pinterestPublish?:string;pinterestAnalytics?:string;pinterestPinAnalytics?:string;accountId?:string;reportDate?:string}>}) {
   const params=await searchParams;
   const requestedMonth=typeof params.month==="string"&&/^\d{4}-\d{2}$/.test(params.month)?params.month:new Date().toISOString().slice(0,7);
   const monthDate=new Date(requestedMonth+"-01T00:00:00Z");
@@ -41,6 +41,17 @@ export default async function SocialPage({searchParams}:{searchParams:Promise<{m
   const linkedinAccounts=accounts.filter((account)=>account.provider==="LINKEDIN"&&account.status==="CONNECTED");
   const pinterestAccounts=accounts.filter((account)=>account.provider==="PINTEREST"&&account.status==="CONNECTED"&&account.scopes.includes("pins:write")&&brands.some(brand=>brand.id===account.brandId));
   const pinterestAnalyticsSnapshots=pinterestAccounts.length?await db.pinterestAnalyticsSnapshot.findMany({where:{workspaceId:workspace.id,socialAccountId:{in:pinterestAccounts.map(account=>account.id)}},orderBy:{fetchedAt:"desc"},distinct:["socialAccountId"],select:{id:true,socialAccountId:true,startDate:true,endDate:true,fetchedAt:true,metrics:true}}):[];
+  const pinterestReadableAccounts=pinterestAccounts.filter(account=>account.scopes.includes("pins:read"));
+  const pinterestPublishedTargets=pinterestReadableAccounts.length?await db.socialPostTarget.findMany({
+    where:{workspaceId:workspace.id,provider:"PINTEREST",status:"PUBLISHED",providerPostId:{not:null},socialAccountId:{in:pinterestReadableAccounts.map(account=>account.id)}},
+    orderBy:{publishedAt:"desc"},take:20,
+    select:{id:true,providerPostId:true,publishedAt:true,contentPost:{select:{title:true,body:true}},socialAccount:{select:{accountName:true}}},
+  }):[];
+  const pinterestPinSnapshots=pinterestPublishedTargets.length?await db.pinterestPinAnalyticsSnapshot.findMany({
+    where:{workspaceId:workspace.id,targetId:{in:pinterestPublishedTargets.map(target=>target.id)}},
+    orderBy:{fetchedAt:"desc"},distinct:["targetId"],
+    select:{id:true,targetId:true,pinId:true,startDate:true,endDate:true,fetchedAt:true,metrics:true},
+  }):[];
   const pinterestBoardOptions=pinterestAccounts.flatMap((account)=>{
     const metadata=account.metadata&&typeof account.metadata==="object"&&!Array.isArray(account.metadata)?account.metadata as Record<string,unknown>:{};
     const boards=Array.isArray(metadata.boards)?metadata.boards:[];
@@ -168,7 +179,25 @@ export default async function SocialPage({searchParams}:{searchParams:Promise<{m
       <section className="rounded-2xl border border-rose-100 bg-rose-50/30 p-5 sm:p-6">
         <div><h2 className="font-semibold text-slate-900">Connect Pinterest</h2><p className="mt-1 text-sm text-slate-600">Connect a Pinterest profile, verify its identity, discover boards, and publish image Pins from the composer.</p></div>
         <div className="mt-4 flex flex-wrap gap-2">{brands.map(brand=><a key={brand.id} href={"/api/integrations/pinterest/connect?brandId="+encodeURIComponent(brand.id)} className="rounded-xl bg-rose-700 px-4 py-2.5 text-sm font-semibold text-white hover:bg-rose-800">Connect Pinterest · {brand.name}</a>)}{brands.length===0&&<p className="text-sm text-slate-500">Create an active brand before connecting Pinterest.</p>}</div>
-        <p className="mt-3 text-xs leading-5 text-slate-500">Requires PINTEREST_APP_ID, PINTEREST_APP_SECRET, and PINTEREST_REDIRECT_URI. Register /api/integrations/pinterest/callback exactly in the Pinterest developer app. Requested scopes: user_accounts:read, boards:read, pins:write. Pinterest Trial access may restrict created Pins to creator-visible content.</p>
+        <p className="mt-3 text-xs leading-5 text-slate-500">Requires PINTEREST_APP_ID, PINTEREST_APP_SECRET, and PINTEREST_REDIRECT_URI. Register /api/integrations/pinterest/callback exactly in the Pinterest developer app. Requested scopes: user_accounts:read, boards:read, pins:read, pins:write. Pinterest Trial access may restrict created Pins to creator-visible content.</p>
+      </section>
+
+      <section className="rounded-2xl border border-rose-100 bg-white p-5 sm:p-6">
+        <div><h2 className="font-semibold text-slate-900">Pinterest Pin performance</h2><p className="mt-1 text-sm text-slate-500">Detailed metrics for Pins published through GrowthManager. Individual Pin reporting uses Pinterest's non-beta endpoint and a rolling 90-day window.</p></div>
+        {params.pinterestPinAnalytics==="refreshed"&&<p className="mt-3 rounded-lg bg-emerald-50 px-3 py-2 text-sm text-emerald-800">Pin analytics refreshed for the latest reporting window.</p>}
+        {pinterestAccounts.some(account=>!account.scopes.includes("pins:read"))&&<p className="mt-3 rounded-lg bg-amber-50 px-3 py-2 text-sm text-amber-900">Some connected Pinterest accounts need to be reconnected to grant pins:read before individual Pin analytics can be collected. Use the Connect Pinterest link below for the matching brand.</p>}
+        {pinterestPublishedTargets.length===0?<p className="mt-3 text-sm text-slate-500">{pinterestReadableAccounts.length===0?"Reconnect Pinterest with pins:read permission to enable Pin analytics.":"No successfully published GrowthManager Pins are available for detailed analytics yet."}</p>:<div className="mt-4 divide-y divide-slate-100">
+          {pinterestPublishedTargets.map(target=>{
+            const snapshot=pinterestPinSnapshots.find(item=>item.targetId===target.id);
+            const metrics=snapshot?.metrics&&typeof snapshot.metrics==="object"&&!Array.isArray(snapshot.metrics)?snapshot.metrics as Record<string,unknown>:{};
+            const summary=metrics.summary&&typeof metrics.summary==="object"&&!Array.isArray(metrics.summary)?metrics.summary as Record<string,unknown>:{};
+            const labels=[["IMPRESSION","Impressions"],["SAVE","Saves"],["OUTBOUND_CLICK","Outbound clicks"],["PIN_CLICK","Pin clicks"],["ENGAGEMENT","Engagements"],["ENGAGEMENT_RATE","Engagement rate"]];
+            return <div key={target.id} className="py-4">
+              <div className="flex flex-wrap items-center justify-between gap-2"><div className="min-w-0"><p className="truncate text-sm font-semibold text-slate-900">{target.contentPost.title||target.contentPost.body.slice(0,90)}</p><p className="text-xs text-slate-500">{target.socialAccount.accountName} · Pin {target.providerPostId} · Published {target.publishedAt?.toLocaleDateString()??"date unavailable"}</p></div><form action={refreshPinterestPinAnalyticsAction}><input type="hidden" name="targetId" value={target.id}/><button type="submit" className="rounded-lg border border-rose-200 px-3 py-2 text-xs font-semibold text-rose-700 hover:bg-rose-50">Refresh Pin analytics</button></form></div>
+              {snapshot&&metrics.status==="FAILED"?<p className="mt-2 text-sm text-rose-700">Last collection failed: {typeof metrics.errorCode==="string"?metrics.errorCode:"PINTEREST_PIN_ANALYTICS_REFRESH_FAILED"}</p>:snapshot?<div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-3 xl:grid-cols-6">{labels.map(([key,label])=>{const value=summary[key];const number=typeof value==="number"&&Number.isFinite(value)?value:null;return <div key={key} className="rounded-xl bg-slate-50 p-3"><p className="text-xs text-slate-500">{label}</p><p className="mt-1 text-lg font-semibold text-slate-900">{number===null?"—":key==="ENGAGEMENT_RATE"?(number*100).toFixed(2)+"%":new Intl.NumberFormat().format(number)}</p></div>})}</div>:<p className="mt-2 text-sm text-slate-500">No Pin analytics snapshot collected yet.</p>}
+            </div>
+          })}
+        </div>}
       </section>
 
       <section className="rounded-2xl border border-rose-100 bg-white p-5 sm:p-6">
