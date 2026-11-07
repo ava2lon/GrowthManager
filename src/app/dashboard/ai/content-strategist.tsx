@@ -31,6 +31,8 @@ export function ContentStrategist({workspaceName, brands, accounts, campaigns}: 
     return [...new Set([...connected, ...providers.filter(p => connected.includes(p))])].sort();
   }, [accounts, brandId]);
 
+  const platformOptions = [...availablePlatforms, ...providers.filter(provider => !availablePlatforms.includes(provider))];
+
   const prompt = useMemo(() => {
     if (!brand) return "";
     const selectedPlatforms = platforms.length ? platforms : availablePlatforms;
@@ -123,7 +125,7 @@ export function ContentStrategist({workspaceName, brands, accounts, campaigns}: 
             <p className="text-sm font-medium">Target platforms</p>
             <p className="mt-1 text-xs text-slate-500">Connected platforms for this brand are shown first. You can also select a platform that is not connected.</p>
             <div className="mt-3 flex flex-wrap gap-2">
-              {providers.map(provider => <button type="button" key={provider} onClick={() => togglePlatform(provider)} className={"rounded-full border px-3 py-1.5 text-xs font-semibold " + (platforms.includes(provider) ? "border-indigo-600 bg-indigo-50 text-indigo-700" : "border-slate-200 text-slate-600")}>{provider.replace("_", " ")}</button>)}
+              {platformOptions.map(provider => <button type="button" key={provider} onClick={() => togglePlatform(provider)} className={"rounded-full border px-3 py-1.5 text-xs font-semibold " + (platforms.includes(provider) ? "border-indigo-600 bg-indigo-50 text-indigo-700" : "border-slate-200 text-slate-600")}>{provider.replace("_", " ")}</button>)}
             </div>
             {brand && <p className="mt-2 text-xs text-slate-400">Connected for {brand.name}: {availablePlatforms.length ? availablePlatforms.join(", ") : "none detected"}</p>}
           </div>
