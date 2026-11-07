@@ -62,7 +62,7 @@ export default async function SocialPage({searchParams}:{searchParams:Promise<{m
   const gridStart=new Date(monthStart.getTime()-((monthStart.getUTCDay()+6)%7)*86400000);
   const gridEnd=new Date(gridStart.getTime()+42*86400000);
   const {workspace,membership} = await requireWorkspaceContext();
-  const [accounts, brands, calendarPosts, incidents] = await Promise.all([
+  const [accounts, brands, calendarPosts, incidents, incidentEmailDeliveryCounts] = await Promise.all([
     db.socialAccount.findMany({
       where:{workspaceId:workspace.id},
       orderBy:[{updatedAt:"desc"},{accountName:"asc"}],
@@ -71,6 +71,7 @@ export default async function SocialPage({searchParams}:{searchParams:Promise<{m
     db.brand.findMany({where:{workspaceId:workspace.id,status:"ACTIVE"},orderBy:{name:"asc"},select:{id:true,name:true}}),
     db.socialPostTarget.findMany({where:{workspaceId:workspace.id,status:"SCHEDULED",provider:{in:["FACEBOOK","INSTAGRAM","PINTEREST","X","YOUTUBE"]}},orderBy:{createdAt:"desc"},take:500,select:{id:true,provider:true,uploadMetadata:true,socialAccount:{select:{accountName:true}},contentPost:{select:{id:true,body:true,scheduledAt:true}}}}),
     db.workspaceIncident.findMany({where:{workspaceId:workspace.id,sourceType:{in:["SOCIAL_ACCOUNT","SOCIAL_PUBLISH_TARGET"]}},orderBy:[{status:"asc"},{lastSeenAt:"desc"}],take:50,select:{id:true,category:true,severity:true,status:true,message:true,errorCode:true,occurrenceCount:true,firstSeenAt:true,lastSeenAt:true,acknowledgedAt:true,resolvedAt:true,resolutionMessage:true}}),
+    db.workspaceIncidentEmailDelivery.groupBy({by:["status"],where:{workspaceId:workspace.id},_count:{_all:true}}),
   ]);
   const mediaAssets = await db.mediaAsset.findMany({where:{workspaceId:workspace.id,status:"READY",mimeType:{in:["image/jpeg","image/png","video/mp4","video/quicktime"]},OR:[{brandId:null},{brandId:{in:brands.map((brand)=>brand.id)}}]},orderBy:{createdAt:"desc"},take:100,select:{id:true,brandId:true,originalFilename:true,mimeType:true,sizeBytes:true,durationMs:true,width:true,height:true}});
   const drafts = await db.contentPost.findMany({
@@ -201,7 +202,7 @@ export default async function SocialPage({searchParams}:{searchParams:Promise<{m
         <div className="rounded-2xl border border-slate-200 bg-white p-5"><p className="text-xs text-slate-500">Active brands</p><p className="mt-2 text-2xl font-semibold text-slate-950">{brands.length}</p></div>
       </section>
 
-      <SocialIntegrationHealthCenter accounts={healthAccounts} incidents={incidents} canManage={membership.role==="OWNER"||membership.role==="ADMIN"}/>
+      <SocialIntegrationHealthCenter accounts={healthAccounts} incidents={incidents} emailDeliveryCounts={incidentEmailDeliveryCounts} canManage={membership.role==="OWNER"||membership.role==="ADMIN"}/>
 
       <section className="rounded-2xl border border-slate-200 bg-white p-5 sm:p-6">
         <div className="flex items-center justify-between gap-3"><div><h2 className="font-semibold text-slate-900">Connected accounts</h2><p className="mt-1 text-sm text-slate-500">Account inventory scoped to {workspace.name}.</p></div><span className="rounded-full bg-slate-100 px-3 py-1 text-xs text-slate-600">{accounts.length} total</span></div>
