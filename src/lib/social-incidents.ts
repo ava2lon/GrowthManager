@@ -12,6 +12,7 @@ function safeCode(value:string|null|undefined,fallback:string):string {
 }
 async function activate(signal:Signal,now:Date):Promise<"created"|"reopened"|"updated"> {
   return db.$transaction(async tx=>{
+    await tx.$queryRaw`SELECT pg_advisory_xact_lock(hashtext(${signal.workspaceId}), hashtext(${signal.dedupeKey}))`;
     const existing=await tx.workspaceIncident.findUnique({
       where:{workspaceId_dedupeKey:{workspaceId:signal.workspaceId,dedupeKey:signal.dedupeKey}},
       select:{id:true,status:true,occurrenceCount:true},
@@ -63,7 +64,7 @@ async function activate(signal:Signal,now:Date):Promise<"created"|"reopened"|"up
 export async function synchronizeSocialIncidents():Promise<{created:number;reopened:number;updated:number;resolved:number;escalated:number}> {
   const now=new Date(),expiryWarning=new Date(now.getTime()+14*86400000),targetLookback=new Date(now.getTime()-30*86400000);
   const [accounts,targets]=await Promise.all([
-    db.socialAccount.findMany({where:{OR:[{status:{not:"DISCONNECTED"}},{incidents:{some:{status:"OPEN"}}}]},select:{id:true,workspaceId:true,provider:true,accountName:true,status:true,lastErrorCode:true,tokenExpiresAt:true},take:2000}),
+    db.socialAccount.findMany({where:{OR:[{status:{not:"DISCONNECTED"}},{incidents:{some:{status:{in:["OPEN","ACKNOWLEDGED"]}}}}]},select:{id:true,workspaceId:true,provider:true,accountName:true,status:true,lastErrorCode:true,tokenExpiresAt:true},take:2000}),
     db.socialPostTarget.findMany({where:{OR:[{status:{in:["FAILED","UNKNOWN"]},updatedAt:{gte:targetLookback}},{incidents:{some:{status:"OPEN"}}}]},orderBy:{updatedAt:"desc"},take:2000,select:{id:true,workspaceId:true,provider:true,status:true,errorCode:true,socialAccountId:true,socialAccount:{select:{accountName:true}}}}),
   ]);
   const signals:Signal[]=[];
