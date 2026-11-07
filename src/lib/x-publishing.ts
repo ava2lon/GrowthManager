@@ -74,7 +74,9 @@ async function uploadXMedia(token:string,asset:{id:string;bucket:string;objectPa
   catch{throw new Error("X_MEDIA_UPLOAD_UNCERTAIN")}
   const body=await response.json().catch(()=>null) as {data?:{id?:string;processing_info?:{state?:string;check_after_secs?:number}}}|null;
   if(!response.ok||typeof body?.data?.id!=="string")throw new Error(response.status===401?"X_REAUTHORIZATION_REQUIRED":response.status===403?"X_PERMISSION_DENIED":response.status===429?"X_RATE_LIMITED":response.status>=500||!response.ok?"X_MEDIA_UPLOAD_UNCERTAIN":"X_MEDIA_UPLOAD_REJECTED");
-  return {mediaId:body.data.id,mediaAssetId:asset.id,state:body.data.processing_info?.state,checkAfterSecs:body.data.processing_info?.check_after_secs,phase:body.data.processing_info?"PROCESSING":"READY"} as XMediaState;
+  const result:XMediaState={mediaId:body.data.id,mediaAssetId:asset.id,state:body.data.processing_info?.state,checkAfterSecs:body.data.processing_info?.check_after_secs,phase:body.data.processing_info?"PROCESSING":"READY"};
+  await saveXMediaState(workspaceId,targetId,result);
+  return result;
  }
  let mediaId=typeof previous?.mediaId==="string"?previous.mediaId:"";
  let segmentIndex=typeof previous?.segmentIndex==="number"&&Number.isInteger(previous.segmentIndex)&&previous.segmentIndex>=0?previous.segmentIndex:0;
