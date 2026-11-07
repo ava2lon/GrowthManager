@@ -15,7 +15,7 @@ const providers = [
 export default async function AnalyticsPage(){
   const {workspace}=await requireWorkspaceContext();
   const since=new Date(Date.now()-90*24*60*60*1000);
-  const [publishedTargets,meta,tiktok,youtube,linkedin,pinterest,x]=await Promise.all([
+  const [publishedTargets,meta,tiktok,youtube,linkedin,x]=await Promise.all([
     db.socialPostTarget.findMany({
       where:{workspaceId:workspace.id,status:"PUBLISHED",publishedAt:{gte:since},provider:{in:providers.map(item=>item.key)}},
       orderBy:{publishedAt:"desc"},take:2000,
@@ -25,7 +25,6 @@ export default async function AnalyticsPage(){
     db.tikTokAnalyticsSnapshot.findMany({where:{workspaceId:workspace.id,subjectType:"VIDEO",targetId:{not:null},fetchedAt:{gte:since}},distinct:["targetId"],select:{targetId:true}}),
     db.youTubeAnalyticsSnapshot.findMany({where:{workspaceId:workspace.id,subjectType:"VIDEO",targetId:{not:null},fetchedAt:{gte:since}},distinct:["targetId"],select:{targetId:true}}),
     db.linkedInAnalyticsSnapshot.findMany({where:{workspaceId:workspace.id,subjectType:"MEDIA",targetId:{not:null},fetchedAt:{gte:since}},distinct:["targetId"],select:{targetId:true}}),
-    db.pinterestPinAnalyticsSnapshot.findMany({where:{workspaceId:workspace.id,targetId:{in:[]}},distinct:["targetId"],select:{targetId:true}}),
     db.xAnalyticsSnapshot.findMany({where:{workspaceId:workspace.id,subjectType:"POST",targetId:{not:null},fetchedAt:{gte:since}},distinct:["targetId"],select:{targetId:true}}),
   ]);
   const pinterestTargetIds=publishedTargets.filter(item=>item.provider==="PINTEREST").map(item=>item.id);
