@@ -23,6 +23,17 @@ describe("YouTube upload metadata", () => {
       .toThrow("YOUTUBE_METADATA_INVALID");
   });
 
+  it("accepts a future UTC schedule only with private privacy", () => {
+    const future = new Date(Date.now() + 60 * 60_000).toISOString();
+    expect(validateYouTubeMetadata({title: "Scheduled", privacyStatus: "private", publishAt: future}, "Fallback").publishAt).toBe(future);
+    expect(() => validateYouTubeMetadata({title: "Scheduled", privacyStatus: "public", publishAt: future}, "Fallback"))
+      .toThrow("YOUTUBE_SCHEDULE_REQUIRES_PRIVATE");
+    expect(() => validateYouTubeMetadata({title: "Scheduled", publishAt: "2026-11-07T12:00"}, "Fallback"))
+      .toThrow("YOUTUBE_SCHEDULE_TIME_INVALID");
+    expect(() => validateYouTubeMetadata({title: "Scheduled", publishAt: new Date(Date.now() + 60_000).toISOString()}, "Fallback"))
+      .toThrow("YOUTUBE_SCHEDULE_MUST_BE_15_MINUTES_AHEAD");
+  });
+
   it("rejects oversized tags", () => {
     expect(() => validateYouTubeMetadata({title: "valid", tags: ["x".repeat(31)]}, "Fallback"))
       .toThrow("YOUTUBE_TAGS_INVALID");
