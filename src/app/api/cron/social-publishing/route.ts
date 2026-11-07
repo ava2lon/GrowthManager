@@ -63,7 +63,7 @@ export async function GET(request:Request){
   }
 
   const tiktokProcessing=await db.socialPostTarget.findMany({
-    where:{provider:"TIKTOK",status:"PROCESSING",OR:[{nextCheckAt:null},{nextCheckAt:{lte:now}}]},
+    where:{provider:"TIKTOK",status:{in:["PROCESSING","UPLOADED"]},OR:[{nextCheckAt:null},{nextCheckAt:{lte:now}}]},
     select:{id:true,workspaceId:true},orderBy:{nextCheckAt:"asc"},take:10,
   });
   let tiktokUploaded=0,tiktokPublished=0,tiktokFailed=0;
