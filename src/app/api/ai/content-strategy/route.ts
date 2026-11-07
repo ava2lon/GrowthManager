@@ -96,7 +96,7 @@ export async function POST(request: Request) {
     offerOrMessage: offer || "Not specified; do not fabricate.",
     brandVoice: tone || "Clear, useful, confident",
     targetPlatforms: selectedPlatforms,
-    connectedAccounts: connectedAccounts.map(account => ({provider: account.provider, accountName: account.accountName})),
+    connectedProviders: [...new Set(connectedAccounts.map(account => account.provider))],
     requiredSections: ["strategic angle and measurable KPIs", "three content pillars", "two-week publishing plan", "platform-native copy variations", "creative direction and accessibility guidance", "test hypotheses and decision rules", "risks, missing inputs and assumptions"],
   });
 
