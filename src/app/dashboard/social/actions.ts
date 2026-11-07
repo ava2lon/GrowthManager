@@ -1084,11 +1084,12 @@ export async function createYouTubeDraft(formData: FormData) {
   const publishAtInput = String(formData.get("publishAt") ?? "").trim();
   const categoryId = String(formData.get("categoryId") ?? "22").trim();
   const tags = String(formData.get("tags") ?? "").split(",").map(value => value.trim()).filter(Boolean);
+  const validSchedule = !publishAtInput || (/^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d{1,3})?(?:Z|[+-]\\d{2}:\\d{2})$/.test(publishAtInput) && Number.isFinite(Date.parse(publishAtInput)) && Date.parse(publishAtInput) >= Date.now() + 15 * 60_000 && privacyStatus === "private");
   if (!accountId || accountId.length > 128 || !mediaAssetId || mediaAssetId.length > 128 ||
       !title || title.length > 100 || description.length > 5000 ||
-      !["private", "unlisted", "public"].includes(privacyStatus) ||
+      !["private", "unlisted", "public"].includes(privacyStatus) || !validSchedule ||
       !/^\d{1,3}$/.test(categoryId) || tags.length > 20 || tags.some(tag => tag.length > 30)) {
-    throw new Error("Check the YouTube title, description, category, tags, privacy, account and video.");
+    throw new Error("Check the YouTube title, description, category, tags, privacy, account and video. A scheduled publication must use a valid timezone-qualified ISO 8601 time at least 15 minutes ahead and private privacy.");
   }
   const account = await db.socialAccount.findFirst({
     where: {id: accountId, workspaceId: context.workspace.id, provider: "YOUTUBE", status: "CONNECTED"},
