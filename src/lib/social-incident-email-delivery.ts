@@ -61,12 +61,13 @@ export async function dispatchSocialIncidentEmails(batchSize=10):Promise<{claime
     });
     if(claim.count!==1)continue;
     result.claimed++;
-    const [currentIncident,currentPreference]=await Promise.all([
+    const [currentIncident,currentPreference,currentMembership]=await Promise.all([
       db.workspaceIncident.findFirst({where:{id:item.incidentId,workspaceId:item.workspaceId},select:{status:true}}),
       db.workspaceNotificationPreference.findUnique({where:{workspaceId_userId:{workspaceId:item.workspaceId,userId:item.recipientUserId}},select:{emailSocialIncidents:true}}),
+      db.workspaceMembership.findUnique({where:{userId_workspaceId:{userId:item.recipientUserId,workspaceId:item.workspaceId}},select:{role:true}}),
     ]);
     const expectedResolved=item.eventType==="RESOLVED";
-    if(!currentIncident||!currentPreference?.emailSocialIncidents||(expectedResolved?currentIncident.status!=="RESOLVED":currentIncident.status==="RESOLVED")){
+    if(!currentIncident||!currentPreference?.emailSocialIncidents||!currentMembership||!["OWNER","ADMIN"].includes(currentMembership.role)||(expectedResolved?currentIncident.status!=="RESOLVED":currentIncident.status==="RESOLVED")){
       await db.workspaceIncidentEmailDelivery.updateMany({where:{id:item.id,workspaceId:item.workspaceId,status:"PROCESSING",lockedAt:claimedAt},data:{status:"CANCELLED",lockedAt:null,lastErrorCode:"INCIDENT_OR_PREFERENCE_CHANGED"}});
       result.cancelled++;
       continue;
