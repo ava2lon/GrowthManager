@@ -200,11 +200,20 @@ export async function processYouTubeUploadTarget(input: {targetId: string; works
         throw new Error(statusResponse.status === 401 ? "YOUTUBE_AUTH_FAILED" : "YOUTUBE_VIDEO_STATUS_FAILED");
       }
       const statusPayload = await statusResponse.json().catch(() => null) as {
-        items?: Array<{id?: string; status?: {uploadStatus?: string; failureReason?: string; rejectionReason?: string}}>;
+        items?: Array<{id?: string; status?: {uploadStatus?: string; privacyStatus?: string; failureReason?: string; rejectionReason?: string}}>;
       } | null;
       const video = statusPayload?.items?.find(item => item.id === target.providerPostId);
       const uploadStatus = video?.status?.uploadStatus;
-      if (uploadStatus === "processed") return await markPublished(target.providerPostId);
+      if (uploadStatus === "processed") {
+        const rawMetadata = target.uploadMetadata && typeof target.uploadMetadata === "object" && !Array.isArray(target.uploadMetadata)
+          ? target.uploadMetadata as Record<string, unknown> : {};
+        const scheduledAt = typeof rawMetadata.publishAt === "string" ? new Date(rawMetadata.publishAt) : null;
+        if (scheduledAt && Number.isFinite(scheduledAt.getTime()) && scheduledAt.getTime() <= Date.now() && video?.status?.privacyStatus !== "public") {
+          await defer();
+          return {status: "SCHEDULED" as const};
+        }
+        return await markPublished(target.providerPostId);
+      }
       if (uploadStatus === "failed" || uploadStatus === "rejected") {
         throw new Error("YOUTUBE_VIDEO_" + uploadStatus.toUpperCase() + "_" +
           (video?.status?.failureReason ?? video?.status?.rejectionReason ?? "UNKNOWN").toUpperCase());
