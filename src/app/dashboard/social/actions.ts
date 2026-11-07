@@ -19,6 +19,7 @@ import {refreshPinterestPinAnalytics} from "@/lib/pinterest-pin-analytics";
 import {refreshMetaAnalytics} from "@/lib/meta-analytics";
 import {refreshLinkedInAnalytics} from "@/lib/linkedin-analytics";
 import {refreshTikTokAccountAnalytics,refreshTikTokVideoAnalytics} from "@/lib/tiktok-analytics";
+import {refreshYouTubeChannelAnalytics,refreshYouTubeVideoAnalytics} from "@/lib/youtube-analytics";
 
 function readMetadata(value: unknown): Record<string, unknown> {
   if (!value || typeof value !== "object" || Array.isArray(value)) return {};
@@ -1475,4 +1476,17 @@ export async function refreshTikTokAnalyticsAction(formData:FormData){
  else await refreshTikTokAccountAnalytics({workspaceId:context.workspace.id,accountId});
  revalidatePath("/dashboard/social");
  redirect("/dashboard/social?tiktokAnalytics=refreshed");
+}
+
+
+export async function refreshYouTubeAnalyticsAction(formData:FormData){
+ const context=await requireWorkspaceRole("MEMBER");
+ const accountId=String(formData.get("accountId")??"").trim();
+ const targetId=String(formData.get("targetId")??"").trim();
+ if((!accountId&&!targetId)||accountId.length>128||targetId.length>128)throw new Error("Invalid YouTube analytics target.");
+ await enforceSocialRateLimit(context.workspace.id,context.userId,"youtube-analytics");
+ if(targetId)await refreshYouTubeVideoAnalytics({workspaceId:context.workspace.id,targetId});
+ else await refreshYouTubeChannelAnalytics({workspaceId:context.workspace.id,accountId});
+ revalidatePath("/dashboard/social");
+ redirect("/dashboard/social?youtubeAnalytics=refreshed");
 }
