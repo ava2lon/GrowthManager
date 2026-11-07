@@ -146,6 +146,6 @@ export async function processTikTokInboxTarget(input:{targetId:string;workspaceI
    await tx.socialPublishAttempt.updateMany({where:{workspaceId:input.workspaceId,targetId:target.id,status:"PROCESSING"},data:{status:result,errorCode:code,finishedAt:new Date()}});
    await tx.activityLog.create({data:{workspaceId:input.workspaceId,action:"social_post.tiktok_upload_failed",entityType:"ContentPost",entityId:target.contentPost.id,metadata:{provider:"TIKTOK",targetId:target.id,errorCode:code}}});
   });
-  return {status:result as const,errorCode:code};
+  return {status:result as "FAILED",errorCode:code};
  }
 }
