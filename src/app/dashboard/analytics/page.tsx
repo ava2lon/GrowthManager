@@ -120,7 +120,7 @@ export default async function AnalyticsPage({searchParams}:{searchParams:Promise
     insights.push({
       type:"OPPORTUNITY",
       title:"Activate connected channels",
-      detail:connectedWithoutPublishing.map(row=>row.label).join(", ")+ " "+(connectedWithoutPublishing.length===1?"is":"are")+" connected but has no published target in the last 90 days. Plan a small, reviewed publishing test.",
+      detail:connectedWithoutPublishing.map(row=>row.label).join(", ")+ " "+(connectedWithoutPublishing.length===1?"is":"are")+" connected but has no published target in the selected ${days}-day window. Plan a small, reviewed publishing test.",
       action:"Open social channels",
       href:"/dashboard/social",
     });
@@ -131,7 +131,7 @@ export default async function AnalyticsPage({searchParams}:{searchParams:Promise
     insights.push({
       type:"INFO",
       title:"Your most active publishing channel",
-      detail:`${leader.label} accounts for ${number(leader.published)} of ${number(totalPublished)} published targets in the measured 90-day publishing window. This is a volume signal, not a performance ranking.`,
+      detail:`${leader.label} accounts for ${number(leader.published)} of ${number(totalPublished)} published targets in the selected ${days}-day window. This is a volume signal, not a performance ranking.`,
       action:"Compare channel activity",
       href:"/dashboard/social",
     });
