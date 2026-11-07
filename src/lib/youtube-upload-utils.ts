@@ -21,7 +21,7 @@ export function validateYouTubeMetadata(value: unknown, fallbackTitle: string): 
   const tags = Array.isArray(raw.tags)
     ? raw.tags.filter((item): item is string => typeof item === "string")
       .map(item => item.trim()).filter(Boolean).slice(0, 20) : [];
-  if (tags.some(tag => tag.length > 30) || tags.join("").length > 500) {
+  if (tags.some(tag => tag.length > 30) || tags.join(",").length > 500) {
     throw new Error("YOUTUBE_TAGS_INVALID");
   }
   const categoryId = typeof raw.categoryId === "string" && /^\d{1,3}$/.test(raw.categoryId)
