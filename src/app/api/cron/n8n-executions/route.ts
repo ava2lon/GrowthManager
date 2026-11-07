@@ -116,6 +116,18 @@ export async function GET(request: Request) {
         : message === "N8N_HOST_NOT_ALLOWED" ? "HOST_NOT_ALLOWED"
           : message === "N8N_CREDENTIALS_INCOMPLETE" ? "CREDENTIALS_INCOMPLETE"
             : "SYNC_FAILED";
+    // Advance the round-robin cursor even on provider failures so one broken
+    // workspace cannot starve every other connected n8n integration.
+    await db.integration.updateMany({
+      where: {
+        id: integration.id,
+        workspaceId: integration.workspaceId,
+        provider: "n8n",
+        status: "CONNECTED",
+        credentialsEncrypted: integration.credentialsEncrypted,
+      },
+      data: {lastExecutionSyncAt: new Date()},
+    });
     await db.activityLog.create({
       data: {
         workspaceId: integration.workspaceId,
