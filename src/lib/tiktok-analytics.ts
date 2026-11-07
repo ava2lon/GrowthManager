@@ -33,9 +33,9 @@ export async function refreshTikTokAccountAnalytics(input:{workspaceId:string;ac
  const account=await eligibleAccount(input.workspaceId,input.accountId);
  const reportDate=day(input.asOf??new Date());
  const {accessToken}=await getFreshTikTokCredentials(input);
- const fields=["open_id","display_name","username","follower_count","following_count","likes_count","video_count"];
+ const fields=["open_id","display_name","follower_count","following_count","likes_count","video_count"];
  const statsAllowed=account.scopes.includes("user.info.stats");
- const requested=statsAllowed?fields:fields.slice(0,3);
+ const requested=statsAllowed?fields:fields.slice(0,2);
  const result=await request<UserInfo>("https://open.tiktokapis.com/v2/user/info/?fields="+requested.join(","),accessToken);
  const user=result.data?.user;
  if(!user||user.open_id!==account.providerUserId)throw new Error("TIKTOK_ANALYTICS_PROFILE_MISMATCH");
