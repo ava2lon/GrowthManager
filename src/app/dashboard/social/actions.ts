@@ -675,8 +675,8 @@ export async function cancelFacebookSchedule(formData: FormData) {
   if (!targetId || targetId.length > 128) throw new Error("Invalid publishing target.");
   await db.$transaction(async tx => {
     const target = await tx.socialPostTarget.findFirst({
-      where:{id:targetId,workspaceId:context.workspace.id,provider:"FACEBOOK",status:"SCHEDULED"},
-      select:{id:true,contentPostId:true},
+      where:{id:targetId,workspaceId:context.workspace.id,provider:{in:["FACEBOOK","INSTAGRAM"]},status:"SCHEDULED"},
+      select:{id:true,contentPostId:true,provider:true},
     });
     if (!target) throw new Error("This scheduled post is already processing or no longer available.");
     const changed = await tx.socialPostTarget.updateMany({
@@ -695,7 +695,7 @@ export async function cancelFacebookSchedule(formData: FormData) {
     }
     await tx.activityLog.create({data:{
       workspaceId:context.workspace.id,userId:context.userId,action:"social_post.schedule_cancelled",
-      entityType:"ContentPost",entityId:target.contentPostId,metadata:{provider:"FACEBOOK",targetId:target.id},
+      entityType:"ContentPost",entityId:target.contentPostId,metadata:{provider:target.provider,targetId:target.id},
     }});
   });
   revalidatePath("/dashboard/social");
