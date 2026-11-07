@@ -27,7 +27,7 @@ export function validateYouTubeMetadata(value: unknown, fallbackTitle: string): 
   }
   let publishAt: string | undefined;
   if (raw.publishAt !== undefined && raw.publishAt !== null && raw.publishAt !== "") {
-    if (typeof raw.publishAt !== "string" || !/^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d{1,3})?(?:Z|[+-]\\d{2}:\\d{2})$/.test(raw.publishAt)) {
+    if (typeof raw.publishAt !== "string" || !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,3})?(?:Z|[+-]\d{2}:\d{2})$/.test(raw.publishAt)) {
       throw new Error("YOUTUBE_SCHEDULE_TIME_INVALID");
     }
     const scheduled = new Date(raw.publishAt);
