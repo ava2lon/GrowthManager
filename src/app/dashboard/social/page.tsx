@@ -238,7 +238,7 @@ export default async function SocialPage({searchParams}:{searchParams:Promise<{m
         <div className="rounded-2xl border border-slate-200 bg-white p-5"><p className="text-xs text-slate-500">Active brands</p><p className="mt-2 text-2xl font-semibold text-slate-950">{brands.length}</p></div>
       </section>
 
-      <SocialIntegrationHealthCenter accounts={healthAccounts} incidents={incidents} emailDeliveryCounts={incidentEmailDeliveryCounts} canManage={membership.role==="OWNER"||membership.role==="ADMIN"}/>
+      <SocialIntegrationHealthCenter accounts={healthAccounts} incidents={incidents} emailDeliveryCounts={incidentEmailDeliveryCounts} analyticsOperations={analyticsOperations} canManage={membership.role==="OWNER"||membership.role==="ADMIN"}/>
 
       <section className="rounded-2xl border border-slate-200 bg-white p-5 sm:p-6">
         <div className="flex items-center justify-between gap-3"><div><h2 className="font-semibold text-slate-900">Connected accounts</h2><p className="mt-1 text-sm text-slate-500">Account inventory scoped to {workspace.name}.</p></div><span className="rounded-full bg-slate-100 px-3 py-1 text-xs text-slate-600">{accounts.length} total</span></div>
