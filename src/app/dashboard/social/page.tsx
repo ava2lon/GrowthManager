@@ -61,7 +61,7 @@ export default async function SocialPage({searchParams}:{searchParams:Promise<{m
   const monthStart=new Date(Date.UTC(monthDate.getUTCFullYear(),monthDate.getUTCMonth(),1));
   const gridStart=new Date(monthStart.getTime()-((monthStart.getUTCDay()+6)%7)*86400000);
   const gridEnd=new Date(gridStart.getTime()+42*86400000);
-  const {workspace} = await requireWorkspaceContext();
+  const {workspace,membership} = await requireWorkspaceContext();
   const [accounts, brands, calendarPosts, incidents] = await Promise.all([
     db.socialAccount.findMany({
       where:{workspaceId:workspace.id},
@@ -201,7 +201,7 @@ export default async function SocialPage({searchParams}:{searchParams:Promise<{m
         <div className="rounded-2xl border border-slate-200 bg-white p-5"><p className="text-xs text-slate-500">Active brands</p><p className="mt-2 text-2xl font-semibold text-slate-950">{brands.length}</p></div>
       </section>
 
-      <SocialIntegrationHealthCenter accounts={healthAccounts} incidents={incidents}/>
+      <SocialIntegrationHealthCenter accounts={healthAccounts} incidents={incidents} canManage={membership.role==="OWNER"||membership.role==="ADMIN"}/>
 
       <section className="rounded-2xl border border-slate-200 bg-white p-5 sm:p-6">
         <div className="flex items-center justify-between gap-3"><div><h2 className="font-semibold text-slate-900">Connected accounts</h2><p className="mt-1 text-sm text-slate-500">Account inventory scoped to {workspace.name}.</p></div><span className="rounded-full bg-slate-100 px-3 py-1 text-xs text-slate-600">{accounts.length} total</span></div>
