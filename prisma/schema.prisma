@@ -81,6 +81,7 @@ model User {
   workspaceNotifications WorkspaceNotification[]
   notificationPreferences WorkspaceNotificationPreference[]
   contentReviewEmailDeliveries ContentReviewEmailDelivery[]
+  contentReviewEmailDigests ContentReviewEmailDigest[]
 }
 
 model Workspace {
@@ -103,6 +104,7 @@ model Workspace {
   contentReviewAssignments ContentReviewAssignment[]
   notifications WorkspaceNotification[]
   contentReviewEmailDeliveries ContentReviewEmailDelivery[]
+  contentReviewEmailDigests ContentReviewEmailDigest[]
   notificationPreferences WorkspaceNotificationPreference[]
 }
 
@@ -755,10 +757,39 @@ model WorkspaceNotificationPreference {
   quietHoursEnabled        Boolean   @default(false)
   quietHoursStart          String    @default("22:00")
   quietHoursEnd            String    @default("08:00")
+  digestEnabled            Boolean   @default(false)
+  digestFrequency          String    @default("DAILY")
+  digestSendTime           String    @default("09:00")
   createdAt                DateTime  @default(now())
   updatedAt                DateTime  @updatedAt
   workspace                Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
   user                     User      @relation(fields: [userId], references: [id], onDelete: Cascade)
   @@unique([workspaceId, userId])
   @@index([userId, updatedAt])
+}
+
+
+model ContentReviewEmailDigest {
+  id                String   @id @default(cuid())
+  workspaceId       String
+  recipientUserId   String
+  recipientEmail    String
+  recipientName     String?
+  digestKey         String   @unique
+  periodKey         String
+  deliveryIds       String[]
+  items             Json
+  status            String   @default("PENDING")
+  attempts          Int      @default(0)
+  nextAttemptAt     DateTime @default(now())
+  lockedAt          DateTime?
+  providerMessageId String?
+  lastErrorCode     String?
+  sentAt            DateTime?
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+  workspace         Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  recipient         User @relation(fields: [recipientUserId], references: [id], onDelete: Cascade)
+  @@index([status, nextAttemptAt])
+  @@index([workspaceId, recipientUserId, createdAt])
 }
