@@ -1263,24 +1263,27 @@ export async function checkPinterestAccountHealth(formData:FormData){
  const account=await db.socialAccount.findFirst({where:{id:accountId,workspaceId:context.workspace.id,provider:"PINTEREST",status:"CONNECTED"},select:{id:true,providerUserId:true,accountName:true,credentialsEncrypted:true,scopes:true,metadata:true}});
  if(!account?.credentialsEncrypted||!account.providerUserId)throw new Error("A connected Pinterest account with saved credentials is required.");
  let failure:string|null=null,displayName=account.accountName,boards:Array<{id:string;name:string;privacy:string}>=[];
+ let credentialVersion=account.credentialsEncrypted,metadata=readMetadata(account.metadata);
  try{
   const credentials=await getPinterestCredentials({workspaceId:context.workspace.id,accountId:account.id});
+  const latest=await db.socialAccount.findFirst({where:{id:account.id,workspaceId:context.workspace.id,provider:"PINTEREST",status:"CONNECTED"},select:{credentialsEncrypted:true}});
+  if(!latest?.credentialsEncrypted)throw new Error("PINTEREST_ACCOUNT_NOT_CONNECTED");
+  credentialVersion=latest.credentialsEncrypted;
   if(!["user_accounts:read","boards:read","pins:write"].every(scope=>credentials.scopes.includes(scope)))failure="PINTEREST_REQUIRED_SCOPE_MISSING";
   else{
    const profile=await pinterestApi<{id?:string;username?:string;business_name?:string}>(credentials.accessToken,"/v5/user_account");
-   if(!profile.id||profile.id!==account.providerUserId)failure="PINTEREST_ACCOUNT_MISMATCH";
+   if(!profile.id||String(profile.id)!==account.providerUserId)failure="PINTEREST_ACCOUNT_MISMATCH";
    else{
     displayName=(profile.business_name||profile.username||account.accountName).slice(0,255);
     const boardData=await pinterestApi<{items?:Array<{id?:string;name?:string;privacy?:string}>;bookmark?:string|null}>(credentials.accessToken,"/v5/boards?page_size=100");
     boards=(boardData.items??[]).filter(x=>typeof x.id==="string"&&typeof x.name==="string").map(x=>({id:x.id!,name:x.name!.slice(0,100),privacy:typeof x.privacy==="string"?x.privacy:"UNKNOWN"}));
-    const metadata=readMetadata(account.metadata);
-    await db.socialAccount.updateMany({where:{id:account.id,workspaceId:context.workspace.id,provider:"PINTEREST",credentialsEncrypted:account.credentialsEncrypted},data:{metadata:{...metadata,username:profile.username??metadata.username,boardCount:boards.length,boards,hasMoreBoards:!!boardData.bookmark}}});
+    metadata={...metadata,username:profile.username??metadata.username,boardCount:boards.length,boards,hasMoreBoards:!!boardData.bookmark};
    }
   }
- }catch(error){const code=error instanceof Error?error.message:"";failure=["PINTEREST_AUTH_FAILED","PINTEREST_REAUTHORIZATION_REQUIRED","PINTEREST_CREDENTIAL_DECRYPTION_FAILED","PINTEREST_REQUIRED_SCOPE_MISSING","PINTEREST_ACCOUNT_MISMATCH"].includes(code)?code:code==="PINTEREST_NOT_CONFIGURED"?"PINTEREST_NOT_CONFIGURED":"PINTEREST_PROVIDER_UNAVAILABLE"}
+ }catch(error){const code=error instanceof Error?error.message:"";failure=["PINTEREST_AUTH_FAILED","PINTEREST_REAUTHORIZATION_REQUIRED","PINTEREST_CREDENTIAL_DECRYPTION_FAILED","PINTEREST_REQUIRED_SCOPE_MISSING","PINTEREST_ACCOUNT_MISMATCH","PINTEREST_ACCOUNT_NOT_CONNECTED"].includes(code)?code:code==="PINTEREST_NOT_CONFIGURED"?"PINTEREST_NOT_CONFIGURED":"PINTEREST_PROVIDER_UNAVAILABLE"}
  const definitive=!!failure&&!["PINTEREST_PROVIDER_ERROR","PINTEREST_PROVIDER_UNAVAILABLE","PINTEREST_NOT_CONFIGURED","PINTEREST_RATE_LIMITED","PINTEREST_REFRESH_UNAVAILABLE"].includes(failure);
  await db.$transaction(async tx=>{
-  const changed=await tx.socialAccount.updateMany({where:{id:account.id,workspaceId:context.workspace.id,provider:"PINTEREST",status:"CONNECTED",credentialsEncrypted:account.credentialsEncrypted},data:failure?{...(definitive?{status:"ERROR"}:{}),lastValidatedAt:new Date(),lastErrorCode:failure}:{accountName:displayName,status:"CONNECTED",lastValidatedAt:new Date(),lastErrorCode:null}});
+  const changed=await tx.socialAccount.updateMany({where:{id:account.id,workspaceId:context.workspace.id,provider:"PINTEREST",status:"CONNECTED",credentialsEncrypted:credentialVersion},data:failure?{...(definitive?{status:"ERROR"}:{}),lastValidatedAt:new Date(),lastErrorCode:failure}:{accountName:displayName,metadata,status:"CONNECTED",lastValidatedAt:new Date(),lastErrorCode:null}});
   if(changed.count!==1)throw new Error("Pinterest account changed during the health check. Refresh and retry.");
   await tx.activityLog.create({data:{workspaceId:context.workspace.id,userId:context.userId,action:failure?"social_account.health_check_failed":"social_account.health_check_succeeded",entityType:"SocialAccount",entityId:account.id,metadata:{provider:"PINTEREST",errorCode:failure,boardsDiscovered:boards.length,authorizationStateChanged:definitive}}});
  });
