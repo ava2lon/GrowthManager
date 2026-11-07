@@ -17,7 +17,7 @@ export async function acknowledgeSocialIncident(formData:FormData){
   await enforceIncidentActionLimit(context.workspace.id,context.userId);
   const updated=await db.workspaceIncident.updateMany({
     where:{id:incidentId,workspaceId:context.workspace.id,status:"OPEN",sourceType:{in:["SOCIAL_ACCOUNT","SOCIAL_PUBLISH_TARGET"]}},
-    data:{status:"ACKNOWLEDGED"},
+    data:{status:"ACKNOWLEDGED",acknowledgedAt:new Date(),acknowledgedById:context.userId},
   });
   if(updated.count){
     await db.activityLog.create({data:{workspaceId:context.workspace.id,userId:context.userId,action:"social.incident_acknowledged",entityType:"workspace_incident",entityId:incidentId}});
