@@ -62,6 +62,34 @@ export default async function SocialPage({searchParams}:{searchParams:Promise<{m
       return [{value:account.id+"|"+item.id,label:account.accountName+" · "+item.name,brandId:account.brandId}];
     });
   });
+  const pinterestBoardNameByKey=new Map<string,string>();
+  for(const account of pinterestAccounts){
+    const metadata=account.metadata&&typeof account.metadata==="object"&&!Array.isArray(account.metadata)?account.metadata as Record<string,unknown>:{};
+    const boards=Array.isArray(metadata.boards)?metadata.boards:[];
+    for(const board of boards){if(board&&typeof board==="object"){const item=board as Record<string,unknown>;if(typeof item.id==="string"&&typeof item.name==="string")pinterestBoardNameByKey.set(account.id+"|"+item.id,item.name);}}
+  }
+  const pinterestSnapshotByTarget=new Map(pinterestPinSnapshots.map(snapshot=>[snapshot.targetId,snapshot]));
+  const pinterestPerformanceRows=pinterestPublishedTargets.flatMap(target=>{
+    const upload=target.uploadMetadata&&typeof target.uploadMetadata==="object"&&!Array.isArray(target.uploadMetadata)?target.uploadMetadata as Record<string,unknown>:{};
+    const boardId=typeof upload.boardId==="string"?upload.boardId:null;
+    const snapshot=pinterestSnapshotByTarget.get(target.id);
+    const metrics=snapshot?.metrics&&typeof snapshot.metrics==="object"&&!Array.isArray(snapshot.metrics)?snapshot.metrics as Record<string,unknown>:{};
+    const summary=metrics.summary&&typeof metrics.summary==="object"&&!Array.isArray(metrics.summary)?metrics.summary as Record<string,unknown>:{};
+    const number=(key:string)=>typeof summary[key]==="number"&&Number.isFinite(summary[key])?summary[key] as number:null;
+    if(!boardId)return [];
+    return [{targetId:target.id,title:target.contentPost.title||target.contentPost.body.slice(0,90),accountId:target.socialAccount.id,accountName:target.socialAccount.accountName,brandId:target.socialAccount.brandId,boardId,boardName:pinterestBoardNameByKey.get(target.socialAccount.id+"|"+boardId)??"Unknown board",impressions:number("IMPRESSION"),saves:number("SAVE"),outboundClicks:number("OUTBOUND_CLICK"),pinClicks:number("PIN_CLICK"),engagements:number("ENGAGEMENT"),snapshotDate:snapshot?.fetchedAt??null}];
+  });
+  const aggregatePinterestRows=(rows:typeof pinterestPerformanceRows)=>{
+    const totals=rows.reduce((acc,row)=>({impressions:acc.impressions+(row.impressions??0),saves:acc.saves+(row.saves??0),outboundClicks:acc.outboundClicks+(row.outboundClicks??0),pinClicks:acc.pinClicks+(row.pinClicks??0),engagements:acc.engagements+(row.engagements??0)}),{impressions:0,saves:0,outboundClicks:0,pinClicks:0,engagements:0});
+    return {...totals,pinCount:rows.length,engagementRate:totals.impressions>0?totals.engagements/totals.impressions:null};
+  };
+  const pinterestBoardGroups=Array.from(pinterestPerformanceRows.reduce((groups,row)=>{
+    const key=row.accountId+"|"+row.boardId;const current=groups.get(key)??{key,accountName:row.accountName,boardName:row.boardName,brandId:row.brandId,rows:[] as typeof pinterestPerformanceRows};current.rows.push(row);groups.set(key,current);return groups;
+  },new Map<string,{key:string;accountName:string;boardName:string;brandId:string;rows:typeof pinterestPerformanceRows}>()).values()).map(group=>({...group,...aggregatePinterestRows(group.rows)})).sort((a,b)=>b.outboundClicks-a.outboundClicks||b.engagements-a.engagements);
+  const pinterestBrandGroups=Array.from(pinterestPerformanceRows.reduce((groups,row)=>{
+    const key=row.brandId;const current=groups.get(key)??{brandId:key,rows:[] as typeof pinterestPerformanceRows};current.rows.push(row);groups.set(key,current);return groups;
+  },new Map<string,{brandId:string;rows:typeof pinterestPerformanceRows}>()).values()).map(group=>({brandId:group.brandId,brandName:brands.find(brand=>brand.id===group.brandId)?.name??"Brand",...aggregatePinterestRows(group.rows)})).sort((a,b)=>b.outboundClicks-a.outboundClicks||b.engagements-a.engagements);
+  const pinterestTopPins=[...pinterestPerformanceRows].filter(row=>row.impressions!==null||row.engagements!==null||row.outboundClicks!==null).sort((a,b)=>(b.outboundClicks??-1)-(a.outboundClicks??-1)||(b.engagements??-1)-(a.engagements??-1)).slice(0,5);
   const brandNames = new Map(brands.map((brand)=>[brand.id,brand.name]));
   const connected = accounts.filter((account)=>account.status==="CONNECTED").length;
 
@@ -198,6 +226,15 @@ export default async function SocialPage({searchParams}:{searchParams:Promise<{m
             </div>
           })}
         </div>}
+      </section>
+
+      <section className="rounded-2xl border border-rose-100 bg-white p-5 sm:p-6">
+        <div><h2 className="font-semibold text-slate-900">Pinterest performance intelligence</h2><p className="mt-1 text-sm text-slate-500">Board and brand comparisons use the latest available snapshots for the most recent 20 Pins published through GrowthManager. They do not include Pins published elsewhere.</p></div>
+        {pinterestPerformanceRows.length===0?<p className="mt-3 text-sm text-slate-500">Comparisons will appear after published Pins have analytics snapshots and board metadata.</p>:<>
+          <div className="mt-5"><h3 className="text-sm font-semibold text-slate-800">Board performance</h3><div className="mt-2 overflow-x-auto"><table className="w-full min-w-[680px] text-left text-sm"><thead className="text-xs text-slate-500"><tr><th className="py-2 pr-3">Board</th><th className="py-2 pr-3">Brand</th><th className="py-2 pr-3">Pins</th><th className="py-2 pr-3">Impressions</th><th className="py-2 pr-3">Saves</th><th className="py-2 pr-3">Outbound clicks</th><th className="py-2 pr-3">Engagement rate</th></tr></thead><tbody className="divide-y divide-slate-100">{pinterestBoardGroups.map(group=><tr key={group.key}><td className="py-3 pr-3 font-medium text-slate-900">{group.boardName}<p className="text-xs font-normal text-slate-500">{group.accountName}</p></td><td className="py-3 pr-3 text-slate-600">{brands.find(brand=>brand.id===group.brandId)?.name??"Brand"}</td><td className="py-3 pr-3">{group.pinCount}</td><td className="py-3 pr-3">{new Intl.NumberFormat().format(group.impressions)}</td><td className="py-3 pr-3">{new Intl.NumberFormat().format(group.saves)}</td><td className="py-3 pr-3">{new Intl.NumberFormat().format(group.outboundClicks)}</td><td className="py-3 pr-3">{group.engagementRate===null?"—":(group.engagementRate*100).toFixed(2)+"%"}</td></tr>)}</tbody></table></div></div>
+          <div className="mt-6"><h3 className="text-sm font-semibold text-slate-800">Brand comparison</h3><div className="mt-2 grid gap-3 sm:grid-cols-2 xl:grid-cols-3">{pinterestBrandGroups.map(group=><div key={group.brandId} className="rounded-xl border border-slate-200 p-4"><p className="font-semibold text-slate-900">{group.brandName}</p><p className="mt-1 text-xs text-slate-500">{group.pinCount} tracked Pins</p><div className="mt-3 grid grid-cols-2 gap-2 text-sm"><div><p className="text-xs text-slate-500">Impressions</p><p className="font-semibold">{new Intl.NumberFormat().format(group.impressions)}</p></div><div><p className="text-xs text-slate-500">Outbound clicks</p><p className="font-semibold">{new Intl.NumberFormat().format(group.outboundClicks)}</p></div><div><p className="text-xs text-slate-500">Saves</p><p className="font-semibold">{new Intl.NumberFormat().format(group.saves)}</p></div><div><p className="text-xs text-slate-500">Engagement rate</p><p className="font-semibold">{group.engagementRate===null?"—":(group.engagementRate*100).toFixed(2)+"%"}</p></div></div></div>)}</div></div>
+          <div className="mt-6"><h3 className="text-sm font-semibold text-slate-800">Top Pins by outbound clicks, then engagements</h3><ol className="mt-2 divide-y divide-slate-100">{pinterestTopPins.map((pin,index)=><li key={pin.targetId} className="flex items-start justify-between gap-3 py-3"><div className="min-w-0"><p className="text-sm font-medium text-slate-900">{index+1}. {pin.title}</p><p className="mt-1 text-xs text-slate-500">{pin.accountName} · {pin.boardName} · {brands.find(brand=>brand.id===pin.brandId)?.name??"Brand"}</p></div><div className="shrink-0 text-right text-xs text-slate-500"><p>{pin.outboundClicks===null?"—":new Intl.NumberFormat().format(pin.outboundClicks)} outbound clicks</p><p className="mt-1">{pin.engagements===null?"—":new Intl.NumberFormat().format(pin.engagements)} engagements</p></div></li>)}</ol></div>
+        </>}
       </section>
 
       <section className="rounded-2xl border border-rose-100 bg-white p-5 sm:p-6">
