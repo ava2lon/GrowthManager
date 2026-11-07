@@ -6,6 +6,7 @@ import {consumeRateLimit} from "@/lib/rate-limit";
 import {decryptIntegrationCredentials} from "@/lib/integration-crypto";
 import {listN8nExecutions,listN8nWorkflows} from "@/lib/n8n-client";
 import {acknowledgeAutomationAlert,evaluateAutomationAlerts,retryAutomationAlertDelivery,saveAutomationAlertPolicy} from "./actions";
+import AutomationBlueprintLibrary from "./blueprint-library";
 
 function durationMs(startedAt:string|null,stoppedAt:string|null):number|null {
   if(!startedAt||!stoppedAt)return null;
@@ -44,12 +45,12 @@ export default async function AutomationsPage(){
     return <main className="mx-auto max-w-6xl space-y-6">
       <div><p className="text-xs font-semibold uppercase tracking-widest text-indigo-600">Operations center</p><h1 className="mt-2 text-3xl font-bold text-slate-950">Automation health</h1><p className="mt-2 text-sm text-slate-500">Execution reliability and workflow health for this workspace.</p></div>
       <div className="rounded-2xl border border-dashed border-slate-300 bg-white p-8"><Workflow className="text-slate-400" size={28}/><h2 className="mt-3 font-semibold text-slate-900">Connect n8n to begin monitoring</h2><p className="mt-1 text-sm text-slate-500">Connect an n8n instance to view live execution metrics and failure signals.</p><Link href="/dashboard/integrations" className="mt-4 inline-flex rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white">Open integrations</Link></div>
-    </main>;
+    <AutomationBlueprintLibrary/></main>;
   }
 
   const limit=await consumeRateLimit("n8n-automation-health:"+context.workspace.id+":"+context.userId,12,3600);
   if(!limit.allowed||(process.env.NODE_ENV==="production"&&!limit.configured)){
-    return <main className="mx-auto max-w-6xl"><h1 className="text-3xl font-bold">Automation health</h1><p className="mt-4 rounded-xl bg-amber-50 p-4 text-sm text-amber-800">Monitoring is temporarily unavailable because the workspace request limit was reached or rate-limit protection is unavailable.</p></main>;
+    return <main className="mx-auto max-w-6xl"><h1 className="text-3xl font-bold">Automation health</h1><p className="mt-4 rounded-xl bg-amber-50 p-4 text-sm text-amber-800">Monitoring is temporarily unavailable because the workspace request limit was reached or rate-limit protection is unavailable.</p><AutomationBlueprintLibrary/></main>;
   }
 
   let metrics:null|{workflows:number;active:number;executions:number;failed:number;succeeded:number;waiting:number;failureRate:number;avgDuration:number|null;latestFailure:string|null;failures24h:number;hasMore:boolean}=null;
@@ -81,7 +82,7 @@ export default async function AutomationsPage(){
       hasMore:executionResult.hasMore||workflowResult.hasMore,
     };
   }catch{
-    return <main className="mx-auto max-w-6xl space-y-5"><div><p className="text-xs font-semibold uppercase tracking-widest text-indigo-600">Operations center</p><h1 className="mt-2 text-3xl font-bold">Automation health</h1></div><div className="rounded-xl bg-amber-50 p-4 text-sm text-amber-800">Live monitoring could not retrieve n8n metrics. Check the integration health, API key permissions, and provider availability.</div><Link href="/dashboard/integrations" className="text-sm font-semibold text-indigo-700">Review n8n integration</Link></main>;
+    return <main className="mx-auto max-w-6xl space-y-5"><div><p className="text-xs font-semibold uppercase tracking-widest text-indigo-600">Operations center</p><h1 className="mt-2 text-3xl font-bold">Automation health</h1></div><div className="rounded-xl bg-amber-50 p-4 text-sm text-amber-800">Live monitoring could not retrieve n8n metrics. Check the integration health, API key permissions, and provider availability.</div><Link href="/dashboard/integrations" className="text-sm font-semibold text-indigo-700">Review n8n integration</Link><AutomationBlueprintLibrary/></main>;
   }
 
   if(!metrics)return null;
@@ -145,5 +146,5 @@ export default async function AutomationsPage(){
     </section>
     <section className="rounded-2xl border border-slate-200 bg-white p-5"><div className="flex items-center justify-between gap-3"><div><h2 className="font-semibold text-slate-900">Monitoring coverage</h2><p className="mt-1 text-xs text-slate-500">Metrics are computed from the most recent API result, not a persisted historical time series.</p></div><span className="rounded-full bg-slate-100 px-3 py-1 text-xs text-slate-600">{metrics.executions} sampled</span></div><div className="mt-4 grid gap-3 sm:grid-cols-3"><div className="rounded-xl bg-slate-50 p-3"><p className="text-xs text-slate-500">Workflows discovered</p><p className="mt-1 text-lg font-semibold">{metrics.workflows}</p></div><div className="rounded-xl bg-slate-50 p-3"><p className="text-xs text-slate-500">Active workflows</p><p className="mt-1 text-lg font-semibold">{metrics.active}</p></div><div className="rounded-xl bg-slate-50 p-3"><p className="text-xs text-slate-500">Pending executions</p><p className="mt-1 text-lg font-semibold">{metrics.waiting}</p></div></div>{metrics.hasMore&&<p className="mt-3 text-xs text-amber-700">Additional workflow or execution records exist beyond the bounded sample; rates are sample-based.</p>}<p className="mt-4 text-xs text-slate-400">Refresh this page to retrieve a new snapshot. API data is limited to 150 executions and excludes execution payloads.</p></section>
     <div className="flex flex-wrap gap-3"><Link href="/dashboard/integrations#n8n-executions" className="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white">Open execution history</Link><Link href="/dashboard/integrations" className="rounded-lg border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-600">Integration settings</Link></div>
-  </main>;
+  <AutomationBlueprintLibrary/></main>;
 }
