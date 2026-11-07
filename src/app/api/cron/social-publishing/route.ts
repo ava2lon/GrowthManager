@@ -78,7 +78,10 @@ export async function GET(request:Request){
   }
 
   const youtubeProcessing=await db.socialPostTarget.findMany({
-    where:{provider:"YOUTUBE",status:"PUBLISHING",uploadSessionEncrypted:{not:null},OR:[{nextCheckAt:null},{nextCheckAt:{lte:now}}]},
+    where:{provider:"YOUTUBE",status:{in:["PUBLISHING","PROCESSING"]},OR:[
+      {status:"PUBLISHING",uploadSessionEncrypted:{not:null}},
+      {status:"PROCESSING",providerPostId:{not:null}},
+    ],AND:[{OR:[{nextCheckAt:null},{nextCheckAt:{lte:now}}]}]},
     select:{id:true,workspaceId:true},orderBy:{nextCheckAt:"asc"},take:10,
   });
   let youtubePublished=0,youtubeFailed=0,youtubeProcessingCount=0;
