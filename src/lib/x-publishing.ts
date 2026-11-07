@@ -120,6 +120,8 @@ export async function publishXTarget(input:{targetId:string;workspaceId:string;a
    await db.$transaction(async tx=>{
     await tx.socialPublishAttempt.update({where:{id:startedAttempt.id},data:{status:"UNKNOWN",errorCode:"PUBLISH_OUTCOME_UNKNOWN",finishedAt:new Date()}});
     await tx.socialPostTarget.updateMany({where:{id:target.id,workspaceId:input.workspaceId,status:"PUBLISHING"},data:{status:"UNKNOWN",errorCode:"PUBLISH_OUTCOME_UNKNOWN",nextCheckAt:null}});
+    await tx.contentPost.updateMany({where:{id:target.contentPost.id,workspaceId:input.workspaceId},data:{status:"PUBLISHING"}});
+    await tx.activityLog.create({data:{workspaceId:input.workspaceId,userId:input.actorUserId??null,action:"social_post.publish_outcome_unknown",entityType:"ContentPost",entityId:target.contentPost.id,metadata:{provider:"X",targetId:target.id,attemptId:startedAttempt.id,requiresManualVerification:true}}});
    });
    return {status:"UNKNOWN",errorCode:"PUBLISH_OUTCOME_UNKNOWN"};
   }
