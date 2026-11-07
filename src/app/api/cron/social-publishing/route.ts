@@ -1,7 +1,7 @@
 import {timingSafeEqual} from "node:crypto";
 import {NextResponse} from "next/server";
 import {db} from "@/lib/db";
-import {publishFacebookTarget} from "@/lib/social-publishing";
+import {publishFacebookTarget,publishInstagramTarget} from "@/lib/social-publishing";
 
 export const runtime="nodejs";
 export const dynamic="force-dynamic";
@@ -21,8 +21,8 @@ export async function GET(request:Request){
   const now=new Date();
   const staleBefore=new Date(now.getTime()-3*60_000);
   const stale=await db.socialPostTarget.findMany({
-    where:{provider:"FACEBOOK",status:"PUBLISHING",updatedAt:{lt:staleBefore}},
-    select:{id:true,workspaceId:true,contentPostId:true},
+    where:{provider:{in:["FACEBOOK","INSTAGRAM"]},status:"PUBLISHING",updatedAt:{lt:staleBefore}},
+    select:{id:true,workspaceId:true,contentPostId:true,provider:true},
     take:50,
   });
   let recoveredUnknown=0;
@@ -39,22 +39,24 @@ export async function GET(request:Request){
       await db.activityLog.create({data:{
         workspaceId:target.workspaceId,action:"social_post.publish_outcome_unknown",
         entityType:"ContentPost",entityId:target.contentPostId,
-        metadata:{provider:"FACEBOOK",targetId:target.id,reason:"WORKER_INTERRUPTED"},
+        metadata:{provider:target.provider,targetId:target.id,reason:"WORKER_INTERRUPTED"},
       }});
       recoveredUnknown++;
     }
   }
 
   const due=await db.socialPostTarget.findMany({
-    where:{provider:"FACEBOOK",status:"SCHEDULED",contentPost:{scheduledAt:{lte:now}}},
-    select:{id:true,workspaceId:true},
+    where:{provider:{in:["FACEBOOK","INSTAGRAM"]},status:"SCHEDULED",contentPost:{scheduledAt:{lte:now}}},
+    select:{id:true,workspaceId:true,provider:true},
     orderBy:{contentPost:{scheduledAt:"asc"}},
     take:2,
   });
   let published=0,failed=0,unknown=0,skipped=0;
   for(const target of due){
     try{
-      const result=await publishFacebookTarget({targetId:target.id,workspaceId:target.workspaceId,allowedStatuses:["SCHEDULED"]});
+      const result=target.provider==="INSTAGRAM"
+        ?await publishInstagramTarget({targetId:target.id,workspaceId:target.workspaceId,allowedStatuses:["SCHEDULED"]})
+        :await publishFacebookTarget({targetId:target.id,workspaceId:target.workspaceId,allowedStatuses:["SCHEDULED"]});
       if(result.status==="PUBLISHED")published++;
       else if(result.status==="FAILED")failed++;
       else if(result.status==="UNKNOWN")unknown++;
