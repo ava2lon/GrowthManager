@@ -509,6 +509,7 @@ model AutomationAlertDelivery {
   lastProviderEventAt DateTime?
   lastErrorCode     String?
   sentAt            DateTime?
+  lastProviderEventAt DateTime?
   createdAt         DateTime @default(now())
   updatedAt         DateTime @updatedAt
   alertEvent        AutomationAlertEvent @relation(fields: [workspaceId, alertEventId], references: [workspaceId, id], onDelete: Cascade)
@@ -718,6 +719,7 @@ model ContentReviewEmailDelivery {
   updatedAt         DateTime                  @updatedAt
   workspace         Workspace                 @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
   assignment        ContentReviewAssignment   @relation(fields: [workspaceId, assignmentId], references: [workspaceId, id], onDelete: Cascade)
+  webhookEvents     ContentReviewEmailWebhookEvent[]
   @@unique([workspaceId, id])
   @@index([status, nextAttemptAt])
   @@index([workspaceId, createdAt])
