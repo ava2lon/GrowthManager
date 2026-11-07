@@ -3,6 +3,7 @@ import {NextResponse} from "next/server";
 import {db} from "@/lib/db";
 import {publishFacebookTarget,publishInstagramTarget} from "@/lib/social-publishing";
 import {startInstagramReelTarget,processInstagramReelTarget} from "@/lib/instagram-reels";
+import {processTikTokInboxTarget} from "@/lib/tiktok-upload";
 
 export const runtime="nodejs";
 export const dynamic="force-dynamic";
@@ -22,7 +23,7 @@ export async function GET(request:Request){
   const now=new Date();
   const staleBefore=new Date(now.getTime()-3*60_000);
   const stale=await db.socialPostTarget.findMany({
-    where:{provider:{in:["FACEBOOK","INSTAGRAM"]},status:"PUBLISHING",updatedAt:{lt:staleBefore}},
+    where:{provider:{in:["FACEBOOK","INSTAGRAM","TIKTOK"]},status:"PUBLISHING",updatedAt:{lt:staleBefore}},
     select:{id:true,workspaceId:true,contentPostId:true,provider:true},
     take:50,
   });
@@ -61,6 +62,20 @@ export async function GET(request:Request){
     }catch{reelsUnknown++;}
   }
 
+  const tiktokProcessing=await db.socialPostTarget.findMany({
+    where:{provider:"TIKTOK",status:"PROCESSING",OR:[{nextCheckAt:null},{nextCheckAt:{lte:now}}]},
+    select:{id:true,workspaceId:true},orderBy:{nextCheckAt:"asc"},take:10,
+  });
+  let tiktokUploaded=0,tiktokPublished=0,tiktokFailed=0;
+  for(const target of tiktokProcessing){
+    try{
+      const result=await processTikTokInboxTarget({targetId:target.id,workspaceId:target.workspaceId});
+      if(result.status==="UPLOADED")tiktokUploaded++;
+      else if(result.status==="PUBLISHED")tiktokPublished++;
+      else if(result.status==="FAILED")tiktokFailed++;
+    }catch{tiktokFailed++;}
+  }
+
   const due=await db.socialPostTarget.findMany({
     where:{provider:{in:["FACEBOOK","INSTAGRAM"]},status:"SCHEDULED",contentPost:{scheduledAt:{lte:now}}},
     select:{id:true,workspaceId:true,provider:true},
@@ -87,5 +102,5 @@ export async function GET(request:Request){
       failed++;
     }
   }
-  return NextResponse.json({due:due.length,published,failed,unknown,skipped,recoveredUnknown,reels:{checked:processing.length,published:reelsPublished,failed:reelsFailed,processing:reelsProcessing,unknown:reelsUnknown}});
+  return NextResponse.json({due:due.length,published,failed,unknown,skipped,recoveredUnknown,reels:{checked:processing.length,published:reelsPublished,failed:reelsFailed,processing:reelsProcessing,unknown:reelsUnknown},tiktok:{checked:tiktokProcessing.length,uploaded:tiktokUploaded,published:tiktokPublished,failed:tiktokFailed}});
 }
