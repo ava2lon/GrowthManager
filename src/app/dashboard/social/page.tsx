@@ -185,6 +185,42 @@ export default async function SocialPage({searchParams}:{searchParams:Promise<{m
   const pinterestTopPins=[...pinterestPerformanceRows].filter(row=>row.impressions!==null||row.engagements!==null||row.outboundClicks!==null).sort((a,b)=>(b.outboundClicks??-1)-(a.outboundClicks??-1)||(b.engagements??-1)-(a.engagements??-1)).slice(0,5);
   const brandNames = new Map(brands.map((brand)=>[brand.id,brand.name]));
   const connected = accounts.filter((account)=>account.status==="CONNECTED").length;
+  const analyticsWindowStart=new Date(Date.now()-90*86400000);
+  const analyticsAccountIds=accounts.filter(account=>account.status==="CONNECTED").map(account=>account.id);
+  const [metaOps,linkedinOps,tiktokOps,youtubeOps,pinterestOps,xOps,metaCoverage,linkedinCoverage,tiktokCoverage,youtubeCoverage,pinterestCoverage,xCoverage]=await Promise.all([
+    db.metaAnalyticsSnapshot.findMany({where:{workspaceId:workspace.id,socialAccountId:{in:analyticsAccountIds},subjectType:"ACCOUNT"},orderBy:{fetchedAt:"desc"},distinct:["socialAccountId"],select:{socialAccountId:true,fetchedAt:true,metrics:true,reportDate:true}}),
+    db.linkedInAnalyticsSnapshot.findMany({where:{workspaceId:workspace.id,socialAccountId:{in:analyticsAccountIds},subjectType:"ACCOUNT"},orderBy:{fetchedAt:"desc"},distinct:["socialAccountId"],select:{socialAccountId:true,fetchedAt:true,metrics:true,reportDate:true}}),
+    db.tikTokAnalyticsSnapshot.findMany({where:{workspaceId:workspace.id,socialAccountId:{in:analyticsAccountIds},subjectType:"ACCOUNT"},orderBy:{fetchedAt:"desc"},distinct:["socialAccountId"],select:{socialAccountId:true,fetchedAt:true,metrics:true,reportDate:true}}),
+    db.youTubeAnalyticsSnapshot.findMany({where:{workspaceId:workspace.id,socialAccountId:{in:analyticsAccountIds},subjectType:"CHANNEL"},orderBy:{fetchedAt:"desc"},distinct:["socialAccountId"],select:{socialAccountId:true,fetchedAt:true,metrics:true,reportDate:true}}),
+    db.pinterestAnalyticsSnapshot.findMany({where:{workspaceId:workspace.id,socialAccountId:{in:analyticsAccountIds}},orderBy:{fetchedAt:"desc"},distinct:["socialAccountId"],select:{socialAccountId:true,fetchedAt:true,metrics:true,reportDate:true}}),
+    db.xAnalyticsSnapshot.findMany({where:{workspaceId:workspace.id,socialAccountId:{in:analyticsAccountIds},subjectType:"ACCOUNT"},orderBy:{fetchedAt:"desc"},distinct:["socialAccountId"],select:{socialAccountId:true,fetchedAt:true,metrics:true,reportDate:true}}),
+    db.metaAnalyticsSnapshot.groupBy({by:["socialAccountId"],where:{workspaceId:workspace.id,socialAccountId:{in:analyticsAccountIds},subjectType:"ACCOUNT",fetchedAt:{gte:analyticsWindowStart}},_count:{_all:true}}),
+    db.linkedInAnalyticsSnapshot.groupBy({by:["socialAccountId"],where:{workspaceId:workspace.id,socialAccountId:{in:analyticsAccountIds},subjectType:"ACCOUNT",fetchedAt:{gte:analyticsWindowStart}},_count:{_all:true}}),
+    db.tikTokAnalyticsSnapshot.groupBy({by:["socialAccountId"],where:{workspaceId:workspace.id,socialAccountId:{in:analyticsAccountIds},subjectType:"ACCOUNT",fetchedAt:{gte:analyticsWindowStart}},_count:{_all:true}}),
+    db.youTubeAnalyticsSnapshot.groupBy({by:["socialAccountId"],where:{workspaceId:workspace.id,socialAccountId:{in:analyticsAccountIds},subjectType:"CHANNEL",fetchedAt:{gte:analyticsWindowStart}},_count:{_all:true}}),
+    db.pinterestAnalyticsSnapshot.groupBy({by:["socialAccountId"],where:{workspaceId:workspace.id,socialAccountId:{in:analyticsAccountIds},fetchedAt:{gte:analyticsWindowStart}},_count:{_all:true}}),
+    db.xAnalyticsSnapshot.groupBy({by:["socialAccountId"],where:{workspaceId:workspace.id,socialAccountId:{in:analyticsAccountIds},subjectType:"ACCOUNT",fetchedAt:{gte:analyticsWindowStart}},_count:{_all:true}}),
+  ]);
+  const latestOpsByAccount=new Map<string,{fetchedAt:Date;metrics:unknown;reportDate:Date}>();
+  for(const snapshot of [...metaOps,...linkedinOps,...tiktokOps,...youtubeOps,...pinterestOps,...xOps]){
+    const current=latestOpsByAccount.get(snapshot.socialAccountId);
+    if(!current||snapshot.fetchedAt>current.fetchedAt)latestOpsByAccount.set(snapshot.socialAccountId,{fetchedAt:snapshot.fetchedAt,metrics:snapshot.metrics,reportDate:snapshot.reportDate});
+  }
+  const coverageByAccount=new Map<string,number>();
+  for(const group of [...metaCoverage,...linkedinCoverage,...tiktokCoverage,...youtubeCoverage,...pinterestCoverage,...xCoverage]){
+    coverageByAccount.set(group.socialAccountId,(coverageByAccount.get(group.socialAccountId)??0)+group._count._all);
+  }
+  const analyticsOperations=accounts.map(account=>{
+    const snapshot=latestOpsByAccount.get(account.id);
+    const metrics=snapshot?.metrics&&typeof snapshot.metrics==="object"&&!Array.isArray(snapshot.metrics)?snapshot.metrics as Record<string,unknown>:{};
+    const isFailed=metrics.status==="FAILED"||Boolean(metrics.errorCode);
+    const requiredScopes:Record<string,string[]>={TIKTOK:["video.list"],YOUTUBE:["https://www.googleapis.com/auth/yt-analytics.readonly"],X:["tweet.read","users.read"],PINTEREST:["pins:read"],LINKEDIN:[]};
+    const missingScopes=(requiredScopes[account.provider]??[]).filter(scope=>!account.scopes.includes(scope));
+    const linkedinMeta=account.metadata&&typeof account.metadata==="object"&&!Array.isArray(account.metadata)?account.metadata as Record<string,unknown>:{};
+    const linkedinAnalyticsEligible=account.provider!=="LINKEDIN"||(linkedinMeta.accountType==="ORGANIZATION"&&account.scopes.includes("rw_organization_admin"));
+    const eligible=account.status==="CONNECTED"&&missingScopes.length===0&&linkedinAnalyticsEligible;
+    return {id:account.id,provider:account.provider,accountName:account.accountName,status:account.status,latestFetchedAt:snapshot?.fetchedAt??null,errorCode:isFailed&&typeof metrics.errorCode==="string"?metrics.errorCode:null,coverage90d:coverageByAccount.get(account.id)??0,missingScopes,eligible,reauthorizationRequired:account.status==="ERROR"||Boolean(account.tokenExpiresAt&&account.tokenExpiresAt<=new Date())};
+  });
   const healthAccounts=accounts.map(account=>({id:account.id,provider:account.provider,accountName:account.accountName,status:account.status,connectedAt:account.connectedAt,lastValidatedAt:account.lastValidatedAt,lastErrorCode:account.lastErrorCode,tokenExpiresAt:account.tokenExpiresAt,scopes:account.scopes}));
 
   return (
