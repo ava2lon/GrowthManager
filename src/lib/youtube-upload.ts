@@ -19,7 +19,7 @@ function safeMetadata(value: unknown, fallbackTitle: string): VideoMetadata {
   const privacyStatus = privacy === "unlisted" || privacy === "public" ? privacy : "private";
   const tags = Array.isArray(raw.tags) ? raw.tags.filter((x): x is string => typeof x === "string").map(x => x.trim()).filter(Boolean).slice(0, 20) : [];
   if (tags.some(x => x.length > 30)) throw new Error("YOUTUBE_TAGS_INVALID");
-  const categoryId = typeof raw.categoryId === "string" && /^\\d{1,3}$/.test(raw.categoryId) ? raw.categoryId : undefined;
+  const categoryId = typeof raw.categoryId === "string" && /^\d{1,3}$/.test(raw.categoryId) ? raw.categoryId : undefined;
   return {title, description, privacyStatus, ...(categoryId ? {categoryId} : {}), ...(tags.length ? {tags} : {})};
 }
 
@@ -214,7 +214,7 @@ export async function processYouTubeUploadTarget(input: {targetId: string; works
       throw new Error(statusResponse.status === 401 ? "YOUTUBE_AUTH_FAILED" : "YOUTUBE_UPLOAD_STATUS_FAILED");
     }
     const range = statusResponse.headers.get("range");
-    const offset = range ? Number(range.match(/^bytes=0-(\\d+)$/)?.[1]) + 1 : 0;
+    const offset = range ? Number(range.match(/^bytes=0-(\d+)$/)?.[1]) + 1 : 0;
     if (!Number.isSafeInteger(offset) || offset < 0 || offset > total) throw new Error("YOUTUBE_UPLOAD_RANGE_INVALID");
     if (offset === total) {
       await defer();
@@ -255,7 +255,7 @@ export async function processYouTubeUploadTarget(input: {targetId: string; works
     }
     if (uploadResponse.status === 308) {
       const committedRange = uploadResponse.headers.get("range");
-      const committedOffset = committedRange ? Number(committedRange.match(/^bytes=0-(\\d+)$/)?.[1]) + 1 : 0;
+      const committedOffset = committedRange ? Number(committedRange.match(/^bytes=0-(\d+)$/)?.[1]) + 1 : 0;
       if (!Number.isSafeInteger(committedOffset) || committedOffset < offset || committedOffset > total) {
         throw new Error("YOUTUBE_UPLOAD_RANGE_INVALID");
       }
