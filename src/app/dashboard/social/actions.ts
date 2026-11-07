@@ -1081,6 +1081,7 @@ export async function createYouTubeDraft(formData: FormData) {
   const title = String(formData.get("title") ?? "").trim();
   const description = String(formData.get("description") ?? "").trim();
   const privacyStatus = String(formData.get("privacyStatus") ?? "private");
+  const publishAtInput = String(formData.get("publishAt") ?? "").trim();
   const categoryId = String(formData.get("categoryId") ?? "22").trim();
   const tags = String(formData.get("tags") ?? "").split(",").map(value => value.trim()).filter(Boolean);
   if (!accountId || accountId.length > 128 || !mediaAssetId || mediaAssetId.length > 128 ||
@@ -1109,7 +1110,7 @@ export async function createYouTubeDraft(formData: FormData) {
   if (!asset || Number(asset.sizeBytes) < 1 || Number(asset.sizeBytes) > 100 * 1024 * 1024) {
     throw new Error("Select one ready MP4 or MOV video no larger than 100 MB.");
   }
-  const metadata = {title, description, privacyStatus, categoryId, tags};
+  const metadata = {title, description, privacyStatus, categoryId, tags, ...(publishAtInput ? {publishAt: new Date(publishAtInput).toISOString()} : {})};
   const post = await db.$transaction(async tx => {
     const created = await tx.contentPost.create({
       data: {workspaceId: context.workspace.id, brandId: brand.id, title, body: description, status: "DRAFT"},
