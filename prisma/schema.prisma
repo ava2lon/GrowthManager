@@ -79,6 +79,7 @@ model User {
   assignedContentReviews ContentReviewAssignment[] @relation("ContentReviewAssignee")
   createdContentReviews ContentReviewAssignment[] @relation("ContentReviewAssigner")
   workspaceNotifications WorkspaceNotification[]
+  notificationPreferences WorkspaceNotificationPreference[]
 }
 
 model Workspace {
@@ -101,6 +102,7 @@ model Workspace {
   contentReviewAssignments ContentReviewAssignment[]
   notifications WorkspaceNotification[]
   contentReviewEmailDeliveries ContentReviewEmailDelivery[]
+  notificationPreferences WorkspaceNotificationPreference[]
 }
 
 model WorkspaceInvitation {
@@ -736,4 +738,21 @@ model ContentReviewEmailWebhookEvent {
   receivedAt      DateTime                  @default(now())
   delivery        ContentReviewEmailDelivery @relation(fields: [deliveryId], references: [id], onDelete: Cascade)
   @@index([deliveryId, occurredAt])
+}
+
+
+model WorkspaceNotificationPreference {
+  id                       String    @id @default(cuid())
+  workspaceId              String
+  userId                   String
+  inAppReviewAssigned       Boolean   @default(true)
+  emailReviewAssigned      Boolean   @default(true)
+  inAppReviewDecisions      Boolean   @default(true)
+  emailReviewDecisions     Boolean   @default(true)
+  createdAt                DateTime  @default(now())
+  updatedAt                DateTime  @updatedAt
+  workspace                Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  user                     User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  @@unique([workspaceId, userId])
+  @@index([userId, updatedAt])
 }
