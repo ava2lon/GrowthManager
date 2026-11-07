@@ -56,7 +56,7 @@ export async function POST(request: Request) {
   const audience = textField(input.audience, 1000);
   const offer = textField(input.offer, 1000);
   const tone = textField(input.tone, 240);
-  const platforms = Array.isArray(input.platforms) ? [...new Set(input.platforms.filter((item): item is string => typeof item === "string" && allowedPlatforms.has(item))].slice(0, 7) : [];
+  const platforms = Array.isArray(input.platforms) ? [...new Set(input.platforms.filter((item): item is string => typeof item === "string" && allowedPlatforms.has(item)))].slice(0, 7) : [];
 
   if (!brandId || !objective) return NextResponse.json({error: "Select a brand and provide a primary objective."}, {status: 400});
 
