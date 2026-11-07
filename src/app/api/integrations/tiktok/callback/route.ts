@@ -125,17 +125,6 @@ export async function GET(request: Request) {
       throw new Error("TIKTOK_PROFILE_INVALID");
     }
 
-    let creatorInfo: Record<string, unknown> | null = null;
-    if (scopes.includes("video.publish")) {
-      try {
-        const creator = await api<{data?: Record<string, unknown>}>(
-          "/v2/post/publish/creator_info/query/", token.access_token, "POST",
-        );
-        creatorInfo = creator.data ?? null;
-      } catch {
-        creatorInfo = null;
-      }
-    }
 
     const tokenExpiresAt = Number.isFinite(token.expires_in) && (token.expires_in ?? 0) > 0
       ? new Date(Date.now() + (token.expires_in as number) * 1000) : null;
@@ -150,7 +139,7 @@ export async function GET(request: Request) {
       openId: user.open_id,
       displayName: user.display_name,
       avatarUrl: typeof user.avatar_url === "string" ? user.avatar_url : null,
-      creatorInfo: creatorInfo ? JSON.parse(JSON.stringify(creatorInfo)) : null,
+      inboxUploadEnabled: scopes.includes("video.upload"),
       refreshTokenExpiresAt: refreshExpiresAt?.toISOString() ?? null,
     };
     const encrypted = encryptIntegrationCredentials({
@@ -182,7 +171,7 @@ export async function GET(request: Request) {
         data: {
           workspaceId:state.workspaceId,userId:state.userId,
           action:"social_account.connected",entityType:"SocialAccount",entityId:id,
-          metadata:{provider:"TIKTOK",scopes,creatorInfoAvailable:Boolean(creatorInfo)},
+          metadata:{provider:"TIKTOK",scopes,inboxUploadEnabled:scopes.includes("video.upload")},
         },
       });
     });
