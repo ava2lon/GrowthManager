@@ -15,6 +15,7 @@ import {publishLinkedInTarget} from "@/lib/linkedin-publishing";
 import {getPinterestCredentials,pinterestApi} from "@/lib/pinterest-auth";
 import {publishPinterestTarget} from "@/lib/pinterest-publishing";
 import {refreshPinterestAccountAnalytics} from "@/lib/pinterest-analytics";
+import {refreshPinterestPinAnalytics} from "@/lib/pinterest-pin-analytics";
 
 function readMetadata(value: unknown): Record<string, unknown> {
   if (!value || typeof value !== "object" || Array.isArray(value)) return {};
@@ -1424,4 +1425,14 @@ export async function refreshPinterestAnalytics(formData:FormData){
  const result=await refreshPinterestAccountAnalytics({workspaceId:context.workspace.id,accountId});
  revalidatePath("/dashboard/social");
  redirect("/dashboard/social?pinterestAnalytics=refreshed&accountId="+encodeURIComponent(accountId)+"&reportDate="+encodeURIComponent(result.reportDate));
+}
+
+export async function refreshPinterestPinAnalyticsAction(formData:FormData){
+ const context=await requireWorkspaceRole("MEMBER");
+ const targetId=String(formData.get("targetId")??"").trim();
+ if(!targetId||targetId.length>128)throw new Error("Invalid Pinterest publishing target.");
+ await enforceSocialRateLimit(context.workspace.id,context.userId,"pin-analytics");
+ const result=await refreshPinterestPinAnalytics({workspaceId:context.workspace.id,targetId});
+ revalidatePath("/dashboard/social");
+ redirect("/dashboard/social?pinterestPinAnalytics=refreshed&reportDate="+encodeURIComponent(result.reportDate));
 }
