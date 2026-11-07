@@ -34,6 +34,7 @@ export async function deletePublishedSocialTarget(input:{targetId:string;workspa
  const restore=async(code:string)=>{
   await db.socialPostTarget.updateMany({where:{id:target.id,workspaceId:input.workspaceId,provider:input.provider,status:"DELETING"},data:{status:"PUBLISHED",errorCode:code}});
  };
+ let providerConfirmed=false;
  try{
   let response:Response;
   if(input.provider==="FACEBOOK"){
@@ -58,7 +59,7 @@ export async function deletePublishedSocialTarget(input:{targetId:string;workspa
    response=await fetch(url,{method:"DELETE",headers:{Authorization:"Bearer "+credentials.accessToken},cache:"no-store",redirect:"error",signal:AbortSignal.timeout(20000)});
   }
   if(response.status>=500){await markUnknown();throw new Error(input.provider+"_DELETE_OUTCOME_UNKNOWN: verify the post on the provider before retrying.");}
-  if(!response.ok&&!(input.provider==="LINKEDIN"&&response.status===404)){
+  if(!response.ok){
    const code=response.status===401?input.provider+"_REAUTHORIZATION_REQUIRED":response.status===403?input.provider+"_PERMISSION_DENIED":response.status===429?input.provider+"_RATE_LIMITED":input.provider+"_DELETE_REJECTED";
    await restore(code);
    throw new Error(code+": The provider did not confirm deletion.");
@@ -68,6 +69,7 @@ export async function deletePublishedSocialTarget(input:{targetId:string;workspa
    const body=await response.json().catch(()=>null) as {success?:boolean}|null;
    if(body?.success!==true){await restore("FACEBOOK_DELETE_UNCONFIRMED");throw new Error("Facebook did not confirm deletion.");}
   }
+  providerConfirmed=true;
   await db.$transaction(async tx=>{
    const changed=await tx.socialPostTarget.updateMany({where:{id:target.id,workspaceId:input.workspaceId,provider:input.provider,status:"DELETING",providerPostId:target.providerPostId},data:{status:"DELETED",errorCode:null,nextCheckAt:null}});
    if(changed.count!==1)throw new Error("Post deletion was confirmed but its local status changed concurrently. Verify the provider before further action.");
@@ -76,6 +78,7 @@ export async function deletePublishedSocialTarget(input:{targetId:string;workspa
  }catch(error){
   const message=error instanceof Error?error.message:"";
   if(message.includes("_OUTCOME_UNKNOWN"))throw error;
+  if(providerConfirmed){await markUnknown();throw new Error(input.provider+"_DELETE_LOCAL_RECONCILIATION_REQUIRED: the provider confirmed deletion but GrowthManager could not finalize its local record. Do not retry; verify the provider and contact an administrator.");}
   const latest=await db.socialPostTarget.findFirst({where:{id:target.id,workspaceId:input.workspaceId},select:{status:true}});
   if(latest?.status==="DELETING")await restore(message.slice(0,100)||input.provider+"_DELETE_FAILED");
   throw error;
