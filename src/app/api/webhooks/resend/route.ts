@@ -44,6 +44,59 @@ async function readBoundedBody(request: Request): Promise<string | null> {
   return Buffer.concat(chunks.map((chunk) => Buffer.from(chunk)), total).toString("utf8");
 }
 
+function webhookHeaders(request: Request) {
+  return {
+    id: request.headers.get("svix-id"),
+    timestamp: request.headers.get("svix-timestamp"),
+    signature: request.headers.get("svix-signature"),
+  };
+}
+
+async function updateContentReviewDelivery(input: {
+  emailId: string;
+  eventType: string;
+  providerEventId: string;
+  rawBody: string;
+  headers: ReturnType<typeof webhookHeaders>;
+  occurredAt: Date;
+}) {
+  const delivery = await db.contentReviewEmailDelivery.findFirst({
+    where: {providerMessageId: input.emailId},
+    select: {id: true, workspaceId: true},
+  });
+  if (!delivery) return null;
+
+  const secret = process.env.RESEND_WEBHOOK_SECRET;
+  if (!secret || !verifyResendWebhookSignature(input.rawBody, input.headers, secret)) {
+    return NextResponse.json({error: "Unauthorized"}, {status: 401});
+  }
+
+  const result = await db.$transaction(async (tx) => {
+    const inserted = await tx.contentReviewEmailWebhookEvent.createMany({
+      data: [{
+        deliveryId: delivery.id,
+        providerEventId: input.providerEventId,
+        eventType: input.eventType,
+        occurredAt: input.occurredAt,
+      }],
+      skipDuplicates: true,
+    });
+    if (inserted.count === 0) return {duplicate: true, updated: false};
+
+    const changed = await tx.contentReviewEmailDelivery.updateMany({
+      where: {
+        id: delivery.id,
+        workspaceId: delivery.workspaceId,
+        OR: [{lastProviderEventAt: null}, {lastProviderEventAt: {lt: input.occurredAt}}],
+      },
+      data: {status: EVENT_STATUS[input.eventType], lastProviderEventAt: input.occurredAt},
+    });
+    return {duplicate: false, updated: changed.count === 1};
+  });
+
+  return NextResponse.json({received: true, duplicate: result.duplicate, updated: result.updated});
+}
+
 export async function POST(request: Request) {
   const contentType = request.headers.get("content-type") ?? "";
   if (!contentType.toLowerCase().startsWith("application/json")) {
@@ -72,12 +125,26 @@ export async function POST(request: Request) {
   const nextStatus = EVENT_STATUS[payload.type];
   if (!nextStatus) return NextResponse.json({received: true, ignored: true});
 
-  const providerEventId = request.headers.get("svix-id") ?? "";
-  const timestamp = request.headers.get("svix-timestamp");
-  const signature = request.headers.get("svix-signature");
-  if (!providerEventId || !timestamp || !signature) {
+  const headers = webhookHeaders(request);
+  const providerEventId = headers.id ?? "";
+  if (!providerEventId || !headers.timestamp || !headers.signature) {
     return NextResponse.json({error: "Unauthorized"}, {status: 401});
   }
+
+  const occurredAt = typeof payload.created_at === "string" ? new Date(payload.created_at) : new Date(NaN);
+  if (!Number.isFinite(occurredAt.getTime())) {
+    return NextResponse.json({error: "Invalid event timestamp"}, {status: 400});
+  }
+
+  const reviewResult = await updateContentReviewDelivery({
+    emailId: payload.data.email_id,
+    eventType: payload.type,
+    providerEventId,
+    rawBody,
+    headers,
+    occurredAt,
+  });
+  if (reviewResult) return reviewResult;
 
   const delivery = await db.automationAlertDelivery.findFirst({
     where: {providerMessageId: payload.data.email_id, channel: "EMAIL"},
@@ -110,13 +177,8 @@ export async function POST(request: Request) {
     return NextResponse.json({error: "Webhook configuration unavailable"}, {status: 503});
   }
 
-  if (!verifyResendWebhookSignature(rawBody, {id: providerEventId, timestamp, signature}, webhookSecret)) {
+  if (!verifyResendWebhookSignature(rawBody, headers, webhookSecret)) {
     return NextResponse.json({error: "Unauthorized"}, {status: 401});
-  }
-
-  const occurredAt = typeof payload.created_at === "string" ? new Date(payload.created_at) : new Date(NaN);
-  if (!Number.isFinite(occurredAt.getTime())) {
-    return NextResponse.json({error: "Invalid event timestamp"}, {status: 400});
   }
 
   const result = await db.$transaction(async (tx) => {
