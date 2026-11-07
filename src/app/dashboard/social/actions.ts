@@ -5,7 +5,7 @@ import {requireWorkspaceRole} from "@/lib/workspace";
 import {db} from "@/lib/db";
 import {consumeRateLimit} from "@/lib/rate-limit";
 import {decryptIntegrationCredentials, encryptIntegrationCredentials} from "@/lib/integration-crypto";
-import {publishFacebookTarget} from "@/lib/social-publishing";
+import {publishFacebookTarget,publishInstagramTarget} from "@/lib/social-publishing";
 
 function readMetadata(value: unknown): Record<string, unknown> {
   if (!value || typeof value !== "object" || Array.isArray(value)) return {};
@@ -404,6 +404,79 @@ export async function createFacebookDraft(formData: FormData) {
   return post.id;
 }
 
+
+export async function createInstagramDraft(formData: FormData) {
+  const context = await requireWorkspaceRole("MEMBER");
+  const accountIds = [...new Set(formData.getAll("accountIds").map((value) => String(value).trim()).filter(Boolean))];
+  const legacyAccountId = String(formData.get("accountId") ?? "").trim();
+  if (accountIds.length === 0 && legacyAccountId) accountIds.push(legacyAccountId);
+  const body = String(formData.get("body") ?? "").trim();
+  const mediaAssetIds = [...new Set(formData.getAll("mediaAssetIds").map((value) => String(value).trim()).filter(Boolean))];
+  if (mediaAssetIds.length < 1 || mediaAssetIds.length > 10 || mediaAssetIds.some((id) => id.length > 128)) {
+    throw new Error("Select between 1 and 10 JPEG images.");
+  }
+  if (accountIds.length < 1 || accountIds.length > 10 || accountIds.some((id) => id.length > 128) || !body || body.length > 2200) {
+    throw new Error("Select 1–10 Instagram accounts, attach 1–10 JPEG images, and enter caption text (maximum 2,200 characters).");
+  }
+
+  const accounts = await db.socialAccount.findMany({
+    where: {id: {in: accountIds}, workspaceId: context.workspace.id, provider: "INSTAGRAM", status: "CONNECTED"},
+    select: {id: true, brandId: true, scopes: true},
+  });
+  if (accounts.length !== accountIds.length) throw new Error("One or more selected Instagram accounts are unavailable in this workspace.");
+  const brandIds = [...new Set(accounts.map((account) => account.brandId))];
+  if (brandIds.length !== 1) throw new Error("All selected Pages must belong to the same brand.");
+  if (accounts.some((account) => !account.scopes.includes("instagram_content_publish"))) {
+    throw new Error("Every selected Page must have instagram_content_publish permission.");
+  }
+  const brand = await db.brand.findFirst({
+    where: {id: brandIds[0], workspaceId: context.workspace.id, status: "ACTIVE"},
+    select: {id: true},
+  });
+  if (!brand) throw new Error("The selected Pages are not assigned to an active brand.");
+  const mediaAssets = mediaAssetIds.length ? await db.mediaAsset.findMany({
+    where: {id: {in: mediaAssetIds}, workspaceId: context.workspace.id, status: "READY", OR: [{brandId: brand.id}, {brandId: null}]},
+    select: {id: true, mimeType: true},
+  }) : [];
+  if (mediaAssets.length !== mediaAssetIds.length || mediaAssets.some((asset) => asset.mimeType !== "image/jpeg")) {
+    throw new Error("Instagram supports ready JPEG images only. Check the selected assets and brand assignment.");
+  }
+
+  const post = await db.$transaction(async (tx) => {
+    const created = await tx.contentPost.create({
+      data: {workspaceId: context.workspace.id, brandId: brand.id, body, status: "DRAFT"},
+      select: {id: true},
+    });
+    await tx.socialPostTarget.createMany({
+      data: accounts.map((account) => ({
+        workspaceId: context.workspace.id,
+        contentPostId: created.id,
+        socialAccountId: account.id,
+        provider: "INSTAGRAM",
+        status: "DRAFT",
+      })),
+    });
+    if (mediaAssets.length) {
+      await tx.contentPostMedia.createMany({data: mediaAssets.map((asset, position) => ({
+        workspaceId: context.workspace.id, contentPostId: created.id, mediaAssetId: asset.id, position,
+      }))});
+    }
+    await tx.activityLog.create({
+      data: {
+        workspaceId: context.workspace.id,
+        userId: context.userId,
+        action: "social_post.draft_created",
+        entityType: "ContentPost",
+        entityId: created.id,
+        metadata: {provider: "INSTAGRAM", targetCount: accounts.length, accountIds: accounts.map((account) => account.id), mediaAssetCount: mediaAssets.length},
+      },
+    });
+    return created;
+  });
+  revalidatePath("/dashboard/social");
+  return post.id;
+}
+
 export async function scheduleFacebookDraft(formData: FormData) {
   const context = await requireWorkspaceRole("MEMBER");
   const targetId = String(formData.get("targetId") ?? "").trim();
@@ -575,4 +648,22 @@ export async function cancelFacebookSchedule(formData: FormData) {
     }});
   });
   revalidatePath("/dashboard/social");
+}
+
+export async function publishInstagramDraft(formData: FormData) {
+  const context = await requireWorkspaceRole("MEMBER");
+  const targetId = String(formData.get("targetId") ?? "").trim();
+  if (!targetId || targetId.length > 128) throw new Error("Invalid publishing target.");
+  await enforcePublishLimit(context.workspace.id, context.userId);
+  const result = await publishInstagramTarget({targetId,workspaceId:context.workspace.id,actorUserId:context.userId,allowedStatuses:["DRAFT"]});
+  revalidatePath("/dashboard/social");
+  if(result.status!=="PUBLISHED") {
+    throw new Error(result.status==="UNKNOWN"
+      ? "Instagram's publishing outcome could not be confirmed. Verify the account before attempting another post."
+      : result.status==="SKIPPED"?"This Instagram target is already processing or is no longer eligible."
+      : result.errorCode==="META_AUTH_FAILED"?"Meta rejected the Instagram account token. Reconnect the account."
+      : result.errorCode==="META_PERMISSION_DENIED"?"Instagram publishing permission is missing. Reconnect and approve instagram_content_publish."
+      : result.errorCode==="INSTAGRAM_CONTAINER_TIMEOUT"?"Instagram is still processing the media. The target is locked to prevent duplicate publication."
+      :"Instagram rejected the media or caption. Check the JPEG assets and account eligibility.");
+  }
 }
