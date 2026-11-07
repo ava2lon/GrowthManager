@@ -1611,6 +1611,7 @@ export async function deleteXPost(formData:FormData){
  const targetId=String(formData.get("targetId")??"").trim();
  if(!targetId||targetId.length>128)throw new Error("Invalid X publishing target.");
  await enforceSocialRateLimit(context.workspace.id,context.userId,"publish");
- await deleteXPublishedTarget({targetId,workspaceId:context.workspace.id,actorUserId:context.userId});
+ try{await deleteXPublishedTarget({targetId,workspaceId:context.workspace.id,actorUserId:context.userId});}
+ catch(error){revalidatePath("/dashboard/social");throw error;}
  revalidatePath("/dashboard/social");
 }
