@@ -6,7 +6,7 @@ import {ContentReviewQueue} from "./content-review-queue";
 
 export default async function AiPage() {
   const {workspace,membership} = await requireWorkspaceContext();
-  const [brands, accounts, campaigns, reviewItems] = await Promise.all([
+  const [brands, accounts, campaigns, reviewItems, reviewers, myReviews, notifications] = await Promise.all([
     db.brand.findMany({
       where: {workspaceId: workspace.id, status: "ACTIVE"},
       select: {id: true, name: true, description: true, websiteUrl: true},
@@ -35,7 +35,7 @@ export default async function AiPage() {
   return (
     <div className="space-y-6">
       <ContentProductionStudio brands={brands.map(({id,name})=>({id,name}))} campaigns={campaigns.map(({id,name,brandId})=>({id,name,brandId}))} />
-      <ContentReviewQueue items={reviewItems} canEdit={membership.role!=="VIEWER"} canApprove={membership.role==="OWNER"||membership.role==="ADMIN"} />
+      <ContentReviewQueue items={reviewItems} canEdit={membership.role!=="VIEWER"} canApprove={membership.role==="OWNER"||membership.role==="ADMIN"} reviewers={reviewers.map(m=>({id:m.userId,name:m.user.name,email:m.user.email}))} myReviews={myReviews} notifications={notifications} />
       <ContentStrategist
       workspaceName={workspace.name}
       brands={brands}
