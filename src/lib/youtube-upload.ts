@@ -34,9 +34,17 @@ function validateSessionUrl(value: string) {
 async function failTarget(input: {targetId: string; workspaceId: string; code: string}) {
   const now = new Date();
   await db.$transaction(async tx => {
+    const target = await tx.socialPostTarget.findFirst({
+      where: {id: input.targetId, workspaceId: input.workspaceId, provider: "YOUTUBE"},
+      select: {contentPostId: true},
+    });
     await tx.socialPostTarget.updateMany({
       where: {id: input.targetId, workspaceId: input.workspaceId, provider: "YOUTUBE", status: "PUBLISHING"},
       data: {status: "FAILED", errorCode: input.code, nextCheckAt: null, uploadSessionEncrypted: null},
+    });
+    if (target) await tx.contentPost.updateMany({
+      where: {id: target.contentPostId, workspaceId: input.workspaceId, status: "PUBLISHING"},
+      data: {status: "FAILED"},
     });
     await tx.socialPublishAttempt.updateMany({
       where: {workspaceId: input.workspaceId, targetId: input.targetId, status: {in: ["STARTED", "PROCESSING"]}},
