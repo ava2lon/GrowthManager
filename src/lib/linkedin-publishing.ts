@@ -18,14 +18,14 @@ export async function publishLinkedInTarget(input:{targetId:string;workspaceId:s
  if(!credentials.scopes.includes(required))return failBeforeClaim("LINKEDIN_PUBLISH_SCOPE_MISSING");
  if(accountType==="ORGANIZATION"){
   const role=metadata.organizationRole;
-  if(!["ADMINISTRATOR","DIRECT_SPONSORED_CONTENT_POSTER","CONTENT_ADMIN"].includes(String(role)))return failBeforeClaim("LINKEDIN_ORGANIZATION_ROLE_MISSING");
+  if(!["ADMINISTRATOR","DIRECT_SPONSORED_CONTENT_POSTER","CONTENT_ADMIN","CONTENT_ADMINISTRATOR"].includes(String(role)))return failBeforeClaim("LINKEDIN_ORGANIZATION_ROLE_MISSING");
   try{
    const version=process.env.LINKEDIN_API_VERSION;if(!version||!/^\d{6}$/.test(version))return failBeforeClaim("LINKEDIN_NOT_CONFIGURED");
    const aclUrl=new URL("https://api.linkedin.com/rest/organizationAcls");aclUrl.searchParams.set("q","roleAssignee");aclUrl.searchParams.set("state","APPROVED");aclUrl.searchParams.set("count","100");aclUrl.searchParams.set("start","0");
    const aclResponse=await fetch(aclUrl,{headers:linkedinApiHeaders(credentials.accessToken),cache:"no-store",redirect:"error",signal:AbortSignal.timeout(12000)});
    const acl=await aclResponse.json().catch(()=>null) as {elements?:Acl[]}|null;
    if(!aclResponse.ok||!acl) return failBeforeClaim(aclResponse.status===401?"LINKEDIN_AUTH_FAILED":"LINKEDIN_ORGANIZATION_ACCESS_UNVERIFIED");
-   const current=acl.elements?.some(x=>(x.organization??x.organizationTarget)===authorUrn&&x.state==="APPROVED"&&["ADMINISTRATOR","DIRECT_SPONSORED_CONTENT_POSTER","CONTENT_ADMIN"].includes(x.role??""));
+   const current=acl.elements?.some(x=>(x.organization??x.organizationTarget)===authorUrn&&x.state==="APPROVED"&&["ADMINISTRATOR","DIRECT_SPONSORED_CONTENT_POSTER","CONTENT_ADMIN","CONTENT_ADMINISTRATOR"].includes(x.role??""));
    if(!current)return failBeforeClaim("LINKEDIN_ORGANIZATION_ROLE_REVOKED");
   }catch{return failBeforeClaim("LINKEDIN_PROVIDER_UNAVAILABLE")}
  }
