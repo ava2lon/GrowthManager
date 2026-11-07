@@ -31,3 +31,19 @@ ALTER TABLE "ContentReviewEmailDelivery"
 ALTER TABLE "ContentReviewEmailDelivery"
   ADD CONSTRAINT "ContentReviewEmailDelivery_workspaceId_assignmentId_fkey"
   FOREIGN KEY ("workspaceId", "assignmentId") REFERENCES "ContentReviewAssignment"("workspaceId", "id") ON DELETE CASCADE ON UPDATE CASCADE;
+
+
+CREATE TABLE "ContentReviewEmailWebhookEvent" (
+  "id" TEXT NOT NULL,
+  "deliveryId" TEXT NOT NULL,
+  "providerEventId" TEXT NOT NULL,
+  "eventType" TEXT NOT NULL,
+  "occurredAt" TIMESTAMP(3) NOT NULL,
+  "receivedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  CONSTRAINT "ContentReviewEmailWebhookEvent_pkey" PRIMARY KEY ("id")
+);
+CREATE UNIQUE INDEX "ContentReviewEmailWebhookEvent_providerEventId_key" ON "ContentReviewEmailWebhookEvent"("providerEventId");
+CREATE INDEX "ContentReviewEmailWebhookEvent_deliveryId_occurredAt_idx" ON "ContentReviewEmailWebhookEvent"("deliveryId", "occurredAt");
+ALTER TABLE "ContentReviewEmailWebhookEvent"
+  ADD CONSTRAINT "ContentReviewEmailWebhookEvent_deliveryId_fkey"
+  FOREIGN KEY ("deliveryId") REFERENCES "ContentReviewEmailDelivery"("id") ON DELETE CASCADE ON UPDATE CASCADE;
