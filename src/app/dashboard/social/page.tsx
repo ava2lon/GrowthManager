@@ -9,14 +9,26 @@ import {checkSocialAccountHealth, checkTikTokAccountHealth, checkYouTubeAccountH
 
 
 function linkedInMetricEntries(value:unknown):Array<{name:string;value:string}>{
+ const root=value&&typeof value==="object"&&!Array.isArray(value)?value as Record<string,unknown>:{};
  const out:Array<{name:string;value:string}>=[];
- const visit=(v:unknown,path:string,depth:number)=>{
-  if(out.length>=16||depth>4||v===null||v===undefined)return;
-  if(typeof v==="number"||typeof v==="string"||typeof v==="boolean"){if(path&&!["paging","metadata"].includes(path))out.push({name:path,value:typeof v==="number"?new Intl.NumberFormat().format(v):String(v)});return;}
-  if(Array.isArray(v)){if(v.length===1)visit(v[0],path,depth+1);else if(v.length>1&&path.endsWith("elements"))v.slice(0,3).forEach((item,index)=>visit(item,path+"["+(index+1)+"]",depth+1));return;}
-  if(typeof v==="object"){for(const [key,item] of Object.entries(v as Record<string,unknown>)){if(["organizationalEntity","share","ugcPost","timeRange","paging","metadata"].includes(key))continue;visit(item,path?path+"."+key:key,depth+1);}}
- };
- visit(value,"",0);return out;
+ const number=(v:unknown)=>typeof v==="number"&&Number.isFinite(v)?v:0;
+ const display=(name:string,v:number)=>out.push({name,value:name.toLowerCase().includes("engagement")?(v*100).toFixed(2)+"%":new Intl.NumberFormat().format(v)});
+ const shares=root.shareStatistics&&typeof root.shareStatistics==="object"&&!Array.isArray(root.shareStatistics)?root.shareStatistics as Record<string,unknown>:{};
+ const followers=root.followerStatistics&&typeof root.followerStatistics==="object"&&!Array.isArray(root.followerStatistics)?root.followerStatistics as Record<string,unknown>:{};
+ if(root.shareStatistics||root.followerStatistics){
+  const shareElements=Array.isArray(shares.elements)?shares.elements:[];
+  const followerElements=Array.isArray(followers.elements)?followers.elements:[];
+  const fields=["impressionCount","clickCount","likeCount","commentCount","shareCount"];
+  for(const field of fields){const total=shareElements.reduce((sum,item)=>{const row=item&&typeof item==="object"&&!Array.isArray(item)?item as Record<string,unknown>:{};const stats=row.totalShareStatistics&&typeof row.totalShareStatistics==="object"&&!Array.isArray(row.totalShareStatistics)?row.totalShareStatistics as Record<string,unknown>:{};return sum+number(stats[field]);},0);display("28-day share "+field,total);}
+  const followerFields=["organicFollowerGain","paidFollowerGain"];
+  for(const field of followerFields){const total=followerElements.reduce((sum,item)=>{const row=item&&typeof item==="object"&&!Array.isArray(item)?item as Record<string,unknown>:{};const gains=row.followerGains&&typeof row.followerGains==="object"&&!Array.isArray(row.followerGains)?row.followerGains as Record<string,unknown>:{};return sum+number(gains[field]);},0);display("28-day "+field,total);}
+  return out;
+ }
+ const elements=Array.isArray(root.elements)?root.elements:[];
+ const row=elements.find(item=>item&&typeof item==="object"&&!Array.isArray(item)) as Record<string,unknown>|undefined;
+ const stats=row?.totalShareStatistics&&typeof row.totalShareStatistics==="object"&&!Array.isArray(row.totalShareStatistics)?row.totalShareStatistics as Record<string,unknown>:{};
+ for(const [key,v] of Object.entries(stats)){if(typeof v==="number"&&Number.isFinite(v))display("post "+key,v);}
+ return out;
 }
 
 function metaMetricEntries(value:unknown):Array<{name:string;value:string}>{
@@ -179,7 +191,7 @@ export default async function SocialPage({searchParams}:{searchParams:Promise<{m
       </section>
 
       <section className="rounded-2xl border border-sky-100 bg-white p-5 sm:p-6">
-        <div><h2 className="font-semibold text-slate-900">LinkedIn organization analytics</h2><p className="mt-1 text-sm text-slate-500">Organic organization share statistics and follower trends, plus per-post share statistics. Sponsored activity is excluded. Follower reporting ends two days before collection to respect LinkedIn data availability. Requires Community Management API access and organization administrator authorization.</p></div>
+        <div><h2 className="font-semibold text-slate-900">LinkedIn organization analytics</h2><p className="mt-1 text-sm text-slate-500">28-day organic organization share totals and follower gains, plus lifetime per-post share statistics. Sponsored activity is excluded. Follower reporting ends two days before collection to respect LinkedIn data availability. Requires Community Management API access and organization administrator authorization.</p></div>
         {params.linkedinAnalytics==="refreshed"&&<p className="mt-3 rounded-lg bg-emerald-50 px-3 py-2 text-sm text-emerald-800">LinkedIn analytics refresh completed.</p>}
         {linkedinAccounts.filter(account=>{const meta=account.metadata&&typeof account.metadata==="object"&&!Array.isArray(account.metadata)?account.metadata as Record<string,unknown>:{};return meta.accountType==="ORGANIZATION"&&!account.scopes.includes("rw_organization_admin")}).length>0&&<div className="mt-3 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900"><p>Some organization connections need rw_organization_admin. Reconnect after setting LINKEDIN_ENABLE_ORGANIZATION_SCOPES=true and LINKEDIN_ENABLE_ORGANIZATION_ANALYTICS_SCOPE=true, then confirming LinkedIn Community Management API access.</p><div className="mt-2 flex flex-wrap gap-2">{linkedinAccounts.filter(account=>{const meta=account.metadata&&typeof account.metadata==="object"&&!Array.isArray(account.metadata)?account.metadata as Record<string,unknown>:{};return meta.accountType==="ORGANIZATION"&&!account.scopes.includes("rw_organization_admin")}).map(account=><a key={account.id} href={"/api/integrations/linkedin/connect?brandId="+encodeURIComponent(account.brandId)} className="rounded-lg border border-amber-300 bg-white px-3 py-1.5 text-xs font-semibold text-amber-900">Reauthorize {account.accountName}</a>)}</div></div>}
         {linkedInOrganizationAccounts.length===0?<p className="mt-3 text-sm text-slate-500">No eligible LinkedIn organization account is connected with analytics permission. Personal member connections are not included because member-post analytics requires a separate restricted permission.</p>:<div className="mt-4 space-y-4">
