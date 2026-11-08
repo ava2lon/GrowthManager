@@ -143,7 +143,8 @@ export async function processPinterestVideoTarget(input:{targetId:string;workspa
     return {status:"PROCESSING"};
    }
   }
-  const verifyState=await db.socialPostTarget.updateMany({where:{id:target.id,workspaceId:input.workspaceId,provider:"PINTEREST",status:"PUBLISHING",nextCheckAt:leaseUntil},data:{uploadMetadata:{...settings,pinterestVideo:{phase:"VERIFY_UPLOAD",coverAssetId:cover.id}},nextCheckAt:new Date(Date.now()+3*60_000)}});
+  leaseUntil=new Date(Date.now()+3*60_000);
+  const verifyState=await db.socialPostTarget.updateMany({where:{id:target.id,workspaceId:input.workspaceId,provider:"PINTEREST",status:"PUBLISHING",nextCheckAt:leaseUntil},data:{uploadMetadata:{...settings,pinterestVideo:{phase:"VERIFY_UPLOAD",coverAssetId:cover.id}},nextCheckAt:leaseUntil}});
   if(!verifyState.count)return {status:"SKIPPED"};
   try{await uploadPinterestVideo(clip,session)}
   catch(error){
