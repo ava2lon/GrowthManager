@@ -99,7 +99,7 @@ export async function processTikTokUploadTarget(input:{targetId:string;workspace
   if(asset.bucket!==storage.bucket||!asset.objectPath.startsWith(input.workspaceId+"/"))throw new Error("MEDIA_STORAGE_CONFIGURATION_MISMATCH");
   const mediaUrl=storage.baseUrl+"/storage/v1/object/"+encodeURIComponent(asset.bucket)+"/"+asset.objectPath.split("/").map(encodeURIComponent).join("/");
   let mediaResponse:Response;
-  try{mediaResponse=await fetch(mediaUrl,{headers:storageHeaders(storage.serviceKey),cache:"no-store",redirect:"error",signal:AbortSignal.timeout(20000)})}
+  try{mediaResponse=await fetch(mediaUrl,{headers:storageHeaders(storage.serviceKey),cache:"no-store",redirect:"error",signal:AbortSignal.timeout(15000)})}
   catch{throw new Error("TIKTOK_MEDIA_DOWNLOAD_UNCERTAIN")}
   if(!mediaResponse.ok)throw new Error(mediaResponse.status>=500||mediaResponse.status===429?"TIKTOK_MEDIA_DOWNLOAD_UNCERTAIN":"MEDIA_DOWNLOAD_FAILED");
   const contentLength=Number(mediaResponse.headers.get("content-length"));
@@ -109,7 +109,7 @@ export async function processTikTokUploadTarget(input:{targetId:string;workspace
   if(video.length!==totalBytes)throw new Error("MEDIA_SIZE_MISMATCH");
   const end=Math.min(offset+chunkSize,totalBytes),chunk=video.subarray(offset,end),final=end===totalBytes;
   let response:Response;
-  try{response=await fetch(uploadUrl,{method:"PUT",headers:{"Content-Type":asset.mimeType,"Content-Length":String(chunk.length),"Content-Range":`bytes ${offset}-${end-1}/${totalBytes}`},body:chunk,cache:"no-store",redirect:"error",signal:AbortSignal.timeout(40000)})}
+  try{response=await fetch(uploadUrl,{method:"PUT",headers:{"Content-Type":asset.mimeType,"Content-Length":String(chunk.length),"Content-Range":`bytes ${offset}-${end-1}/${totalBytes}`},body:chunk,cache:"no-store",redirect:"error",signal:AbortSignal.timeout(30000)})}
   catch{throw new Error("TIKTOK_CHUNK_UPLOAD_UNCERTAIN")}
   let confirmedEnd=end;
   if(response.status===416){
