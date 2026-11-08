@@ -129,12 +129,19 @@ export async function publishXTarget(input:{targetId:string;workspaceId:string;a
   socialAccount:{select:{id:true,workspaceId:true,brandId:true,status:true,scopes:true,credentialsEncrypted:true,providerUserId:true}}
  }});
  if(!target||target.contentPost.workspaceId!==input.workspaceId||target.socialAccount.workspaceId!==input.workspaceId||target.contentPost.brandId!==target.socialAccount.brandId||target.socialAccount.status!=="CONNECTED"||!target.socialAccount.credentialsEncrypted)return {status:"SKIPPED"};
+ let leaseUntil:Date|null=null;
  if(target.status==="PUBLISHING"){
+  const now=new Date();
+  if(target.nextCheckAt&&target.nextCheckAt>now)return {status:"SKIPPED"};
+  leaseUntil=new Date(now.getTime()+120000);
+  const lock=await db.socialPostTarget.updateMany({where:{id:target.id,workspaceId:input.workspaceId,provider:"X",status:"PUBLISHING",nextCheckAt:target.nextCheckAt,OR:[{nextCheckAt:null},{nextCheckAt:{lte:now}}]},data:{nextCheckAt:leaseUntil}});
+  if(lock.count!==1)return {status:"SKIPPED"};
   const startedAttempt=await db.socialPublishAttempt.findFirst({where:{workspaceId:input.workspaceId,targetId:target.id,status:"STARTED"},orderBy:{attemptNumber:"desc"},select:{id:true}});
   if(startedAttempt){
    await db.$transaction(async tx=>{
-    await tx.socialPublishAttempt.update({where:{id:startedAttempt.id},data:{status:"UNKNOWN",errorCode:"PUBLISH_OUTCOME_UNKNOWN",finishedAt:new Date()}});
-    await tx.socialPostTarget.updateMany({where:{id:target.id,workspaceId:input.workspaceId,status:"PUBLISHING"},data:{status:"UNKNOWN",errorCode:"PUBLISH_OUTCOME_UNKNOWN",nextCheckAt:null}});
+    const changed=await tx.socialPostTarget.updateMany({where:{id:target.id,workspaceId:input.workspaceId,provider:"X",status:"PUBLISHING",nextCheckAt:leaseUntil},data:{status:"UNKNOWN",errorCode:"PUBLISH_OUTCOME_UNKNOWN",nextCheckAt:null}});
+    if(changed.count!==1)return;
+    await tx.socialPublishAttempt.updateMany({where:{id:startedAttempt.id,status:"STARTED"},data:{status:"UNKNOWN",errorCode:"PUBLISH_OUTCOME_UNKNOWN",finishedAt:new Date()}});
     await tx.contentPost.updateMany({where:{id:target.contentPost.id,workspaceId:input.workspaceId},data:{status:"PUBLISHING"}});
     await tx.activityLog.create({data:{workspaceId:input.workspaceId,userId:input.actorUserId??null,action:"social_post.publish_outcome_unknown",entityType:"ContentPost",entityId:target.contentPost.id,metadata:{provider:"X",targetId:target.id,attemptId:startedAttempt.id,requiresManualVerification:true}}});
    });
@@ -153,10 +160,12 @@ export async function publishXTarget(input:{targetId:string;workspaceId:string;a
  const existing=target.uploadMetadata&&typeof target.uploadMetadata==="object"&&!Array.isArray(target.uploadMetadata)?target.uploadMetadata as Record<string,unknown>:{};
  const previousMedia=typeof existing.xMedia==="object"&&existing.xMedia!==null?existing.xMedia as Record<string,unknown>:null;
  if(target.status!=="PUBLISHING"){
-  const claim=await db.socialPostTarget.updateMany({where:{id:target.id,workspaceId:input.workspaceId,provider:"X",status:{in:allowed}},data:{status:"PUBLISHING",errorCode:null,nextCheckAt:new Date(Date.now()+120000)}});
+  leaseUntil=new Date(Date.now()+120000);
+  const claim=await db.socialPostTarget.updateMany({where:{id:target.id,workspaceId:input.workspaceId,provider:"X",status:{in:allowed}},data:{status:"PUBLISHING",errorCode:null,nextCheckAt:leaseUntil}});
   if(claim.count!==1)return {status:"SKIPPED"};
- }else{
-  const lock=await db.socialPostTarget.updateMany({where:{id:target.id,workspaceId:input.workspaceId,provider:"X",status:"PUBLISHING",OR:[{nextCheckAt:null},{nextCheckAt:{lte:new Date()}}]},data:{nextCheckAt:new Date(Date.now()+120000)}});
+ }else if(!leaseUntil){
+  leaseUntil=new Date(Date.now()+120000);
+  const lock=await db.socialPostTarget.updateMany({where:{id:target.id,workspaceId:input.workspaceId,provider:"X",status:"PUBLISHING",OR:[{nextCheckAt:null},{nextCheckAt:{lte:new Date()}}]},data:{nextCheckAt:leaseUntil}});
   if(lock.count!==1)return {status:"SKIPPED"};
  }
  let mediaId:string|undefined;
