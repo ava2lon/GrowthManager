@@ -358,6 +358,29 @@ describe("listN8nExecutions", () => {
     )).rejects.toThrow("N8N_EXECUTION_CURSOR_INVALID");
   });
 
+  it("rejects malformed pagination cursors instead of reporting a complete sample", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(JSON.stringify({
+      data: [],
+      nextCursor: {unexpected: "object"},
+    }), {status: 200, headers: {"content-type": "application/json"}})));
+    await expect(listN8nExecutions(
+      "https://growth-team.app.n8n.cloud",
+      "n8n_test_api_key_123456",
+    )).rejects.toThrow("N8N_PROVIDER_UNAVAILABLE");
+  });
+
+  it("rejects a repeated execution cursor", async () => {
+    const page = new Response(JSON.stringify({data: [], nextCursor: "same-cursor"}), {
+      status: 200,
+      headers: {"content-type": "application/json"},
+    });
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValueOnce(page).mockResolvedValueOnce(page));
+    await expect(listN8nExecutions(
+      "https://growth-team.app.n8n.cloud",
+      "n8n_test_api_key_123456",
+    )).rejects.toThrow("N8N_EXECUTION_CURSOR_REPEATED");
+  });
+
   it("rejects invalid filters before making a request", async () => {
     const fetchMock = vi.fn();
     vi.stubGlobal("fetch", fetchMock);
