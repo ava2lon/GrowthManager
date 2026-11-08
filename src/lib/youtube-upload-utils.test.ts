@@ -1,5 +1,6 @@
 import {describe, expect, it} from "vitest";
 import {
+  isYouTubeRetryableTransportError,
   parseYouTubeCommittedOffset,
   validateYouTubeMetadata,
   validateYouTubeSessionUrl,
@@ -68,5 +69,17 @@ describe("YouTube committed byte range", () => {
   it("rejects malformed and out-of-bounds ranges", () => {
     expect(() => parseYouTubeCommittedOffset("bytes=5-9", 100)).toThrow("YOUTUBE_UPLOAD_RANGE_INVALID");
     expect(() => parseYouTubeCommittedOffset("bytes=0-100", 100)).toThrow("YOUTUBE_UPLOAD_RANGE_INVALID");
+  });
+});
+
+describe("YouTube transport error classification", () => {
+  it("reconciles timeout, abort, and fetch transport errors instead of failing the upload", () => {
+    expect(isYouTubeRetryableTransportError(new DOMException("timed out", "TimeoutError"))).toBe(true);
+    expect(isYouTubeRetryableTransportError(new DOMException("aborted", "AbortError"))).toBe(true);
+    expect(isYouTubeRetryableTransportError(new TypeError("fetch failed"))).toBe(true);
+  });
+
+  it("does not classify ordinary application errors as transport failures", () => {
+    expect(isYouTubeRetryableTransportError(new Error("YOUTUBE_AUTH_FAILED"))).toBe(false);
   });
 });

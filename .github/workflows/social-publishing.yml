@@ -15,7 +15,7 @@ concurrency:
 jobs:
   dispatch:
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 8
     steps:
       - name: Invoke scheduled publishing worker
         env:
@@ -24,7 +24,28 @@ jobs:
           test -n "$CRON_SECRET"
           curl --fail-with-body --silent --show-error             --max-time 75             -H "Authorization: Bearer $CRON_SECRET"             "https://growthmanager.vercel.app/api/cron/social-publishing"
 
+      - name: Process one due social media upload or publish stage
+        if: ${{ !cancelled() }}
+        env:
+          CRON_SECRET: ${{ secrets.GROWTHMANAGER_CRON_SECRET }}
+        run: |
+          test -n "$CRON_SECRET"
+          curl --fail-with-body --silent --show-error --max-time 55 \
+            -H "Authorization: Bearer $CRON_SECRET" \\
+            "https://growthmanager.vercel.app/api/cron/social-media-processing"
+
+      - name: Refresh one bounded batch of social analytics snapshots
+        if: ${{ !cancelled() }}
+        env:
+          CRON_SECRET: ${{ secrets.GROWTHMANAGER_CRON_SECRET }}
+        run: |
+          test -n "$CRON_SECRET"
+          curl --fail-with-body --silent --show-error --max-time 55 \
+            -H "Authorization: Bearer $CRON_SECRET" \\
+            "https://growthmanager.vercel.app/api/cron/social-analytics"
+
       - name: Sync one connected n8n integration execution history
+        if: ${{ !cancelled() }}
         env:
           CRON_SECRET: ${{ secrets.GROWTHMANAGER_CRON_SECRET }}
         run: |
@@ -34,6 +55,7 @@ jobs:
             "https://growthmanager.vercel.app/api/cron/n8n-executions"
 
       - name: Dispatch content review email outbox
+        if: ${{ !cancelled() }}
         env:
           CRON_SECRET: ${{ secrets.GROWTHMANAGER_CRON_SECRET }}
         run: |
@@ -43,6 +65,7 @@ jobs:
             "https://growthmanager.vercel.app/api/cron/content-review-emails"
 
       - name: Evaluate automation alert policies and deliver notifications
+        if: ${{ !cancelled() }}
         env:
           CRON_SECRET: ${{ secrets.GROWTHMANAGER_CRON_SECRET }}
         run: |

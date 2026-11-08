@@ -31,17 +31,40 @@ export async function GET(request: Request) {
       failureRateThreshold: true,
       lookbackMinutes: true,
       cooldownMinutes: true,
+      lastEvaluatedAt: true,
     },
-    orderBy: {updatedAt: "asc"},
-    take: 50,
+    orderBy: [{lastEvaluatedAt: {sort: "asc", nulls: "first"}}, {createdAt: "asc"}],
+    take: 4,
   });
 
   let evaluated = 0;
   let skipped = 0;
   let alertsTriggered = 0;
   let failedWorkspaces = 0;
+  let escalations = {eventsChecked: 0, deliveriesQueued: 0};
+  let emailDelivery: {claimed: number; sent: number; retried: number; failed: number} = {claimed: 0, sent: 0, retried: 0, failed: 0};
+  try {
+    escalations = await enqueueAutomationAlertEscalations();
+    emailDelivery = await dispatchAutomationAlertEmails(2);
+  } catch {
+    failedWorkspaces += 1;
+  }
 
-  for (const policy of policies) {
+  // Evaluate a bounded batch concurrently so provider timeouts cannot starve email dispatch.
+  await Promise.all(policies.map(async (policy) => {
+    const claimTime = new Date();
+    const claimed = await db.automationAlertPolicy.updateMany({
+      where: {
+        workspaceId: policy.workspaceId,
+        enabled: true,
+        lastEvaluatedAt: policy.lastEvaluatedAt,
+      },
+      data: {lastEvaluatedAt: claimTime},
+    });
+    if (claimed.count !== 1) {
+      skipped += 1;
+      return;
+    }
     try {
       const integration = await db.integration.findFirst({
         where: {workspaceId: policy.workspaceId, provider: "n8n", status: "CONNECTED"},
@@ -49,7 +72,7 @@ export async function GET(request: Request) {
       });
       if (!integration?.credentialsEncrypted) {
         skipped += 1;
-        continue;
+        return;
       }
 
       const credentials = decryptIntegrationCredentials(
@@ -59,10 +82,15 @@ export async function GET(request: Request) {
       );
       if (typeof credentials.baseUrl !== "string" || typeof credentials.apiKey !== "string") {
         skipped += 1;
-        continue;
+        return;
       }
 
       const executionResult = await listN8nExecutions(credentials.baseUrl, credentials.apiKey);
+      if (executionResult.hasMore) {
+        // Never resolve or recalculate alert state from a truncated execution sample.
+        failedWorkspaces += 1;
+        return;
+      }
       const now = new Date();
       const cutoff = now.getTime() - policy.lookbackMinutes * 60_000;
       const recent = executionResult.executions.filter((execution) => {
@@ -119,15 +147,18 @@ export async function GET(request: Request) {
     } catch {
       // Do not include provider response bodies, credentials, or workspace identifiers in logs/responses.
       failedWorkspaces += 1;
+    } finally {
+      // Rotate every attempted policy, including skipped and failed workspaces, to prevent starvation.
+      try {
+        await db.automationAlertPolicy.updateMany({
+          where: {workspaceId: policy.workspaceId, lastEvaluatedAt: claimTime},
+          data: {lastEvaluatedAt: new Date()},
+        });
+      } catch {
+        failedWorkspaces += 1;
+      }
     }
-  }
-
-  let escalations = {eventsChecked: 0, deliveriesQueued: 0};
-  let emailDelivery: {claimed: number; sent: number; retried: number; failed: number} = {claimed: 0, sent: 0, retried: 0, failed: 0};
-  try {
-    escalations = await enqueueAutomationAlertEscalations();
-    emailDelivery = await dispatchAutomationAlertEmails(5);
-  } catch { failedWorkspaces += 1; }
+  }));
   const result = {policies: policies.length, evaluated, skipped, alertsTriggered, failedWorkspaces, escalations, emailDelivery};
   if (failedWorkspaces) {
     return NextResponse.json(result, {status: 500});

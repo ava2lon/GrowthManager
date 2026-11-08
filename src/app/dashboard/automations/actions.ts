@@ -85,6 +85,9 @@ export async function evaluateAutomationAlerts() {
   }
 
   const executions = await listN8nExecutions(credentials.baseUrl, credentials.apiKey);
+  if (executions.hasMore) {
+    throw new Error("n8n has more than 750 executions in its current inventory. Alert evaluation was stopped to avoid changing alert state using an incomplete sample.");
+  }
   const cutoff = Date.now() - policy.lookbackMinutes * 60_000;
   const recent = executions.executions.filter((item) => {
     if (!item.startedAt) return false;
@@ -128,6 +131,10 @@ export async function evaluateAutomationAlerts() {
       entityType: "automation_alert_policy",
       metadata: {lookbackMinutes: policy.lookbackMinutes, sampleSize: recent.length, failures: failed.length, failureRate, alertsTriggered: triggers.length},
     },
+  });
+  await db.automationAlertPolicy.updateMany({
+    where: {workspaceId: context.workspace.id},
+    data: {lastEvaluatedAt: new Date()},
   });
   revalidatePath("/dashboard/automations");
 }

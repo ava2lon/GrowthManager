@@ -39,7 +39,7 @@ export default async function IntegrationsPage({searchParams}: {searchParams: Pr
   const integrations = await db.integration.findMany({
     where: {workspaceId: context.workspace.id},
     orderBy: [{updatedAt:"desc"},{name:"asc"}],
-    select: {id:true,provider:true,name:true,status:true,updatedAt:true,lastValidatedAt:true,lastExecutionSyncAt:true,lastErrorAt:true,lastErrorCode:true,credentialsEncrypted:true},
+    select: {id:true,provider:true,name:true,status:true,updatedAt:true,lastValidatedAt:true,lastExecutionSyncAt:true,lastExecutionSyncCursor:true,lastErrorAt:true,lastErrorCode:true,credentialsEncrypted:true},
   });
   const byProvider = new Map(integrations.map((item) => [item.provider,item]));
   const canManage = ["OWNER","ADMIN"].includes(context.membership.role);
@@ -356,6 +356,7 @@ export default async function IntegrationsPage({searchParams}: {searchParams: Pr
           <h2 className="font-semibold text-slate-900">n8n execution monitor</h2>
           <p className="text-sm text-slate-500">Recent execution metadata only. Retry controls are available to administrators for failed runs. Execution payloads are never displayed.</p>
           {canManage && n8nIntegration && <form action={syncN8nExecutionHistory} className="mt-3"><input type="hidden" name="integrationId" value={n8nIntegration.id}/><button className="rounded-lg border border-indigo-200 px-3 py-2 text-xs font-semibold text-indigo-700 hover:bg-indigo-50">Sync recent history to GrowthManager</button></form>}
+          {n8nIntegration?.lastExecutionSyncCursor && <p className="mt-2 text-xs text-amber-700">More execution history remains to be synchronized. Run the sync again to continue from the saved cursor.</p>}
         </div>
         {n8nExecutions.kind === "not-connected" ? (
           <p className="mt-4 rounded-xl bg-slate-50 px-4 py-3 text-sm text-slate-500">Connect n8n to monitor workflow executions.</p>

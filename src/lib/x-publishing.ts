@@ -52,10 +52,12 @@ async function loadMediaBytes(asset:{bucket:string;objectPath:string;sizeBytes:b
  return bytes;
 }
 
-async function saveXMediaState(workspaceId:string,targetId:string,state:XMediaState){
- const current=await db.socialPostTarget.findFirst({where:{id:targetId,workspaceId,provider:"X"},select:{uploadMetadata:true}});
- const metadata=current?.uploadMetadata&&typeof current.uploadMetadata==="object"&&!Array.isArray(current.uploadMetadata)?current.uploadMetadata as Record<string,unknown>:{};
- await db.socialPostTarget.updateMany({where:{id:targetId,workspaceId,provider:"X",status:"PUBLISHING"},data:{uploadMetadata:{...metadata,xMedia:state}}});
+async function saveXMediaState(workspaceId:string,targetId:string,state:XMediaState,leaseUntil:Date){
+ const current=await db.socialPostTarget.findFirst({where:{id:targetId,workspaceId,provider:"X",status:"PUBLISHING",nextCheckAt:leaseUntil},select:{uploadMetadata:true}});
+ if(!current)throw new Error("X_WORKER_LEASE_LOST");
+ const metadata=current.uploadMetadata&&typeof current.uploadMetadata==="object"&&!Array.isArray(current.uploadMetadata)?current.uploadMetadata as Record<string,unknown>:{};
+ const saved=await db.socialPostTarget.updateMany({where:{id:targetId,workspaceId,provider:"X",status:"PUBLISHING",nextCheckAt:leaseUntil},data:{uploadMetadata:{...metadata,xMedia:state}}});
+ if(saved.count!==1)throw new Error("X_WORKER_LEASE_LOST");
 }
 
 async function applyXImageAltText(token:string,mediaId:string,altText:string){
@@ -65,7 +67,7 @@ async function applyXImageAltText(token:string,mediaId:string,altText:string){
  if(!response.ok)throw new Error(response.status===401?"X_REAUTHORIZATION_REQUIRED":response.status===403?"X_PERMISSION_DENIED":response.status===429||response.status>=500?"X_MEDIA_METADATA_UNCERTAIN":"X_MEDIA_METADATA_REJECTED");
 }
 
-async function uploadXMedia(token:string,asset:{id:string;bucket:string;objectPath:string;sizeBytes:bigint;mimeType:string},workspaceId:string,targetId:string,previous?:Record<string,unknown>):Promise<XMediaState>{
+async function uploadXMedia(token:string,asset:{id:string;bucket:string;objectPath:string;sizeBytes:bigint;mimeType:string},workspaceId:string,targetId:string,leaseUntil:Date,previous?:Record<string,unknown>):Promise<XMediaState>{
  const bytes=await loadMediaBytes(asset);
  const isVideo=asset.mimeType.startsWith("video/");
  if(!isVideo){
@@ -75,7 +77,7 @@ async function uploadXMedia(token:string,asset:{id:string;bucket:string;objectPa
   const body=await response.json().catch(()=>null) as {data?:{id?:string;processing_info?:{state?:string;check_after_secs?:number}}}|null;
   if(!response.ok||typeof body?.data?.id!=="string")throw new Error(response.status===401?"X_REAUTHORIZATION_REQUIRED":response.status===403?"X_PERMISSION_DENIED":response.status===429?"X_RATE_LIMITED":response.status>=500||!response.ok?"X_MEDIA_UPLOAD_UNCERTAIN":"X_MEDIA_UPLOAD_REJECTED");
   const result:XMediaState={mediaId:body.data.id,mediaAssetId:asset.id,state:body.data.processing_info?.state,checkAfterSecs:body.data.processing_info?.check_after_secs,phase:body.data.processing_info?"PROCESSING":"READY"};
-  await saveXMediaState(workspaceId,targetId,result);
+  await saveXMediaState(workspaceId,targetId,result,leaseUntil);
   return result;
  }
  let mediaId=typeof previous?.mediaId==="string"?previous.mediaId:"";
@@ -87,7 +89,7 @@ async function uploadXMedia(token:string,asset:{id:string;bucket:string;objectPa
   const data=await init.json().catch(()=>null) as {data?:{id?:string}}|null;
   if(!init.ok||typeof data?.data?.id!=="string")throw new Error(init.status===401?"X_REAUTHORIZATION_REQUIRED":init.status===403?"X_PERMISSION_DENIED":init.status===429?"X_RATE_LIMITED":init.status>=500?"X_MEDIA_INIT_UNCERTAIN":"X_MEDIA_INIT_REJECTED");
   mediaId=data.data.id;segmentIndex=0;
-  await saveXMediaState(workspaceId,targetId,{mediaId,mediaAssetId:asset.id,phase:"UPLOADING",segmentIndex});
+  await saveXMediaState(workspaceId,targetId,{mediaId,mediaAssetId:asset.id,phase:"UPLOADING",segmentIndex},leaseUntil);
  }
  const chunkSize=5*1024*1024,totalChunks=Math.ceil(bytes.length/chunkSize),startSegment=segmentIndex;
  for(let index=segmentIndex;index<totalChunks;index++){
@@ -98,8 +100,8 @@ async function uploadXMedia(token:string,asset:{id:string;bucket:string;objectPa
   catch{throw new Error("X_MEDIA_APPEND_UNCERTAIN")}
   if(!append.ok)throw new Error(append.status===401?"X_REAUTHORIZATION_REQUIRED":append.status===403?"X_PERMISSION_DENIED":append.status===429?"X_RATE_LIMITED":append.status>=500?"X_MEDIA_APPEND_UNCERTAIN":"X_MEDIA_APPEND_REJECTED");
   segmentIndex=index+1;
-  await saveXMediaState(workspaceId,targetId,{mediaId,mediaAssetId:asset.id,phase:"UPLOADING",segmentIndex});
-  if(index-startSegment>=1&&segmentIndex<totalChunks)return {mediaId,mediaAssetId:asset.id,phase:"UPLOADING",segmentIndex};
+  await saveXMediaState(workspaceId,targetId,{mediaId,mediaAssetId:asset.id,phase:"UPLOADING",segmentIndex},leaseUntil);
+  if(index-startSegment>=0&&segmentIndex<totalChunks)return {mediaId,mediaAssetId:asset.id,phase:"UPLOADING",segmentIndex};
  }
  let finalize:Response;
  try{finalize=await fetch("https://api.x.com/2/media/upload/"+encodeURIComponent(mediaId)+"/finalize",{method:"POST",headers:{Authorization:"Bearer "+token},cache:"no-store",redirect:"error",signal:AbortSignal.timeout(15000)})}
@@ -108,7 +110,7 @@ async function uploadXMedia(token:string,asset:{id:string;bucket:string;objectPa
  if(!finalize.ok)throw new Error(finalize.status===401?"X_REAUTHORIZATION_REQUIRED":finalize.status===403?"X_PERMISSION_DENIED":finalize.status===429?"X_RATE_LIMITED":finalize.status>=500?"X_MEDIA_FINALIZE_UNCERTAIN":"X_MEDIA_FINALIZE_REJECTED");
  const info=finalBody?.data?.processing_info;
  const result:XMediaState={mediaId,mediaAssetId:asset.id,state:info?.state,checkAfterSecs:info?.check_after_secs,phase:info?"PROCESSING":"READY"} as XMediaState;
- await saveXMediaState(workspaceId,targetId,result);
+ await saveXMediaState(workspaceId,targetId,result,leaseUntil);
  return result;
 }
 
@@ -129,12 +131,19 @@ export async function publishXTarget(input:{targetId:string;workspaceId:string;a
   socialAccount:{select:{id:true,workspaceId:true,brandId:true,status:true,scopes:true,credentialsEncrypted:true,providerUserId:true}}
  }});
  if(!target||target.contentPost.workspaceId!==input.workspaceId||target.socialAccount.workspaceId!==input.workspaceId||target.contentPost.brandId!==target.socialAccount.brandId||target.socialAccount.status!=="CONNECTED"||!target.socialAccount.credentialsEncrypted)return {status:"SKIPPED"};
+ let leaseUntil:Date|null=null;
  if(target.status==="PUBLISHING"){
+  const now=new Date();
+  if(target.nextCheckAt&&target.nextCheckAt>now)return {status:"SKIPPED"};
+  leaseUntil=new Date(now.getTime()+120000);
+  const lock=await db.socialPostTarget.updateMany({where:{id:target.id,workspaceId:input.workspaceId,provider:"X",status:"PUBLISHING",nextCheckAt:target.nextCheckAt,OR:[{nextCheckAt:null},{nextCheckAt:{lte:now}}]},data:{nextCheckAt:leaseUntil}});
+  if(lock.count!==1)return {status:"SKIPPED"};
   const startedAttempt=await db.socialPublishAttempt.findFirst({where:{workspaceId:input.workspaceId,targetId:target.id,status:"STARTED"},orderBy:{attemptNumber:"desc"},select:{id:true}});
   if(startedAttempt){
    await db.$transaction(async tx=>{
-    await tx.socialPublishAttempt.update({where:{id:startedAttempt.id},data:{status:"UNKNOWN",errorCode:"PUBLISH_OUTCOME_UNKNOWN",finishedAt:new Date()}});
-    await tx.socialPostTarget.updateMany({where:{id:target.id,workspaceId:input.workspaceId,status:"PUBLISHING"},data:{status:"UNKNOWN",errorCode:"PUBLISH_OUTCOME_UNKNOWN",nextCheckAt:null}});
+    const changed=await tx.socialPostTarget.updateMany({where:{id:target.id,workspaceId:input.workspaceId,provider:"X",status:"PUBLISHING",nextCheckAt:leaseUntil},data:{status:"UNKNOWN",errorCode:"PUBLISH_OUTCOME_UNKNOWN",nextCheckAt:null}});
+    if(changed.count!==1)return;
+    await tx.socialPublishAttempt.updateMany({where:{id:startedAttempt.id,status:"STARTED"},data:{status:"UNKNOWN",errorCode:"PUBLISH_OUTCOME_UNKNOWN",finishedAt:new Date()}});
     await tx.contentPost.updateMany({where:{id:target.contentPost.id,workspaceId:input.workspaceId},data:{status:"PUBLISHING"}});
     await tx.activityLog.create({data:{workspaceId:input.workspaceId,userId:input.actorUserId??null,action:"social_post.publish_outcome_unknown",entityType:"ContentPost",entityId:target.contentPost.id,metadata:{provider:"X",targetId:target.id,attemptId:startedAttempt.id,requiresManualVerification:true}}});
    });
@@ -153,10 +162,12 @@ export async function publishXTarget(input:{targetId:string;workspaceId:string;a
  const existing=target.uploadMetadata&&typeof target.uploadMetadata==="object"&&!Array.isArray(target.uploadMetadata)?target.uploadMetadata as Record<string,unknown>:{};
  const previousMedia=typeof existing.xMedia==="object"&&existing.xMedia!==null?existing.xMedia as Record<string,unknown>:null;
  if(target.status!=="PUBLISHING"){
-  const claim=await db.socialPostTarget.updateMany({where:{id:target.id,workspaceId:input.workspaceId,provider:"X",status:{in:allowed}},data:{status:"PUBLISHING",errorCode:null,nextCheckAt:new Date(Date.now()+120000)}});
+  leaseUntil=new Date(Date.now()+120000);
+  const claim=await db.socialPostTarget.updateMany({where:{id:target.id,workspaceId:input.workspaceId,provider:"X",status:{in:allowed}},data:{status:"PUBLISHING",errorCode:null,nextCheckAt:leaseUntil}});
   if(claim.count!==1)return {status:"SKIPPED"};
- }else{
-  const lock=await db.socialPostTarget.updateMany({where:{id:target.id,workspaceId:input.workspaceId,provider:"X",status:"PUBLISHING",OR:[{nextCheckAt:null},{nextCheckAt:{lte:new Date()}}]},data:{nextCheckAt:new Date(Date.now()+120000)}});
+ }else if(!leaseUntil){
+  leaseUntil=new Date(Date.now()+120000);
+  const lock=await db.socialPostTarget.updateMany({where:{id:target.id,workspaceId:input.workspaceId,provider:"X",status:"PUBLISHING",OR:[{nextCheckAt:null},{nextCheckAt:{lte:new Date()}}]},data:{nextCheckAt:leaseUntil}});
   if(lock.count!==1)return {status:"SKIPPED"};
  }
  let mediaId:string|undefined;
@@ -164,7 +175,7 @@ export async function publishXTarget(input:{targetId:string;workspaceId:string;a
   if(asset){
    let mediaState:XMediaState;
    if(asset.mimeType.startsWith("video/")&&previousMedia?.phase==="UPLOADING"){
-    mediaState=await uploadXMedia(token,asset,input.workspaceId,target.id,previousMedia);
+    mediaState=await uploadXMedia(token,asset,input.workspaceId,target.id,leaseUntil!,previousMedia);
    }else if(previousMedia&&typeof previousMedia.mediaId==="string"&&previousMedia.mediaAssetId===asset.id){
     mediaState={mediaId:previousMedia.mediaId,mediaAssetId:asset.id,state:typeof previousMedia.state==="string"?previousMedia.state:undefined,checkAfterSecs:typeof previousMedia.checkAfterSecs==="number"?previousMedia.checkAfterSecs:undefined,phase:typeof previousMedia.phase==="string"?previousMedia.phase:undefined,altTextApplied:previousMedia.altTextApplied===true};
     if(mediaState.phase==="PROCESSING"||(mediaState.state&&mediaState.state!=="succeeded")){
@@ -172,29 +183,29 @@ export async function publishXTarget(input:{targetId:string;workspaceId:string;a
      mediaState={...mediaState,state:info.state,checkAfterSecs:info.check_after_secs,phase:info.state==="succeeded"?"READY":"PROCESSING"};
     }
    }else{
-    mediaState=await uploadXMedia(token,asset,input.workspaceId,target.id);
+    mediaState=await uploadXMedia(token,asset,input.workspaceId,target.id,leaseUntil!);
    }
    if(mediaState.phase==="UPLOADING"){
-    await db.socialPostTarget.update({where:{id:target.id},data:{uploadMetadata:{...existing,xMedia:mediaState},nextCheckAt:new Date(Date.now()+5000),errorCode:null}});
+    const rescheduled=await db.socialPostTarget.updateMany({where:{id:target.id,workspaceId:input.workspaceId,provider:"X",status:"PUBLISHING",nextCheckAt:leaseUntil},data:{uploadMetadata:{...existing,xMedia:mediaState},nextCheckAt:new Date(Date.now()+5000),errorCode:null}}); if(rescheduled.count!==1)return {status:"SKIPPED"};
     return {status:"PROCESSING"};
    }
    if(mediaState.state==="failed")return failClaimed("X_MEDIA_PROCESSING_FAILED");
    if(mediaState.phase==="PROCESSING"||(mediaState.state&&mediaState.state!=="succeeded")){
-    await db.socialPostTarget.update({where:{id:target.id},data:{uploadMetadata:{...existing,xMedia:mediaState},nextCheckAt:new Date(Date.now()+Math.min(60,Math.max(5,mediaState.checkAfterSecs??10))*1000)}});
+    const rescheduled=await db.socialPostTarget.updateMany({where:{id:target.id,workspaceId:input.workspaceId,provider:"X",status:"PUBLISHING",nextCheckAt:leaseUntil},data:{uploadMetadata:{...existing,xMedia:mediaState},nextCheckAt:new Date(Date.now()+Math.min(60,Math.max(5,mediaState.checkAfterSecs??10))*1000)}}); if(rescheduled.count!==1)return {status:"SKIPPED"};
     return {status:"PROCESSING"};
    }
    const altText=typeof existing.xAltText==="string"?existing.xAltText.trim():"";
    if(asset.mimeType.startsWith("image/")&&altText&&mediaState.altTextApplied!==true){
     await applyXImageAltText(token,mediaState.mediaId,altText);
     mediaState={...mediaState,altTextApplied:true};
-    await saveXMediaState(input.workspaceId,target.id,mediaState);
+    await saveXMediaState(input.workspaceId,target.id,mediaState,leaseUntil!);
    }
    mediaId=mediaState.mediaId;
   }
  }catch(error){
   const code=error instanceof Error?error.message:"X_MEDIA_UPLOAD_FAILED";
   if(code.endsWith("_UNCERTAIN")||code==="X_MEDIA_STATUS_UNAVAILABLE"){
-   await db.socialPostTarget.update({where:{id:target.id},data:{errorCode:code,nextCheckAt:new Date(Date.now()+60000)}});
+   const deferred=await db.socialPostTarget.updateMany({where:{id:target.id,workspaceId:input.workspaceId,provider:"X",status:"PUBLISHING",nextCheckAt:leaseUntil},data:{errorCode:code,nextCheckAt:new Date(Date.now()+60000)}}); if(deferred.count!==1)return {status:"SKIPPED"};
    return {status:"PROCESSING",errorCode:code};
   }
   return failClaimed(code);
@@ -212,25 +223,30 @@ export async function publishXTarget(input:{targetId:string;workspaceId:string;a
   else errorCode="PUBLISH_OUTCOME_UNKNOWN";
  }catch{errorCode="PUBLISH_OUTCOME_UNKNOWN"}
  const finishedAt=new Date(),status=providerPostId?"PUBLISHED":errorCode==="PUBLISH_OUTCOME_UNKNOWN"?"UNKNOWN":"FAILED";
+ let committed=false;
  await db.$transaction(async tx=>{
+  const changed=await tx.socialPostTarget.updateMany({where:{id:target.id,workspaceId:input.workspaceId,provider:"X",status:"PUBLISHING",nextCheckAt:leaseUntil},data:{status,providerPostId,errorCode,publishedAt:providerPostId?finishedAt:null,nextCheckAt:null}});
+  if(changed.count!==1)return;
+  committed=true;
   await tx.socialPublishAttempt.update({where:{id:attempt.id},data:{status,providerPostId,errorCode,httpStatus,finishedAt,durationMs:Math.max(0,Date.now()-started)}});
-  await tx.socialPostTarget.update({where:{id:target.id},data:{status,providerPostId,errorCode,publishedAt:providerPostId?finishedAt:null,nextCheckAt:null}});
   const remaining=await tx.socialPostTarget.count({where:{workspaceId:input.workspaceId,contentPostId:target.contentPost.id,status:{not:"PUBLISHED"}}});
   await tx.contentPost.update({where:{id:target.contentPost.id},data:{status:remaining===0?"PUBLISHED":status==="UNKNOWN"?"PUBLISHING":status==="FAILED"?"FAILED":"PUBLISHING",publishedAt:remaining===0?finishedAt:null}});
   await tx.activityLog.create({data:{workspaceId:input.workspaceId,userId:input.actorUserId??null,action:providerPostId?"social_post.published":"social_post.publish_failed",entityType:"ContentPost",entityId:target.contentPost.id,metadata:{provider:"X",targetId:target.id,errorCode,httpStatus,source:input.actorUserId?"dashboard":"scheduled_worker",mediaAttached:Boolean(mediaId)}}});
  });
- return {status,errorCode:errorCode??undefined};
+ return committed?{status,errorCode:errorCode??undefined}:{status:"SKIPPED"};
 
- async function failBeforeClaim(code:string):Promise<Result>{
-  await db.socialPostTarget.updateMany({where:{id:input.targetId,workspaceId:input.workspaceId,provider:"X",status:{in:allowed}},data:{status:"FAILED",errorCode:code,nextCheckAt:null}});
-  return {status:"FAILED",errorCode:code};
+ async function failBeforeClaim(code:string):Promise<Result>{if(!target)return {status:"SKIPPED"};
+  const changed=await db.socialPostTarget.updateMany({where:{id:input.targetId,workspaceId:input.workspaceId,provider:"X",status:{in:allowed},...(target.status==="PUBLISHING"?{nextCheckAt:leaseUntil}:{})},data:{status:"FAILED",errorCode:code,nextCheckAt:null}});
+  return changed.count===1?{status:"FAILED",errorCode:code}:{status:"SKIPPED"};
  }
- async function failClaimed(code:string):Promise<Result>{
-  await db.$transaction(async tx=>{
-   await tx.socialPostTarget.updateMany({where:{id:input.targetId,workspaceId:input.workspaceId,provider:"X",status:"PUBLISHING"},data:{status:"FAILED",errorCode:code,nextCheckAt:null}});
+ async function failClaimed(code:string):Promise<Result>{if(!target)return {status:"SKIPPED"};
+  const committed=await db.$transaction(async tx=>{
+   const changed=await tx.socialPostTarget.updateMany({where:{id:input.targetId,workspaceId:input.workspaceId,provider:"X",status:"PUBLISHING",nextCheckAt:leaseUntil},data:{status:"FAILED",errorCode:code,nextCheckAt:null}});
+   if(changed.count!==1)return false;
    await tx.contentPost.updateMany({where:{id:target.contentPost.id,workspaceId:input.workspaceId},data:{status:"FAILED"}});
+   return true;
   });
-  return {status:"FAILED",errorCode:code};
+  return committed?{status:"FAILED",errorCode:code}:{status:"SKIPPED"};
  }
 }
 

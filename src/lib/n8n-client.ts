@@ -160,9 +160,12 @@ export async function listN8nWorkflows(
     }
 
     const nextCursor = (payload as {nextCursor?: unknown}).nextCursor;
-    if (typeof nextCursor !== "string" || !nextCursor || nextCursor.length > 2048 || seenCursors.has(nextCursor)) {
+    if (nextCursor === undefined || nextCursor === null || nextCursor === "") {
       hasMore = false;
       break;
+    }
+    if (typeof nextCursor !== "string" || nextCursor.length > 2048 || seenCursors.has(nextCursor)) {
+      throw new Error("N8N_PROVIDER_UNAVAILABLE");
     }
     seenCursors.add(nextCursor);
     cursor = nextCursor;
@@ -279,21 +282,41 @@ export type N8nExecutionSummary = {
 export async function listN8nExecutions(
   baseUrl: string,
   apiKey: string,
-  options: {status?: N8nExecutionStatus; workflowId?: string} = {},
-): Promise<{executions: N8nExecutionSummary[]; hasMore: boolean}> {
-  if (typeof apiKey !== "string" || apiKey.length < 16 || apiKey.length > 512) throw new Error("Invalid n8n API key.");
-  if (options.status && !["error", "success", "waiting"].includes(options.status)) throw new Error("Invalid n8n execution status.");
-  if (options.workflowId && !/^[A-Za-z0-9_-]{1,128}$/.test(options.workflowId)) throw new Error("Invalid n8n workflow ID.");
+  options: {
+    status?: N8nExecutionStatus;
+    workflowId?: string;
+    cursor?: string | null;
+    maxPages?: number;
+  } = {},
+): Promise<{executions: N8nExecutionSummary[]; hasMore: boolean; nextCursor: string | null}> {
+  if (typeof apiKey !== "string" || apiKey.length < 16 || apiKey.length > 512) {
+    throw new Error("Invalid n8n API key.");
+  }
+  if (options.status && !["error", "success", "waiting"].includes(options.status)) {
+    throw new Error("Invalid n8n execution status.");
+  }
+  if (options.workflowId && !/^[A-Za-z0-9_-]{1,128}$/.test(options.workflowId)) {
+    throw new Error("Invalid n8n workflow ID.");
+  }
+  if (options.cursor !== undefined && options.cursor !== null &&
+      (typeof options.cursor !== "string" || !options.cursor || options.cursor.length > 2048)) {
+    throw new Error("Invalid n8n execution cursor.");
+  }
+  const maxPages = options.maxPages ?? 3;
+  if (!Number.isInteger(maxPages) || maxPages < 1 || maxPages > 3) {
+    throw new Error("Invalid n8n execution page limit.");
+  }
 
   const normalizedBaseUrl = normalizeN8nBaseUrl(baseUrl);
   const executions: N8nExecutionSummary[] = [];
   const seenCursors = new Set<string>();
-  let cursor: string | undefined;
-  let hasMore = false;
+  let cursor = options.cursor ?? undefined;
+  if (cursor) seenCursors.add(cursor);
+  let nextCursor: string | null = null;
 
-  for (let page = 0; page < 3; page += 1) {
+  for (let page = 0; page < maxPages; page += 1) {
     const url = new URL(normalizedBaseUrl + "/api/v1/executions");
-    url.searchParams.set("limit", "50");
+    url.searchParams.set("limit", "250");
     url.searchParams.set("includeData", "false");
     if (options.status) url.searchParams.set("status", options.status);
     if (options.workflowId) url.searchParams.set("workflowId", options.workflowId);
@@ -313,10 +336,15 @@ export async function listN8nExecutions(
     }
     if (response.status === 401 || response.status === 403) throw new Error("N8N_AUTH_FAILED");
     if (response.status === 429) throw new Error("N8N_PROVIDER_RATE_LIMITED");
+    if (response.status === 400 && cursor) throw new Error("N8N_EXECUTION_CURSOR_INVALID");
     if (!response.ok) throw new Error("N8N_PROVIDER_UNAVAILABLE");
 
     let payload: unknown;
-    try { payload = await response.json(); } catch { throw new Error("N8N_PROVIDER_UNAVAILABLE"); }
+    try {
+      payload = await response.json();
+    } catch {
+      throw new Error("N8N_PROVIDER_UNAVAILABLE");
+    }
     if (!payload || typeof payload !== "object" || !Array.isArray((payload as {data?: unknown}).data)) {
       throw new Error("N8N_PROVIDER_UNAVAILABLE");
     }
@@ -324,12 +352,23 @@ export async function listN8nExecutions(
     for (const item of (payload as {data: unknown[]}).data) {
       if (!item || typeof item !== "object") continue;
       const execution = item as Record<string, unknown>;
-      if (typeof execution.id !== "string" || typeof execution.workflowId !== "string") continue;
-      const safeDate = (value: unknown) => typeof value === "string" && !Number.isNaN(Date.parse(value)) ? value : null;
-      const safeId = (value: unknown) => typeof value === "string" && value.length <= 128 ? value : null;
+      const executionId = typeof execution.id === "string" || typeof execution.id === "number"
+        ? String(execution.id)
+        : "";
+      const workflowId = typeof execution.workflowId === "string" || typeof execution.workflowId === "number"
+        ? String(execution.workflowId)
+        : "";
+      if (!/^\d{1,20}$/.test(executionId) || !/^[A-Za-z0-9_-]{1,128}$/.test(workflowId)) continue;
+      const safeDate = (value: unknown) =>
+        typeof value === "string" && !Number.isNaN(Date.parse(value)) ? value : null;
+      const safeId = (value: unknown) => {
+        if (typeof value !== "string" && typeof value !== "number") return null;
+        const normalized = String(value);
+        return normalized.length <= 128 ? normalized : null;
+      };
       executions.push({
-        id: execution.id.slice(0, 128),
-        workflowId: execution.workflowId.slice(0, 128),
+        id: executionId,
+        workflowId,
         status: typeof execution.status === "string" ? execution.status.slice(0, 40) : "unknown",
         mode: typeof execution.mode === "string" ? execution.mode.slice(0, 40) : "unknown",
         startedAt: safeDate(execution.startedAt),
@@ -340,16 +379,23 @@ export async function listN8nExecutions(
       });
     }
 
-    const nextCursor = (payload as {nextCursor?: unknown}).nextCursor;
-    if (typeof nextCursor !== "string" || !nextCursor || nextCursor.length > 2048 || seenCursors.has(nextCursor)) {
-      hasMore = false;
+    const candidate = (payload as {nextCursor?: unknown}).nextCursor;
+    if (candidate === undefined || candidate === null || candidate === "") {
+      nextCursor = null;
       break;
     }
-    seenCursors.add(nextCursor);
-    cursor = nextCursor;
-    hasMore = page === 2;
+    if (typeof candidate !== "string" || candidate.length > 2048) {
+      throw new Error("N8N_EXECUTION_CURSOR_MALFORMED");
+    }
+    if (seenCursors.has(candidate)) {
+      throw new Error("N8N_EXECUTION_CURSOR_REPEATED");
+    }
+    seenCursors.add(candidate);
+    nextCursor = candidate;
+    cursor = candidate;
   }
-  return {executions, hasMore};
+
+  return {executions, hasMore: nextCursor !== null, nextCursor};
 }
 
 
@@ -398,7 +444,10 @@ export async function retryN8nExecution(
   try { currentPayload = await currentResponse.json(); } catch { throw new Error("N8N_PROVIDER_UNAVAILABLE"); }
   if (!currentPayload || typeof currentPayload !== "object") throw new Error("N8N_PROVIDER_UNAVAILABLE");
   const current = currentPayload as Record<string, unknown>;
-  if (String(current.id ?? "") !== executionId || typeof current.workflowId !== "string") {
+  const currentWorkflowId = typeof current.workflowId === "string" || typeof current.workflowId === "number"
+    ? String(current.workflowId)
+    : "";
+  if (String(current.id ?? "") !== executionId || !/^[A-Za-z0-9_-]{1,128}$/.test(currentWorkflowId)) {
     throw new Error("N8N_PROVIDER_UNAVAILABLE");
   }
   if (current.status !== "error" && current.status !== "crashed") {
@@ -440,14 +489,14 @@ export async function retryN8nExecution(
   const retryId = typeof retried.id === "number" || typeof retried.id === "string" ? String(retried.id) : "";
   const retryOf = typeof retried.retryOf === "number" || typeof retried.retryOf === "string" ? String(retried.retryOf) : "";
   if (!/^\d{1,20}$/.test(retryId) || retryOf !== executionId ||
-      String(retried.workflowId ?? "") !== current.workflowId) {
+      String(retried.workflowId ?? "") !== currentWorkflowId) {
     throw new Error("N8N_RETRY_OUTCOME_UNKNOWN");
   }
 
   return {
     id: retryId,
     retryOf,
-    workflowId: current.workflowId,
+    workflowId: currentWorkflowId,
     status: typeof retried.status === "string" ? retried.status.slice(0, 40) : "unknown",
   };
 }

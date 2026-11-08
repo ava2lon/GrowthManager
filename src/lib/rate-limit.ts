@@ -55,6 +55,7 @@ export async function consumeRateLimit(
         String(windowSeconds),
       ]),
       cache: "no-store",
+      signal: AbortSignal.timeout(3_000),
     });
 
     if (!response.ok) {

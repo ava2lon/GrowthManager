@@ -63,3 +63,8 @@ export function parseYouTubeCommittedOffset(range: string | null, totalBytes: nu
   }
   return offset;
 }
+
+export function isYouTubeRetryableTransportError(error: unknown): boolean {
+  return error instanceof TypeError ||
+    (error instanceof Error && ["AbortError", "TimeoutError"].includes(error.name));
+}

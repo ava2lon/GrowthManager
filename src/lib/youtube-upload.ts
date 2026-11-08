@@ -4,7 +4,7 @@ import {db} from "@/lib/db";
 import {decryptIntegrationCredentials, encryptIntegrationCredentials} from "@/lib/integration-crypto";
 import {getSupabaseStorageConfig, storageHeaders} from "@/lib/media-storage";
 import {getFreshYouTubeCredentials} from "@/lib/youtube-auth";
-import {parseYouTubeCommittedOffset, validateYouTubeMetadata, validateYouTubeSessionUrl} from "@/lib/youtube-upload-utils";
+import {isYouTubeRetryableTransportError, parseYouTubeCommittedOffset, validateYouTubeMetadata, validateYouTubeSessionUrl} from "@/lib/youtube-upload-utils";
 
 const MAX_VIDEO_BYTES = 100 * 1024 * 1024;
 const CHUNK_BYTES = 8 * 1024 * 1024; // Google requires non-final chunks to be multiples of 256 KiB.
@@ -235,7 +235,7 @@ export async function processYouTubeUploadTarget(input: {targetId: string; works
     const statusResponse = await fetch(sessionUrl, {
       method: "PUT",
       headers: {Authorization: "Bearer " + accessToken, "Content-Length": "0", "Content-Range": "bytes */" + total},
-      cache: "no-store", redirect: "error", signal: AbortSignal.timeout(15000),
+      cache: "no-store", redirect: "error", signal: AbortSignal.timeout(10000),
     });
     if (statusResponse.status === 200 || statusResponse.status === 201) {
       const completed = await statusResponse.json().catch(() => null) as {id?: string; status?: {uploadStatus?: string}} | null;
@@ -266,7 +266,7 @@ export async function processYouTubeUploadTarget(input: {targetId: string; works
     const end = Math.min(offset + CHUNK_BYTES, total) - 1;
     const mediaResponse = await fetch(mediaUrl, {
       headers: {...storageHeaders(storage.serviceKey), Range: "bytes=" + offset + "-" + end},
-      cache: "no-store", redirect: "error", signal: AbortSignal.timeout(20000),
+      cache: "no-store", redirect: "error", signal: AbortSignal.timeout(10000),
     });
     if (mediaResponse.status !== 206) throw new Error("MEDIA_RANGE_DOWNLOAD_FAILED");
     const contentRange = mediaResponse.headers.get("content-range");
@@ -282,7 +282,7 @@ export async function processYouTubeUploadTarget(input: {targetId: string; works
         "Content-Length": String(chunk.length),
         "Content-Range": "bytes " + offset + "-" + end + "/" + total,
       },
-      body: chunk, cache: "no-store", redirect: "error", signal: AbortSignal.timeout(45000),
+      body: chunk, cache: "no-store", redirect: "error", signal: AbortSignal.timeout(25000),
     });
     if (uploadResponse.status === 200 || uploadResponse.status === 201) {
       const completed = await uploadResponse.json().catch(() => null) as {id?: string} | null;
@@ -307,7 +307,7 @@ export async function processYouTubeUploadTarget(input: {targetId: string; works
   } catch (error) {
     const code = error instanceof Error ? error.message : "YOUTUBE_UPLOAD_FAILED";
     if (["YOUTUBE_REFRESH_UNAVAILABLE", "YOUTUBE_PROVIDER_UNAVAILABLE", "YOUTUBE_UPLOAD_COMPLETION_UNCERTAIN", "YOUTUBE_VIDEO_STATUS_UNKNOWN"].includes(code) ||
-        error instanceof TypeError || (error instanceof Error && error.name === "AbortError")) {
+        isYouTubeRetryableTransportError(error)) {
       // A transport failure can happen after Google committed bytes. Reconcile from the session URI next run.
       await defer();
       return {status: "PROCESSING" as const};
@@ -322,6 +322,7 @@ export async function processYouTubeUploadTarget(input: {targetId: string; works
     });
   }
   async function markPublished(videoId: string) {
+     if (!target) return {status: "SKIPPED" as const};
     const finished = new Date();
     const rawMetadata = target.uploadMetadata && typeof target.uploadMetadata === "object" && !Array.isArray(target.uploadMetadata)
       ? target.uploadMetadata as Record<string, unknown> : {};
@@ -354,6 +355,7 @@ export async function processYouTubeUploadTarget(input: {targetId: string; works
   }
 
   async function completeUpload(videoId: string) {
+     if (!target) return {status: "SKIPPED" as const};
     await db.$transaction(async tx => {
       await tx.socialPostTarget.update({
         where: {id: input.targetId},

@@ -14,7 +14,7 @@ export function TikTokInboxUploadButton({targetId}:{targetId:string}){
    const response=await fetch("/api/social/tiktok/upload",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({targetId})});
    const payload=await response.json().catch(()=>null);
    if(!response.ok)throw new Error(payload?.error??"TikTok upload failed.");
-   setMessage("Video uploaded. The creator must open the TikTok inbox notification to finish and publish the post.");
+   setMessage(payload?.status==="UPLOADING"?"Upload initialized. GrowthManager will finish transferring the video in the background; the creator can then open the TikTok inbox notification to finish and publish the post.":"Upload request accepted. Check the publishing queue for the current status.");
    router.refresh();
   }catch(error){setMessage(error instanceof Error?error.message:"TikTok upload failed.");}
   finally{setBusy(false);}

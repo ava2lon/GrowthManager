@@ -280,7 +280,7 @@ describe("listN8nExecutions", () => {
     const fetchMock = vi.fn()
       .mockResolvedValueOnce(new Response(JSON.stringify({
         data: [{
-          id: "123", workflowId: "wf_1", status: "error", mode: "webhook",
+          id: 123, workflowId: "wf_1", status: "error", mode: "webhook",
           startedAt: "2026-11-06T10:00:00.000Z", stoppedAt: "2026-11-06T10:00:02.000Z",
           waitTill: null, retryOf: null, retrySuccessId: null,
           data: {resultData: {runData: {PrivateNode: [{json: {secret: "never return"}}]}}},
@@ -289,19 +289,21 @@ describe("listN8nExecutions", () => {
         nextCursor: "execution-page-two",
       }), {status: 200, headers: {"content-type": "application/json"}}))
       .mockResolvedValueOnce(new Response(JSON.stringify({
-        data: [{id: "124", workflowId: "wf_1", status: "success", mode: "manual"}],
+        data: [{id: 124, workflowId: 42, status: "success", mode: "manual", retryOf: 123, retrySuccessId: 125}],
       }), {status: 200, headers: {"content-type": "application/json"}}));
     vi.stubGlobal("fetch", fetchMock);
     const result = await listN8nExecutions("https://growth-team.app.n8n.cloud", "n8n_test_api_key_123456", {status: "error", workflowId: "wf_1"});
     expect(result).toEqual({
       executions: [
         {id: "123", workflowId: "wf_1", status: "error", mode: "webhook", startedAt: "2026-11-06T10:00:00.000Z", stoppedAt: "2026-11-06T10:00:02.000Z", waitTill: null, retryOf: null, retrySuccessId: null},
-        {id: "124", workflowId: "wf_1", status: "success", mode: "manual", startedAt: null, stoppedAt: null, waitTill: null, retryOf: null, retrySuccessId: null},
+        {id: "124", workflowId: "42", status: "success", mode: "manual", startedAt: null, stoppedAt: null, waitTill: null, retryOf: "123", retrySuccessId: "125"},
       ],
       hasMore: false,
+      nextCursor: null,
     });
     const [firstUrl, firstOptions] = fetchMock.mock.calls[0] as [URL, RequestInit];
     expect(firstUrl.searchParams.get("includeData")).toBe("false");
+    expect(firstUrl.searchParams.get("limit")).toBe("250");
     expect(firstUrl.searchParams.get("status")).toBe("error");
     expect(firstUrl.searchParams.get("workflowId")).toBe("wf_1");
     expect((firstOptions.headers as Record<string, string>)["X-N8N-API-KEY"]).toBe("n8n_test_api_key_123456");
@@ -322,6 +324,61 @@ describe("listN8nExecutions", () => {
     expect(fetchMock).toHaveBeenCalledTimes(3);
     expect(result.executions).toHaveLength(3);
     expect(result.hasMore).toBe(true);
+    expect(result.nextCursor).toBe("cursor-4");
+  });
+
+  it("resumes from a persisted cursor with a single bounded page", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({
+      data: [{id: "500", workflowId: "wf_1", status: "success", mode: "trigger"}],
+      nextCursor: "cursor-after-500",
+    }), {status: 200, headers: {"content-type": "application/json"}}));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const result = await listN8nExecutions(
+      "https://growth-team.app.n8n.cloud",
+      "n8n_test_api_key_123456",
+      {cursor: "persisted-cursor", maxPages: 1},
+    );
+
+    expect(result.executions).toHaveLength(1);
+    expect(result.hasMore).toBe(true);
+    expect(result.nextCursor).toBe("cursor-after-500");
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    const [url] = fetchMock.mock.calls[0] as [URL, RequestInit];
+    expect(url.searchParams.get("cursor")).toBe("persisted-cursor");
+    expect(url.searchParams.get("limit")).toBe("250");
+  });
+
+  it("rejects invalid persisted cursors so the sync worker can restart safely", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response("invalid cursor", {status: 400})));
+    await expect(listN8nExecutions(
+      "https://growth-team.app.n8n.cloud",
+      "n8n_test_api_key_123456",
+      {cursor: "expired-cursor", maxPages: 1},
+    )).rejects.toThrow("N8N_EXECUTION_CURSOR_INVALID");
+  });
+
+  it("rejects malformed pagination cursors instead of reporting a complete sample", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(JSON.stringify({
+      data: [],
+      nextCursor: {unexpected: "object"},
+    }), {status: 200, headers: {"content-type": "application/json"}})));
+    await expect(listN8nExecutions(
+      "https://growth-team.app.n8n.cloud",
+      "n8n_test_api_key_123456",
+    )).rejects.toThrow("N8N_EXECUTION_CURSOR_MALFORMED");
+  });
+
+  it("rejects a repeated execution cursor", async () => {
+    const page = () => new Response(JSON.stringify({data: [], nextCursor: "same-cursor"}), {
+      status: 200,
+      headers: {"content-type": "application/json"},
+    });
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValueOnce(page()).mockResolvedValueOnce(page()));
+    await expect(listN8nExecutions(
+      "https://growth-team.app.n8n.cloud",
+      "n8n_test_api_key_123456",
+    )).rejects.toThrow("N8N_EXECUTION_CURSOR_REPEATED");
   });
 
   it("rejects invalid filters before making a request", async () => {
@@ -349,11 +406,11 @@ describe("retryN8nExecution", () => {
   it("checks failed status without execution data and retries the original workflow version", async () => {
     const fetchMock = vi.fn()
       .mockResolvedValueOnce(new Response(JSON.stringify({
-        id: "123", workflowId: "wf_1", status: "error",
+        id: 123, workflowId: 42, status: "error",
         data: {resultData: {runData: {private: "must not be read"}}},
       }), {status: 200, headers: {"content-type": "application/json"}}))
       .mockResolvedValueOnce(new Response(JSON.stringify({
-        id: "124", retryOf: "123", workflowId: "wf_1", status: "success", data: {secret: true},
+        id: 124, retryOf: 123, workflowId: 42, status: "success", data: {secret: true},
       }), {status: 200, headers: {"content-type": "application/json"}}));
     vi.stubGlobal("fetch", fetchMock);
 
@@ -363,7 +420,7 @@ describe("retryN8nExecution", () => {
       "123",
     );
 
-    expect(result).toEqual({id: "124", retryOf: "123", workflowId: "wf_1", status: "success"});
+    expect(result).toEqual({id: "124", retryOf: "123", workflowId: "42", status: "success"});
     const [getUrl, getOptions] = fetchMock.mock.calls[0] as [string, RequestInit];
     expect(getUrl).toBe("https://growth-team.app.n8n.cloud/api/v1/executions/123?includeData=false");
     expect(getOptions.method).toBe("GET");

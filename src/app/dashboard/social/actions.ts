@@ -671,13 +671,13 @@ export async function createLinkedInDraft(formData:FormData){
  }
  const brand=await db.brand.findFirst({where:{id:accounts[0].brandId,workspaceId:context.workspace.id,status:"ACTIVE"},select:{id:true}});
  if(!brand)throw new Error("The selected LinkedIn accounts are not assigned to an active brand.");
- const post=await db.$transaction(async tx=>{
+ await db.$transaction(async tx=>{
   const created=await tx.contentPost.create({data:{workspaceId:context.workspace.id,brandId:brand.id,body,status:"DRAFT"},select:{id:true}});
   await tx.socialPostTarget.createMany({data:accounts.map(a=>({workspaceId:context.workspace.id,contentPostId:created.id,socialAccountId:a.id,provider:"LINKEDIN",status:"DRAFT"}))});
   await tx.activityLog.create({data:{workspaceId:context.workspace.id,userId:context.userId,action:"social_post.draft_created",entityType:"ContentPost",entityId:created.id,metadata:{provider:"LINKEDIN",targetCount:accounts.length,accountIds:accounts.map(a=>a.id),mediaCount:0}}});
-  return created;
+
  });
- revalidatePath("/dashboard/social");return post.id;
+ revalidatePath("/dashboard/social");
 }
 
 const RETRYABLE_LINKEDIN_ERRORS=new Set(["LINKEDIN_REAUTHORIZATION_REQUIRED","LINKEDIN_REFRESH_UNAVAILABLE","LINKEDIN_REFRESH_REJECTED","LINKEDIN_AUTH_FAILED","LINKEDIN_PERMISSION_DENIED","LINKEDIN_PUBLISH_SCOPE_MISSING","LINKEDIN_ORGANIZATION_ROLE_REVOKED","LINKEDIN_ORGANIZATION_ACCESS_UNVERIFIED","LINKEDIN_PROVIDER_UNAVAILABLE","LINKEDIN_NOT_CONFIGURED","LINKEDIN_CREDENTIAL_DECRYPTION_FAILED","LINKEDIN_TOKEN_MISSING"]);
@@ -779,7 +779,7 @@ export async function createFacebookDraft(formData: FormData) {
     throw new Error("One or more selected media assets are unavailable, not ready, or assigned to another brand.");
   }
 
-  const post = await db.$transaction(async (tx) => {
+  await db.$transaction(async (tx) => {
     const created = await tx.contentPost.create({
       data: {workspaceId: context.workspace.id, brandId: brand.id, body, status: "DRAFT"},
       select: {id: true},
@@ -808,10 +808,9 @@ export async function createFacebookDraft(formData: FormData) {
         metadata: {provider: "FACEBOOK", targetCount: accounts.length, accountIds: accounts.map((account) => account.id), mediaAssetCount: mediaAssets.length},
       },
     });
-    return created;
+
   });
   revalidatePath("/dashboard/social");
-  return post.id;
 }
 
 
@@ -830,14 +829,14 @@ export async function createInstagramReelDraft(formData:FormData){
   const asset=await db.mediaAsset.findFirst({where:{id:mediaAssetId,workspaceId:context.workspace.id,status:"READY",mimeType:{in:["video/mp4","video/quicktime"]},OR:[{brandId:brand.id},{brandId:null}]},select:{id:true,sizeBytes:true,durationMs:true,width:true,height:true}});
   if(!asset||Number(asset.sizeBytes)>100*1024*1024||!asset.durationMs||asset.durationMs<3000||asset.durationMs>900000||!asset.width||!asset.height||asset.width>1920||asset.height>1920)
     throw new Error("Select one ready MP4/MOV video within the supported size, duration, and dimension limits.");
-  const post=await db.$transaction(async tx=>{
+  await db.$transaction(async tx=>{
     const created=await tx.contentPost.create({data:{workspaceId:context.workspace.id,brandId:brand.id,body,status:"DRAFT"},select:{id:true}});
     await tx.socialPostTarget.createMany({data:accounts.map(a=>({workspaceId:context.workspace.id,contentPostId:created.id,socialAccountId:a.id,provider:"INSTAGRAM",status:"DRAFT"}))});
     await tx.contentPostMedia.create({data:{workspaceId:context.workspace.id,contentPostId:created.id,mediaAssetId:asset.id,position:0}});
     await tx.activityLog.create({data:{workspaceId:context.workspace.id,userId:context.userId,action:"social_post.draft_created",entityType:"ContentPost",entityId:created.id,metadata:{provider:"INSTAGRAM",format:"REEL",targetCount:accounts.length,mediaAssetCount:1}}});
-    return created;
+
   });
-  revalidatePath("/dashboard/social");return post.id;
+  revalidatePath("/dashboard/social");
 }
 
 export async function createInstagramDraft(formData: FormData) {
@@ -877,7 +876,7 @@ export async function createInstagramDraft(formData: FormData) {
     throw new Error("Instagram supports ready JPEG images only. Check the selected assets and brand assignment.");
   }
 
-  const post = await db.$transaction(async (tx) => {
+  await db.$transaction(async (tx) => {
     const created = await tx.contentPost.create({
       data: {workspaceId: context.workspace.id, brandId: brand.id, body, status: "DRAFT"},
       select: {id: true},
@@ -906,10 +905,9 @@ export async function createInstagramDraft(formData: FormData) {
         metadata: {provider: "INSTAGRAM", targetCount: accounts.length, accountIds: accounts.map((account) => account.id), mediaAssetCount: mediaAssets.length},
       },
     });
-    return created;
+
   });
   revalidatePath("/dashboard/social");
-  return post.id;
 }
 
 export async function scheduleFacebookDraft(formData: FormData) {
@@ -1267,7 +1265,7 @@ export async function createYouTubeDraft(formData: FormData) {
     throw new Error("Select one ready MP4 or MOV video no larger than 100 MB.");
   }
   const metadata = {title, description, privacyStatus, categoryId, tags, ...(publishAtInput ? {publishAt: new Date(publishAtInput).toISOString()} : {})};
-  const post = await db.$transaction(async tx => {
+  await db.$transaction(async tx => {
     const created = await tx.contentPost.create({
       data: {workspaceId: context.workspace.id, brandId: brand.id, title, body: description, status: "DRAFT"},
       select: {id: true},
@@ -1285,10 +1283,9 @@ export async function createYouTubeDraft(formData: FormData) {
         entityType: "ContentPost", entityId: created.id,
         metadata: {provider: "YOUTUBE", targetId: target.id, privacyStatus, mediaAssetCount: 1}},
     });
-    return created;
+
   });
   revalidatePath("/dashboard/social");
-  return post.id;
 }
 
 export async function createTikTokDraft(formData:FormData){
@@ -1312,15 +1309,14 @@ export async function createTikTokDraft(formData:FormData){
   if(!asset||Number(asset.sizeBytes)>100*1024*1024||!asset.durationMs||asset.durationMs<3000||asset.durationMs>900000||
     !asset.width||!asset.height||asset.width>1920||asset.height>1920)
     throw new Error("Select one ready video within TikTok's supported size, duration, and dimensions policy.");
-  const post=await db.$transaction(async tx=>{
+  await db.$transaction(async tx=>{
     const created=await tx.contentPost.create({data:{workspaceId:context.workspace.id,brandId:brand.id,body,status:"DRAFT"},select:{id:true}});
     await tx.socialPostTarget.create({data:{workspaceId:context.workspace.id,contentPostId:created.id,socialAccountId:account.id,provider:"TIKTOK",status:"DRAFT"}});
     await tx.contentPostMedia.create({data:{workspaceId:context.workspace.id,contentPostId:created.id,mediaAssetId:asset.id,position:0}});
     await tx.activityLog.create({data:{workspaceId:context.workspace.id,userId:context.userId,action:"social_post.draft_created",entityType:"ContentPost",entityId:created.id,metadata:{provider:"TIKTOK",format:"INBOX_VIDEO",mediaAssetCount:1}}});
-    return created;
+
   });
   revalidatePath("/dashboard/social");
-  return post.id;
 }
 
 export async function checkPinterestAccountHealth(formData:FormData){
@@ -1414,15 +1410,15 @@ export async function createPinterestDraft(formData:FormData){
   attachments=[{id:video.id,position:0},{id:cover.id,position:1}];
  }
  await enforceSocialRateLimit(context.workspace.id,context.userId,"publish");
- const post=await db.$transaction(async tx=>{
+ await db.$transaction(async tx=>{
   const scheduledAt=scheduledInput?new Date(scheduledInput):null;
   const created=await tx.contentPost.create({data:{workspaceId:context.workspace.id,brandId:brand.id,title,body:description||title,status:scheduledAt?"SCHEDULED":"DRAFT",scheduledAt},select:{id:true}});
   const target=await tx.socialPostTarget.create({data:{workspaceId:context.workspace.id,contentPostId:created.id,socialAccountId:account.id,provider:"PINTEREST",status:scheduledAt?"SCHEDULED":"DRAFT",uploadMetadata:{boardId,title,description,link,mediaType,boardName:typeof board.name==="string"?board.name:"Pinterest board"}},select:{id:true}});
   await tx.contentPostMedia.createMany({data:attachments.map(asset=>({workspaceId:context.workspace.id,contentPostId:created.id,mediaAssetId:asset.id,position:asset.position}))});
   await tx.activityLog.create({data:{workspaceId:context.workspace.id,userId:context.userId,action:"social_post.draft_created",entityType:"ContentPost",entityId:created.id,metadata:{provider:"PINTEREST",targetId:target.id,accountId:account.id,boardId,mediaCount:attachments.length,mediaType,scheduledAt:scheduledAt?.toISOString()??null}}});
-  return created;
+
  });
- revalidatePath("/dashboard/social");return post.id;
+ revalidatePath("/dashboard/social");
 }
 export async function cancelPinterestSchedule(formData: FormData) {
   const context = await requireWorkspaceRole("MEMBER");

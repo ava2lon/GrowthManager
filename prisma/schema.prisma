@@ -386,6 +386,7 @@ model Integration {
   credentialsEncrypted String? @db.Text
   lastValidatedAt DateTime?
   lastExecutionSyncAt DateTime?
+  lastExecutionSyncCursor String? @db.Text
   lastErrorAt DateTime?
   lastErrorCode String?
   createdAt   DateTime  @default(now())
@@ -475,9 +476,11 @@ model AutomationAlertPolicy {
   cooldownMinutes       Int       @default(60)
   emailNotificationsEnabled Boolean @default(false)
   notificationEmail     String?
+  lastEvaluatedAt       DateTime?
   createdAt             DateTime  @default(now())
   updatedAt             DateTime  @updatedAt
   workspace             Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  @@index([enabled, lastEvaluatedAt])
 }
 
 model AutomationAlertEvent {

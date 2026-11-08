@@ -14,7 +14,7 @@ function isQuiet(minute: number, start: number, end: number): boolean {
 /** Returns the first real UTC minute outside the user's local quiet window, or null if sending is allowed now. */
 export function nextAllowedSendAt(now: Date, timezone: string, startTime: string, endTime: string): Date | null {
   const parse = (value: string) => {
-    const match = /^(\\d{2}):(\\d{2})$/.exec(value);
+    const match = /^(\d{2}):(\d{2})$/.exec(value);
     return match ? Number(match[1]) * 60 + Number(match[2]) : NaN;
   };
   const start = parse(startTime);

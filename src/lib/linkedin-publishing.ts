@@ -10,8 +10,8 @@ export async function publishLinkedInTarget(input:{targetId:string;workspaceId:s
  if(!target||target.contentPost.workspaceId!==input.workspaceId||target.socialAccount.workspaceId!==input.workspaceId||target.contentPost.brandId!==target.socialAccount.brandId||target.socialAccount.status!=="CONNECTED"||!target.socialAccount.credentialsEncrypted)return {status:"SKIPPED"};
  if(target.contentPost.mediaAssets.length)return failBeforeClaim("LINKEDIN_TEXT_ONLY_PHASE");
  const metadata=target.socialAccount.metadata&&typeof target.socialAccount.metadata==="object"&&!Array.isArray(target.socialAccount.metadata)?target.socialAccount.metadata as Record<string,unknown>:{};
- const authorUrn=metadata.authorUrn,accountType=metadata.accountType;
- if(typeof authorUrn!=="string"||authorUrn!==target.socialAccount.providerUserId||!["MEMBER","ORGANIZATION"].includes(String(accountType)))return failBeforeClaim("LINKEDIN_AUTHOR_IDENTITY_INVALID");
+ const authorUrn=metadata.authorUrn,accountType=metadata.accountType==="ORGANIZATION"?"ORGANIZATION":metadata.accountType==="MEMBER"?"MEMBER":null;
+ if(typeof authorUrn!=="string"||authorUrn!==target.socialAccount.providerUserId||!accountType)return failBeforeClaim("LINKEDIN_AUTHOR_IDENTITY_INVALID");
  let credentials:Awaited<ReturnType<typeof getLinkedInCredentials>>;
  try{credentials=await getLinkedInCredentials({workspaceId:input.workspaceId,accountId:target.socialAccount.id})}catch(error){return failBeforeClaim(error instanceof Error?error.message:"LINKEDIN_CREDENTIALS_INVALID")}
  const required=accountType==="ORGANIZATION"?"w_organization_social":"w_member_social";
@@ -52,7 +52,7 @@ export async function publishLinkedInTarget(input:{targetId:string;workspaceId:s
   await tx.activityLog.create({data:{workspaceId:input.workspaceId,userId:input.actorUserId??null,action:postId?"social_post.published":"social_post.publish_failed",entityType:"ContentPost",entityId:target.contentPost.id,metadata:{provider:"LINKEDIN",targetId:target.id,accountType,postId,errorCode,httpStatus,source:input.actorUserId?"dashboard":"scheduled_worker"}}});
  });
  return {status,errorCode:errorCode??undefined};
- async function failBeforeClaim(code:string):Promise<Result>{
+ async function failBeforeClaim(code:string):Promise<Result>{if(!target)return {status:"SKIPPED"};
   await db.$transaction(async tx=>{
    await tx.socialPostTarget.updateMany({where:{id:target.id,workspaceId:input.workspaceId,status:{in:allowed}},data:{status:"FAILED",errorCode:code}});
    await tx.activityLog.create({data:{workspaceId:input.workspaceId,userId:input.actorUserId??null,action:"social_post.validation_failed",entityType:"ContentPost",entityId:target.contentPost.id,metadata:{provider:"LINKEDIN",targetId:target.id,errorCode:code}}});

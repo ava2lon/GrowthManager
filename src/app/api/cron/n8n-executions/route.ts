@@ -22,7 +22,7 @@ export async function GET(request: Request) {
 
   const integration = await db.integration.findFirst({
     where: {provider: "n8n", status: "CONNECTED", credentialsEncrypted: {not: null}},
-    select: {id: true, workspaceId: true, credentialsEncrypted: true},
+    select: {id: true, workspaceId: true, credentialsEncrypted: true, lastExecutionSyncCursor: true},
     orderBy: [{lastExecutionSyncAt: {sort: "asc", nulls: "first"}}, {createdAt: "asc"}],
   });
   if (!integration?.credentialsEncrypted) {
@@ -39,7 +39,10 @@ export async function GET(request: Request) {
       throw new Error("N8N_CREDENTIALS_INCOMPLETE");
     }
 
-    const result = await listN8nExecutions(credentials.baseUrl, credentials.apiKey);
+    const result = await listN8nExecutions(credentials.baseUrl, credentials.apiKey, {
+      cursor: integration.lastExecutionSyncCursor,
+      maxPages: 1,
+    });
     const syncedAt = new Date();
     const operations = result.executions.map((execution) =>
       db.n8nExecutionSnapshot.upsert({
@@ -86,8 +89,9 @@ export async function GET(request: Request) {
         provider: "n8n",
         status: "CONNECTED",
         credentialsEncrypted: integration.credentialsEncrypted,
+        lastExecutionSyncCursor: integration.lastExecutionSyncCursor,
       },
-      data: {lastExecutionSyncAt: syncedAt},
+      data: {lastExecutionSyncAt: syncedAt, lastExecutionSyncCursor: result.nextCursor},
     });
     if (claimed.count !== 1) {
       return NextResponse.json({processed: 1, snapshots: operations.length, cursorUpdated: false}, {status: 409});
@@ -111,7 +115,8 @@ export async function GET(request: Request) {
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : "";
-    const code = message === "N8N_AUTH_FAILED" ? "AUTH_FAILED"
+    const code = ["N8N_EXECUTION_CURSOR_INVALID", "N8N_EXECUTION_CURSOR_REPEATED", "N8N_EXECUTION_CURSOR_MALFORMED"].includes(message) ? "CURSOR_RESET"
+      : message === "N8N_AUTH_FAILED" ? "AUTH_FAILED"
       : message === "N8N_PROVIDER_RATE_LIMITED" ? "PROVIDER_RATE_LIMITED"
         : message === "N8N_HOST_NOT_ALLOWED" ? "HOST_NOT_ALLOWED"
           : message === "N8N_CREDENTIALS_INCOMPLETE" ? "CREDENTIALS_INCOMPLETE"
@@ -125,8 +130,12 @@ export async function GET(request: Request) {
         provider: "n8n",
         status: "CONNECTED",
         credentialsEncrypted: integration.credentialsEncrypted,
+        lastExecutionSyncCursor: integration.lastExecutionSyncCursor,
       },
-      data: {lastExecutionSyncAt: new Date()},
+      data: {
+        lastExecutionSyncAt: new Date(),
+        ...(["N8N_EXECUTION_CURSOR_INVALID", "N8N_EXECUTION_CURSOR_REPEATED", "N8N_EXECUTION_CURSOR_MALFORMED"].includes(message) ? {lastExecutionSyncCursor: null} : {}),
+      },
     });
     await db.activityLog.create({
       data: {
