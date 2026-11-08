@@ -1632,7 +1632,7 @@ export async function createXDraft(formData:FormData){
  const accounts=await db.socialAccount.findMany({where:{id:{in:accountIds},workspaceId:context.workspace.id,provider:"X",status:"CONNECTED"},select:{id:true,brandId:true,scopes:true}});
  if(accounts.length!==accountIds.length||new Set(accounts.map(a=>a.brandId)).size!==1||accounts.some(a=>!a.scopes.includes("tweet.write")||(mediaAssetId&&!a.scopes.includes("media.write"))))throw new Error("Every selected X account must have tweet.write"+(mediaAssetId?" and media.write":"")+" permission and belong to the same brand.");
  const brandId=accounts[0].brandId;
- const mediaAsset=mediaAssetId?await db.mediaAsset.findFirst({where:{id:mediaAssetId,workspaceId:context.workspace.id,status:"READY",OR:[{brandId:null},{brandId:brandId}],mimeType:{in:["image/jpeg","image/png","video/mp4","video/quicktime"]},sizeBytes:{lte:20n*1024n*1024n}},select:{id:true,mimeType:true}}):null;
+ const mediaAsset=mediaAssetId?await db.mediaAsset.findFirst({where:{id:mediaAssetId,workspaceId:context.workspace.id,status:"READY",OR:[{brandId:null},{brandId:brandId}],mimeType:{in:["image/jpeg","image/png","video/mp4","video/quicktime"]},sizeBytes:{lte:BigInt(20*1024*1024)}},select:{id:true,mimeType:true}}):null;
  if(mediaAssetId&&!mediaAsset)throw new Error("Choose one ready JPEG, PNG, MP4, or MOV asset up to 20 MB from this workspace or brand.");
  if(altText.length>1000||(!mediaAssetId&&altText)||(mediaAsset&&!["image/jpeg","image/png"].includes(mediaAsset.mimeType)&&altText))throw new Error("Image alt text is optional, up to 1,000 characters, and only supported for JPEG/PNG images.");
  const brand=await db.brand.findFirst({where:{id:accounts[0].brandId,workspaceId:context.workspace.id,status:"ACTIVE"},select:{id:true}});
