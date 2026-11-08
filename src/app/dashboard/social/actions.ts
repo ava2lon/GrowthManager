@@ -35,18 +35,21 @@ function toPrismaJsonValue(value: unknown): Prisma.InputJsonValue | null {
   if (typeof value === "number") return Number.isFinite(value) ? value : null;
   if (Array.isArray(value)) return value.map(toPrismaJsonValue);
   if (typeof value === "object") {
-    const entries: Array<[string, Prisma.InputJsonValue | null]> = [];
+    const result: Record<string, Prisma.InputJsonValue | null> = {};
     for (const [key, item] of Object.entries(value)) {
-      if (item !== undefined) entries.push([key, toPrismaJsonValue(item)]);
+      if (item !== undefined) result[key] = toPrismaJsonValue(item);
     }
-    return Object.fromEntries(entries);
+    return result;
   }
   return null;
 }
 
 function toPrismaJsonObject(value: Record<string, unknown>): Prisma.InputJsonObject {
-  const result = toPrismaJsonValue(value);
-  return result && !Array.isArray(result) && typeof result === "object" ? result : {};
+  const result: Record<string, Prisma.InputJsonValue | null> = {};
+  for (const [key, item] of Object.entries(value)) {
+    if (item !== undefined) result[key] = toPrismaJsonValue(item);
+  }
+  return result;
 }
 
 async function auditManualAnalyticsRefresh(workspaceId:string,userId:string,entityId:string,provider:string,outcome:"SUCCESS"|"FAILED",errorCode?:string,entityType:"SocialAccount"|"SocialPostTarget"="SocialAccount"){
