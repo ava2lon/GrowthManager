@@ -208,9 +208,34 @@ export async function publishPinterestTarget(input:{targetId:string;workspaceId:
   return attempt.id;
  });
  if(!claim)return {status:"SKIPPED"};
+ if(video){
+  try{
+   const registered=await registerPinterestVideo(credentials.accessToken);
+   const encryptedSession=encryptIntegrationCredentials(registered.session,input.workspaceId,target.id);
+   const initializedAt=new Date();
+   await db.$transaction(async tx=>{
+    const saved=await tx.socialPostTarget.updateMany({where:{id:target.id,workspaceId:input.workspaceId,status:"PUBLISHING"},data:{providerContainerId:registered.mediaId,uploadSessionEncrypted:encryptedSession,uploadMetadata:{...settings,pinterestVideo:{phase:"UPLOAD_PENDING",coverAssetId:image.id}},nextCheckAt:initializedAt,errorCode:null}});
+    if(saved.count!==1)throw new Error("PINTEREST_TARGET_STATE_CHANGED");
+    await tx.socialPublishAttempt.update({where:{id:claim},data:{status:"PROCESSING"}});
+    await tx.contentPost.update({where:{id:target.contentPost.id},data:{status:"PUBLISHING"}});
+    await tx.activityLog.create({data:{workspaceId:input.workspaceId,userId:input.actorUserId??null,action:"social_post.pinterest_video_initialized",entityType:"ContentPost",entityId:target.contentPost.id,metadata:{provider:"PINTEREST",targetId:target.id,mediaId:registered.mediaId,mediaCount:assets.length}}});
+   });
+   return {status:"PROCESSING"};
+  }catch(error){
+   const code=error instanceof Error?error.message:"PINTEREST_MEDIA_REGISTRATION_FAILED";
+   await db.$transaction(async tx=>{
+    const changed=await tx.socialPostTarget.updateMany({where:{id:target.id,workspaceId:input.workspaceId,status:"PUBLISHING",providerContainerId:null},data:{status:"FAILED",errorCode:code,nextCheckAt:null}});
+    if(!changed.count)return;
+    await tx.socialPublishAttempt.update({where:{id:claim},data:{status:"FAILED",errorCode:code,finishedAt:new Date()}});
+    await tx.contentPost.updateMany({where:{id:target.contentPost.id,workspaceId:input.workspaceId},data:{status:"FAILED"}});
+    await tx.activityLog.create({data:{workspaceId:input.workspaceId,userId:input.actorUserId??null,action:"social_post.publish_failed",entityType:"ContentPost",entityId:target.contentPost.id,metadata:{provider:"PINTEREST",targetId:target.id,errorCode:code,phase:"video_initialization"}}});
+   });
+   return {status:"FAILED",errorCode:code};
+  }
+ }
  const started=Date.now();let providerPostId:string|null=null,errorCode:string|null=null,httpStatus:number|null=null;let pinRequestStarted=false;
  try{
-  const mediaSource=video?{source_type:"video_id",media_id:await uploadPinterestVideo(assets[0],credentials.accessToken),cover_image_url:coverUrl}:{source_type:"image_url",url:coverUrl};
+  const mediaSource={source_type:"image_url",url:coverUrl};
   const body:Record<string,unknown>={board_id:boardId,title,description,media_source:mediaSource};
   if(typeof link==="string"&&link)body.link=link;
   pinRequestStarted=true;
