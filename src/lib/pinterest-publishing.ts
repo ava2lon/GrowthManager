@@ -214,7 +214,7 @@ export async function publishPinterestTarget(input:{targetId:string;workspaceId:
    const encryptedSession=encryptIntegrationCredentials(registered.session,input.workspaceId,target.id);
    const initializedAt=new Date();
    await db.$transaction(async tx=>{
-    const saved=await tx.socialPostTarget.updateMany({where:{id:target.id,workspaceId:input.workspaceId,status:"PUBLISHING"},data:{providerContainerId:registered.mediaId,uploadSessionEncrypted:encryptedSession,uploadMetadata:{...settings,pinterestVideo:{phase:"UPLOAD_PENDING",coverAssetId:image.id}},nextCheckAt:initializedAt,errorCode:null}});
+    const saved=await tx.socialPostTarget.updateMany({where:{id:target.id,workspaceId:input.workspaceId,status:"PUBLISHING"},data:{providerContainerId:registered.mediaId,uploadSessionEncrypted:encryptedSession,uploadMetadata:{...settings,pinterestVideo:{phase:"UPLOAD_PENDING",coverAssetId:image.id}},nextCheckAt:new Date(initializedAt.getTime()+60_000),errorCode:null}});
     if(saved.count!==1)throw new Error("PINTEREST_TARGET_STATE_CHANGED");
     await tx.socialPublishAttempt.update({where:{id:claim},data:{status:"PROCESSING"}});
     await tx.contentPost.update({where:{id:target.contentPost.id},data:{status:"PUBLISHING"}});
