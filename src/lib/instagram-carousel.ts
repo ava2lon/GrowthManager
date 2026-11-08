@@ -49,7 +49,8 @@ export async function startInstagramCarouselTarget(input:{targetId:string;worksp
  if(assets.some(a=>a.workspaceId!==input.workspaceId||a.status!=="READY"||(a.brandId!==null&&a.brandId!==target.contentPost.brandId)))return fail("MEDIA_ASSET_NOT_READY");
  if(assets.some(a=>a.mimeType!=="image/jpeg"))return fail("INSTAGRAM_UNSUPPORTED_MEDIA_TYPE");
  const m=record(target.socialAccount.metadata);if(typeof m.instagramUserId!=="string"||!target.socialAccount.scopes.includes("instagram_basic")||!target.socialAccount.scopes.includes("instagram_content_publish"))return fail("META_PERMISSION_DENIED");
- try{decryptIntegrationCredentials(target.socialAccount.credentialsEncrypted,input.workspaceId,target.socialAccount.id);}catch{return fail("CREDENTIAL_DECRYPTION_FAILED");}
+ const encryptedCredentials=target.socialAccount.credentialsEncrypted;if(typeof encryptedCredentials!=="string"||!encryptedCredentials)return fail("CREDENTIALS_MISSING");
+ try{decryptIntegrationCredentials(encryptedCredentials,input.workspaceId,target.socialAccount.id);}catch{return fail("CREDENTIAL_DECRYPTION_FAILED");}
  const version=process.env.META_GRAPH_API_VERSION;if(!version||!/^v\d+\.\d+$/.test(version))return fail("META_API_NOT_CONFIGURED");
  const lease=new Date(Date.now()+3*60_000);
  const previous=await db.socialPublishAttempt.aggregate({where:{workspaceId:input.workspaceId,targetId:target.id},_max:{attemptNumber:true}});
