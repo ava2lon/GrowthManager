@@ -370,11 +370,11 @@ describe("listN8nExecutions", () => {
   });
 
   it("rejects a repeated execution cursor", async () => {
-    const page = new Response(JSON.stringify({data: [], nextCursor: "same-cursor"}), {
+    const page = () => new Response(JSON.stringify({data: [], nextCursor: "same-cursor"}), {
       status: 200,
       headers: {"content-type": "application/json"},
     });
-    vi.stubGlobal("fetch", vi.fn().mockResolvedValueOnce(page).mockResolvedValueOnce(page));
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValueOnce(page()).mockResolvedValueOnce(page()));
     await expect(listN8nExecutions(
       "https://growth-team.app.n8n.cloud",
       "n8n_test_api_key_123456",
