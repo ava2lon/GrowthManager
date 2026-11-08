@@ -19,7 +19,7 @@ function authorized(request:Request){
  return supplied.length===expected.length&&timingSafeEqual(supplied,expected);
 }
 
-type Candidate={id:string;workspaceId:string;provider:"PINTEREST"|"YOUTUBE"|"INSTAGRAM"|"TIKTOK"|"X";status:string;dueAt:Date;uploadMetadata?:unknown};
+type Candidate={id:string;workspaceId:string;provider:"PINTEREST"|"YOUTUBE"|"INSTAGRAM"|"TIKTOK"|"X";status:string;dueAt:Date;carousel?:boolean};
 
 export async function GET(request:Request){
  if(!authorized(request))return NextResponse.json({error:"Unauthorized"},{status:401});
@@ -39,7 +39,7 @@ export async function GET(request:Request){
  for(const t of pinterestScheduled)candidates.push({...t,provider:"PINTEREST",dueAt:t.contentPost.scheduledAt??t.updatedAt});
  for(const t of youtube)candidates.push({...t,provider:"YOUTUBE",dueAt:t.nextCheckAt??t.updatedAt});
  for(const t of instagram)candidates.push({...t,provider:"INSTAGRAM",dueAt:t.nextCheckAt??t.updatedAt});
- for(const t of instagramCarousel)candidates.push({...t,provider:"INSTAGRAM",dueAt:t.nextCheckAt??t.updatedAt});
+ for(const t of instagramCarousel)candidates.push({...t,provider:"INSTAGRAM",dueAt:t.nextCheckAt??t.updatedAt,carousel:true});
  for(const t of tiktok)candidates.push({...t,provider:"TIKTOK",dueAt:t.nextCheckAt??t.updatedAt});
  for(const t of xProcessing)candidates.push({...t,provider:"X",dueAt:t.nextCheckAt??t.updatedAt});
  for(const t of xScheduled)candidates.push({...t,provider:"X",dueAt:t.contentPost.scheduledAt??t.updatedAt});
@@ -52,7 +52,7 @@ export async function GET(request:Request){
    ?await processPinterestVideoTarget({targetId:selected.id,workspaceId:selected.workspaceId})
    :await publishPinterestTarget({targetId:selected.id,workspaceId:selected.workspaceId,allowedStatuses:["SCHEDULED"]});
   else if(selected.provider==="YOUTUBE")result=await processYouTubeUploadTarget({targetId:selected.id,workspaceId:selected.workspaceId});
-  else if(selected.provider==="INSTAGRAM")result=selected.status==="PROCESSING"&&selected.providerContainerId===null?await processInstagramCarouselTarget({targetId:selected.id,workspaceId:selected.workspaceId}):await processInstagramReelTarget({targetId:selected.id,workspaceId:selected.workspaceId});
+  else if(selected.provider==="INSTAGRAM")result=selected.carousel?await processInstagramCarouselTarget({targetId:selected.id,workspaceId:selected.workspaceId}):await processInstagramReelTarget({targetId:selected.id,workspaceId:selected.workspaceId});
   else if(selected.provider==="TIKTOK")result=selected.status==="PUBLISHING"
    ?await processTikTokUploadTarget({targetId:selected.id,workspaceId:selected.workspaceId})
    :await processTikTokInboxTarget({targetId:selected.id,workspaceId:selected.workspaceId});
