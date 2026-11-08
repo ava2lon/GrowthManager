@@ -44,7 +44,6 @@ export async function retryContentReviewEmail(deliveryId: string) {
     });
     if (!assignment) throw new Error("The associated review assignment no longer exists.");
 
-    const retryAt = new Date();
     const retry = await tx.contentReviewEmailDelivery.create({
       data: {
         workspaceId: context.workspace.id,
