@@ -35,7 +35,8 @@ async function registerPinterestVideo(accessToken:string):Promise<{mediaId:strin
 }
 async function uploadPinterestVideo(asset:Asset,session:PinterestVideoSession):Promise<void>{
  const mediaUrl=await signedMediaUrl(asset);
- const source=await fetch(mediaUrl,{cache:"no-store",redirect:"error",signal:AbortSignal.timeout(10000)});
+ let source:Response;
+ try{source=await fetch(mediaUrl,{cache:"no-store",redirect:"error",signal:AbortSignal.timeout(10000)})}catch{throw new Error("PINTEREST_MEDIA_DOWNLOAD_FAILED")}
  if(!source.ok||!source.body)throw new Error("PINTEREST_MEDIA_DOWNLOAD_FAILED");
  const declared=Number(source.headers.get("content-length")??asset.sizeBytes);
  if(!Number.isSafeInteger(declared)||declared!==Number(asset.sizeBytes)||declared>100*1024*1024)throw new Error("PINTEREST_VIDEO_INVALID");
@@ -129,8 +130,15 @@ export async function processPinterestVideoTarget(input:{targetId:string;workspa
       await db.socialPostTarget.updateMany({where:{id:target.id,workspaceId:input.workspaceId,status:"PUBLISHING"},data:{uploadMetadata:{...settings,pinterestVideo:{phase:"PROCESSING",coverAssetId:cover.id}},uploadSessionEncrypted:null,nextCheckAt:new Date(Date.now()+30_000),errorCode:null}});
       return {status:"PROCESSING"};
      }
+     if(detail?.status!=="registered"){
+      await db.socialPostTarget.updateMany({where:{id:target.id,workspaceId:input.workspaceId,status:"PUBLISHING"},data:{nextCheckAt:new Date(Date.now()+60_000)}});
+      return {status:"PROCESSING"};
+     }
     }
-   }catch{/* Reconcile again on the next scheduled invocation. */}
+   }catch{
+    await db.socialPostTarget.updateMany({where:{id:target.id,workspaceId:input.workspaceId,status:"PUBLISHING"},data:{nextCheckAt:new Date(Date.now()+60_000)}});
+    return {status:"PROCESSING"};
+   }
   }
   const verifyState=await db.socialPostTarget.updateMany({where:{id:target.id,workspaceId:input.workspaceId,status:"PUBLISHING"},data:{uploadMetadata:{...settings,pinterestVideo:{phase:"VERIFY_UPLOAD",coverAssetId:cover.id}},nextCheckAt:new Date(Date.now()+3*60_000)}});
   if(!verifyState.count)return {status:"SKIPPED"};
