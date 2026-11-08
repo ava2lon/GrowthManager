@@ -29,12 +29,15 @@ export async function GET(request:Request){
   const meRes=await fetch("https://api.x.com/2/users/me?user.fields=profile_image_url,public_metrics,description,created_at",{headers:{Authorization:"Bearer "+token.access_token},cache:"no-store",redirect:"error",signal:AbortSignal.timeout(12000)});
   const me=await meRes.json().catch(()=>null) as {data?:{id?:string;name?:string;username?:string;profile_image_url?:string;public_metrics?:Record<string,unknown>}}|null;
   if(!meRes.ok||!me?.data?.id||!me.data.username)throw new Error("X_IDENTITY_LOOKUP_FAILED");
-  const user=me.data,old=await db.socialAccount.findFirst({where:{workspaceId:s.workspaceId,provider:"X",providerUserId:user.id},select:{id:true}});
+  const user=me.data;
+  const providerUserId=user.id;
+  const username=user.username;
+  const old=await db.socialAccount.findFirst({where:{workspaceId:s.workspaceId,provider:"X",providerUserId},select:{id:true}});
   const id=old?.id??randomUUID(),expiresAt=new Date(Date.now()+Number(token.expires_in)*1000);
   const encrypted=encryptIntegrationCredentials({provider:"x",accessToken:token.access_token,refreshToken:token.refresh_token,tokenExpiresAt:expiresAt.toISOString(),scopes},s.workspaceId,id);
   await db.$transaction(async tx=>{
-   await tx.socialAccount.upsert({where:{workspaceId_provider_providerUserId:{workspaceId:s.workspaceId,provider:"X",providerUserId:user.id}},create:{id,workspaceId:s.workspaceId,brandId:s.brandId,provider:"X",providerUserId:user.id,accountName:"@"+user.username,credentialsEncrypted:encrypted,status:"CONNECTED",scopes,tokenExpiresAt:expiresAt,connectedAt:new Date(),lastValidatedAt:new Date(),metadata:{accountType:"USER",username:user.username,profileImageUrl:user.profile_image_url??null}},update:{brandId:s.brandId,accountName:"@"+user.username,credentialsEncrypted:encrypted,status:"CONNECTED",scopes,tokenExpiresAt:expiresAt,connectedAt:new Date(),lastValidatedAt:new Date(),lastErrorCode:null,metadata:{accountType:"USER",username:user.username,profileImageUrl:user.profile_image_url??null}}});
-   await tx.activityLog.create({data:{workspaceId:s.workspaceId,userId:s.userId,action:"social_account.connected",entityType:"SocialAccount",metadata:{provider:"X",username:user.username}}});
+   await tx.socialAccount.upsert({where:{workspaceId_provider_providerUserId:{workspaceId:s.workspaceId,provider:"X",providerUserId}},create:{id,workspaceId:s.workspaceId,brandId:s.brandId,provider:"X",providerUserId,accountName:"@"+username,credentialsEncrypted:encrypted,status:"CONNECTED",scopes,tokenExpiresAt:expiresAt,connectedAt:new Date(),lastValidatedAt:new Date(),metadata:{accountType:"USER",username,profileImageUrl:user.profile_image_url??null}},update:{brandId:s.brandId,accountName:"@"+username,credentialsEncrypted:encrypted,status:"CONNECTED",scopes,tokenExpiresAt:expiresAt,connectedAt:new Date(),lastValidatedAt:new Date(),lastErrorCode:null,metadata:{accountType:"USER",username,profileImageUrl:user.profile_image_url??null}}});
+   await tx.activityLog.create({data:{workspaceId:s.workspaceId,userId:s.userId,action:"social_account.connected",entityType:"SocialAccount",metadata:{provider:"X",username}}});
   });
   const r=done(request,"connected");r.cookies.delete(COOKIE);return r;
  }catch(error){const code=error instanceof Error?error.message:"";const r=done(request,code==="X_REQUIRED_SCOPE_MISSING"?"required_scope_missing":"connection_failed");r.cookies.delete(COOKIE);return r}
