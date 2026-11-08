@@ -72,7 +72,11 @@ export async function recordSocialAnalyticsRetryFailure(
     return tx.socialAnalyticsRetry.upsert({
       where: uniqueWhere(input),
       create: {
-        ...input,
+        workspaceId: input.workspaceId,
+        provider: input.provider,
+        subjectType: input.subjectType,
+        subjectId: input.subjectId,
+        reportDate: input.reportDate,
         ...data,
       },
       update: data,
@@ -132,14 +136,44 @@ export async function failClaimedSocialAnalyticsRetry(input: {
   errorCode: string;
   now?: Date;
 }) {
-  const released = await db.socialAnalyticsRetry.updateMany({
+  const current = await db.socialAnalyticsRetry.findFirst({
     where: { id: input.id, status: "PROCESSING", lockedAt: input.lockedAt },
-    data: { status: "RETRY", lockedAt: null },
+    select: { attemptCount: true },
   });
-  if (released.count !== 1) return false;
+  if (!current) return false;
 
-  await recordSocialAnalyticsRetryFailure(input);
-  return true;
+  const now = input.now ?? new Date();
+  const errorCode = /^[A-Z0-9_]{1,100}$/.test(input.errorCode)
+    ? input.errorCode
+    : "ANALYTICS_COLLECTION_FAILED";
+  const attemptCount = current.attemptCount + 1;
+  const retryAt =
+    classifyAnalyticsFailure(errorCode) === "RETRY"
+      ? getAnalyticsRetryAt({
+          attempt: attemptCount,
+          now,
+          dedupeKey: [
+            input.workspaceId,
+            input.provider,
+            input.subjectType,
+            input.subjectId,
+            input.reportDate.toISOString().slice(0, 10),
+          ].join(":"),
+        })
+      : null;
+  const terminal = retryAt === null;
+  const updated = await db.socialAnalyticsRetry.updateMany({
+    where: { id: input.id, status: "PROCESSING", lockedAt: input.lockedAt },
+    data: {
+      status: terminal ? "FAILED" : "RETRY",
+      attemptCount,
+      nextAttemptAt: retryAt ?? now,
+      lockedAt: null,
+      lastErrorCode: errorCode,
+      completedAt: terminal ? now : null,
+    },
+  });
+  return updated.count === 1;
 }
 
 export const SOCIAL_ANALYTICS_RETRY_LEASE_MS = LEASE_MS;
