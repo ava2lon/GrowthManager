@@ -160,9 +160,12 @@ export async function listN8nWorkflows(
     }
 
     const nextCursor = (payload as {nextCursor?: unknown}).nextCursor;
-    if (typeof nextCursor !== "string" || !nextCursor || nextCursor.length > 2048 || seenCursors.has(nextCursor)) {
+    if (nextCursor === undefined || nextCursor === null || nextCursor === "") {
       hasMore = false;
       break;
+    }
+    if (typeof nextCursor !== "string" || nextCursor.length > 2048 || seenCursors.has(nextCursor)) {
+      throw new Error("N8N_PROVIDER_UNAVAILABLE");
     }
     seenCursors.add(nextCursor);
     cursor = nextCursor;
@@ -377,9 +380,12 @@ export async function listN8nExecutions(
     }
 
     const candidate = (payload as {nextCursor?: unknown}).nextCursor;
-    if (typeof candidate !== "string" || !candidate || candidate.length > 2048) {
+    if (candidate === undefined || candidate === null || candidate === "") {
       nextCursor = null;
       break;
+    }
+    if (typeof candidate !== "string" || candidate.length > 2048) {
+      throw new Error("N8N_PROVIDER_UNAVAILABLE");
     }
     if (seenCursors.has(candidate)) {
       throw new Error("N8N_EXECUTION_CURSOR_REPEATED");
