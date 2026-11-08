@@ -42,7 +42,7 @@ async function getStatus(id:string,version:string,token:string){
 export async function startInstagramCarouselTarget(input:{targetId:string;workspaceId:string;actorUserId?:string|null;allowedStatuses?:("DRAFT"|"SCHEDULED")[]}):Promise<Outcome>{
  const allowed=input.allowedStatuses??["DRAFT","SCHEDULED"];
  const t=await db.socialPostTarget.findFirst({where:{id:input.targetId,workspaceId:input.workspaceId,provider:"INSTAGRAM",status:{in:allowed}},include:{contentPost:{select:{id:true,workspaceId:true,body:true,brandId:true,mediaAssets:{orderBy:{position:"asc"},select:{mediaAsset:{select:{id:true,status:true,mimeType:true,bucket:true,objectPath:true,workspaceId:true,brandId:true}}}}}},socialAccount:{select:{id:true,workspaceId:true,brandId:true,status:true,scopes:true,credentialsEncrypted:true,metadata:true}}}});
- if(!t||!t.contentPost||!t.socialAccount||target.contentPost.workspaceId!==input.workspaceId||target.socialAccount.workspaceId!==input.workspaceId||target.contentPost.brandId!==target.socialAccount.brandId||target.socialAccount.status!=="CONNECTED"||!target.socialAccount.credentialsEncrypted)return {status:"SKIPPED"};
+ if(!t||!t.contentPost||!t.socialAccount||t.contentPost.workspaceId!==input.workspaceId||t.socialAccount.workspaceId!==input.workspaceId||t.contentPost.brandId!==t.socialAccount.brandId||t.socialAccount.status!=="CONNECTED"||!t.socialAccount.credentialsEncrypted)return {status:"SKIPPED"};
  const target=t;
  const assets=target.contentPost.mediaAssets.map(x=>x.mediaAsset) as Asset[];
  if(assets.length<2||assets.length>10)return fail("INSTAGRAM_IMAGE_COUNT_INVALID");
