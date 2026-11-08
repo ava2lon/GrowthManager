@@ -30,6 +30,7 @@ export async function GET(request:Request){
   const me=await meRes.json().catch(()=>null) as {data?:{id?:string;name?:string;username?:string;profile_image_url?:string;public_metrics?:Record<string,unknown>}}|null;
   if(!meRes.ok||!me?.data?.id||!me.data.username)throw new Error("X_IDENTITY_LOOKUP_FAILED");
   const user=me.data;
+  if(typeof user.id!=="string"||!user.id||typeof user.username!=="string"||!user.username)throw new Error("X_IDENTITY_LOOKUP_FAILED");
   const providerUserId=user.id;
   const username=user.username;
   const old=await db.socialAccount.findFirst({where:{workspaceId:s.workspaceId,provider:"X",providerUserId},select:{id:true}});
