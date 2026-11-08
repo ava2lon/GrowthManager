@@ -179,15 +179,16 @@ export async function processPinterestVideoTarget(input:{targetId:string;workspa
   return fail(response.status===401?"PINTEREST_AUTH_FAILED":response.status===403?"PINTEREST_PERMISSION_DENIED":response.status===429?"PINTEREST_RATE_LIMITED":"PINTEREST_PUBLISH_REJECTED");
  }
  const finished=new Date();
- await db.$transaction(async tx=>{
-  const completed=await tx.socialPostTarget.updateMany({where:{id:target.id,workspaceId:input.workspaceId,provider:"PINTEREST",status:"PUBLISHING",nextCheckAt:leaseUntil},data:{status:"PUBLISHED",providerPostId:payload.id,errorCode:null,publishedAt:finished,nextCheckAt:null,uploadSessionEncrypted:null}});
-  if(completed.count!==1)return;
+ const completed=await db.$transaction(async tx=>{
+  const changed=await tx.socialPostTarget.updateMany({where:{id:target.id,workspaceId:input.workspaceId,provider:"PINTEREST",status:"PUBLISHING",nextCheckAt:leaseUntil},data:{status:"PUBLISHED",providerPostId:payload.id,errorCode:null,publishedAt:finished,nextCheckAt:null,uploadSessionEncrypted:null}});
+  if(changed.count!==1)return false;
   await tx.socialPublishAttempt.updateMany({where:{workspaceId:input.workspaceId,targetId:target.id,status:"PROCESSING"},data:{status:"PUBLISHED",providerPostId:payload.id,finishedAt:finished}});
   const remaining=await tx.socialPostTarget.count({where:{workspaceId:input.workspaceId,contentPostId:target.contentPost.id,status:{not:"PUBLISHED"}}});
   if(remaining===0)await tx.contentPost.update({where:{id:target.contentPost.id},data:{status:"PUBLISHED",publishedAt:finished}});
   await tx.activityLog.create({data:{workspaceId:input.workspaceId,action:"social_post.published",entityType:"ContentPost",entityId:target.contentPost.id,metadata:{provider:"PINTEREST",targetId:target.id,providerPostId:payload.id,mediaType:"video",mediaId,source:"scheduled_worker"}}});
+  return true;
  });
- return {status:"PUBLISHED"};
+ return {status:completed?"PUBLISHED":"SKIPPED"};
 }
 
 export async function publishPinterestTarget(input:{targetId:string;workspaceId:string;actorUserId?:string;allowedStatuses?:Array<"DRAFT"|"SCHEDULED">}):Promise<Result>{
