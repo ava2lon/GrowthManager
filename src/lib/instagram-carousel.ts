@@ -6,16 +6,12 @@ import {decryptIntegrationCredentials} from "@/lib/integration-crypto";
 import {getSupabaseStorageConfig,storageHeaders} from "@/lib/media-storage";
 
 type Outcome={status:"PROCESSING"|"PUBLISHED"|"FAILED"|"UNKNOWN"|"SKIPPED";errorCode?:string};
-type State={version:1;phase:"CREATE_CHILDREN"|"POLL_CHILDREN"|"CREATE_PARENT"|"POLL_PARENT"|"PUBLISH"|"PUBLISH_REQUEST_STARTED";childIds:string[];childIndex:number;childRequestStarted?:boolean;parentId?:string;startedAt:string};
+import {parseInstagramCarouselState,type InstagramCarouselState} from "./instagram-carousel-utils";
+type State=InstagramCarouselState;
 type Asset={id:string;status:string;mimeType:string;bucket:string;objectPath:string;workspaceId:string;brandId:string|null};
 type Graph={id?:string;status_code?:string;error?:{code?:number;message?:string}};
 
 function record(value:unknown):Record<string,unknown>{return value&&typeof value==="object"&&!Array.isArray(value)?value as Record<string,unknown>:{}}
-export function stateOf(value:unknown):State|null{
- const s=record(record(value).instagramCarousel);
- if(s.version!==1||!["CREATE_CHILDREN","POLL_CHILDREN","CREATE_PARENT","POLL_PARENT","PUBLISH","PUBLISH_REQUEST_STARTED"].includes(String(s.phase))||!Array.isArray(s.childIds)||!s.childIds.every(id=>typeof id==="string"&&id.length>0)||typeof s.childIndex!=="number"||!Number.isInteger(s.childIndex)||typeof s.startedAt!=="string"||Number.isNaN(Date.parse(s.startedAt)))return null;
- return s as unknown as State;
-}
 function api(version:string,id:string){return new URL("https://graph.facebook.com/"+version+"/"+id.split("/").map(encodeURIComponent).join("/"));}
 function metaError(response:Response,result:Graph|null){const c=result?.error?.code;if(c===190)return "META_AUTH_FAILED";if(c===10||c===200)return "META_PERMISSION_DENIED";if(response.status===429)return "META_RATE_LIMITED";return "META_PUBLISH_REJECTED";}
 async function signedUrl(asset:Asset){
@@ -73,7 +69,7 @@ export async function processInstagramCarouselTarget(input:{targetId:string;work
  const claim=await db.socialPostTarget.updateMany({where:{id:target.id,workspaceId:input.workspaceId,status:"PROCESSING",nextCheckAt:oldLease,OR:[{nextCheckAt:null},{nextCheckAt:{lte:new Date()}}]},data:{nextCheckAt:lease}});
  if(claim.count!==1)return {status:"SKIPPED"};
  // Claim the job before terminalizing corrupt state so concurrent workers cannot race the recovery.
- const s=stateOf(meta);if(!s)return mark("UNKNOWN","INSTAGRAM_CAROUSEL_STATE_MISSING");
+ const s=parseInstagramCarouselState(meta);if(!s)return mark("UNKNOWN","INSTAGRAM_CAROUSEL_STATE_MISSING");
  const assets=target.contentPost.mediaAssets.map(x=>x.mediaAsset) as Asset[];const m=record(target.socialAccount.metadata);
  if(!target.socialAccount.credentialsEncrypted||target.socialAccount.status!=="CONNECTED"||typeof m.instagramUserId!=="string")return mark("FAILED","INSTAGRAM_ACCOUNT_NOT_READY");
  let credentials:Record<string,unknown>;try{credentials=decryptIntegrationCredentials(target.socialAccount.credentialsEncrypted,input.workspaceId,target.socialAccount.id);}catch{return mark("FAILED","CREDENTIAL_DECRYPTION_FAILED");}
