@@ -39,7 +39,10 @@ export async function GET(request: Request) {
       throw new Error("N8N_CREDENTIALS_INCOMPLETE");
     }
 
-    const result = await listN8nExecutions(credentials.baseUrl, credentials.apiKey, {\n      cursor: integration.lastExecutionSyncCursor,\n      maxPages: 1,\n    });
+    const result = await listN8nExecutions(credentials.baseUrl, credentials.apiKey, {
+      cursor: integration.lastExecutionSyncCursor,
+      maxPages: 1,
+    });
     const syncedAt = new Date();
     const operations = result.executions.map((execution) =>
       db.n8nExecutionSnapshot.upsert({
@@ -111,7 +114,8 @@ export async function GET(request: Request) {
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : "";
-    const code = message === "N8N_EXECUTION_CURSOR_INVALID" ? "CURSOR_RESET"\n      : message === "N8N_AUTH_FAILED" ? "AUTH_FAILED"
+    const code = message === "N8N_EXECUTION_CURSOR_INVALID" ? "CURSOR_RESET"
+      : message === "N8N_AUTH_FAILED" ? "AUTH_FAILED"
       : message === "N8N_PROVIDER_RATE_LIMITED" ? "PROVIDER_RATE_LIMITED"
         : message === "N8N_HOST_NOT_ALLOWED" ? "HOST_NOT_ALLOWED"
           : message === "N8N_CREDENTIALS_INCOMPLETE" ? "CREDENTIALS_INCOMPLETE"
@@ -126,7 +130,10 @@ export async function GET(request: Request) {
         status: "CONNECTED",
         credentialsEncrypted: integration.credentialsEncrypted,
       },
-      data: {\n        lastExecutionSyncAt: new Date(),\n        ...(message === "N8N_EXECUTION_CURSOR_INVALID" ? {lastExecutionSyncCursor: null} : {}),\n      },
+      data: {
+        lastExecutionSyncAt: new Date(),
+        ...(message === "N8N_EXECUTION_CURSOR_INVALID" ? {lastExecutionSyncCursor: null} : {}),
+      },
     });
     await db.activityLog.create({
       data: {
