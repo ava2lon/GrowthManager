@@ -42,7 +42,7 @@ export async function GET(request:Request){
  const selected=candidates[0];
  if(!selected)return NextResponse.json({processed:0,reason:"NO_DUE_MEDIA_JOBS"});
  try{
-  let result;
+  let result:{status:string;errorCode?:string}|undefined;
   if(selected.provider==="PINTEREST")result=selected.status==="PUBLISHING"
    ?await processPinterestVideoTarget({targetId:selected.id,workspaceId:selected.workspaceId})
    :await publishPinterestTarget({targetId:selected.id,workspaceId:selected.workspaceId,allowedStatuses:["SCHEDULED"]});
