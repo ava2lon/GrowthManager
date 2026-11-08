@@ -166,6 +166,7 @@ export async function checkSocialAccountHealth(formData: FormData) {
 
   let failureCode: string | null = null;
   let grantedScopes: string[] = [];
+  let permissionsVerified = false;
   const userAccessToken = credentials.userAccessToken;
   if (typeof userAccessToken === "string") {
     try {
@@ -179,6 +180,7 @@ export async function checkSocialAccountHealth(formData: FormData) {
       } | null;
       if (!permissionResponse.ok || !permissionBody?.data) failureCode = "PERMISSION_CHECK_FAILED";
       else {
+        permissionsVerified = true;
         grantedScopes = permissionBody.data
           .filter((item) => item.status === "granted" && typeof item.permission === "string")
           .map((item) => item.permission as string);
@@ -223,9 +225,12 @@ export async function checkSocialAccountHealth(formData: FormData) {
         workspaceId: context.workspace.id,
         credentialsEncrypted: account.credentialsEncrypted,
       },
-      data: failureCode
-        ? {status: "ERROR", scopes: latestAccount.scopes, lastValidatedAt: new Date(), lastErrorCode: failureCode}
-        : {status: "CONNECTED", scopes: latestAccount.scopes, lastValidatedAt: new Date(), lastErrorCode: null},
+      data: {
+        ...(failureCode ? {status: "ERROR" as const} : {status: "CONNECTED" as const}),
+        scopes: permissionsVerified ? grantedScopes : account.scopes,
+        lastValidatedAt: new Date(),
+        lastErrorCode: failureCode,
+      },
     });
     if (changed.count !== 1) throw new Error("Social account changed concurrently. Refresh and retry.");
     await tx.activityLog.create({
