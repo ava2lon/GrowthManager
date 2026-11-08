@@ -1,5 +1,5 @@
 import {describe,expect,it} from "vitest";
-import {parseTikTokUploadedOffset} from "@/lib/tiktok-upload-utils";
+import {parseTikTokUploadedOffset} from "./tiktok-upload-utils";
 
 describe("TikTok uploaded byte-range reconciliation",()=>{
  it("converts an inclusive provider range into the next byte offset",()=>{
