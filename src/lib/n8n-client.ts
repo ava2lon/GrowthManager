@@ -438,7 +438,10 @@ export async function retryN8nExecution(
   try { currentPayload = await currentResponse.json(); } catch { throw new Error("N8N_PROVIDER_UNAVAILABLE"); }
   if (!currentPayload || typeof currentPayload !== "object") throw new Error("N8N_PROVIDER_UNAVAILABLE");
   const current = currentPayload as Record<string, unknown>;
-  if (String(current.id ?? "") !== executionId || typeof current.workflowId !== "string") {
+  const currentWorkflowId = typeof current.workflowId === "string" || typeof current.workflowId === "number"
+    ? String(current.workflowId)
+    : "";
+  if (String(current.id ?? "") !== executionId || !/^[A-Za-z0-9_-]{1,128}$/.test(currentWorkflowId)) {
     throw new Error("N8N_PROVIDER_UNAVAILABLE");
   }
   if (current.status !== "error" && current.status !== "crashed") {
@@ -480,14 +483,14 @@ export async function retryN8nExecution(
   const retryId = typeof retried.id === "number" || typeof retried.id === "string" ? String(retried.id) : "";
   const retryOf = typeof retried.retryOf === "number" || typeof retried.retryOf === "string" ? String(retried.retryOf) : "";
   if (!/^\d{1,20}$/.test(retryId) || retryOf !== executionId ||
-      String(retried.workflowId ?? "") !== current.workflowId) {
+      String(retried.workflowId ?? "") !== currentWorkflowId) {
     throw new Error("N8N_RETRY_OUTCOME_UNKNOWN");
   }
 
   return {
     id: retryId,
     retryOf,
-    workflowId: current.workflowId,
+    workflowId: currentWorkflowId,
     status: typeof retried.status === "string" ? retried.status.slice(0, 40) : "unknown",
   };
 }
