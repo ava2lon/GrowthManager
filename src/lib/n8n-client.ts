@@ -385,7 +385,7 @@ export async function listN8nExecutions(
       break;
     }
     if (typeof candidate !== "string" || candidate.length > 2048) {
-      throw new Error("N8N_PROVIDER_UNAVAILABLE");
+      throw new Error("N8N_EXECUTION_CURSOR_MALFORMED");
     }
     if (seenCursors.has(candidate)) {
       throw new Error("N8N_EXECUTION_CURSOR_REPEATED");
