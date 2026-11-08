@@ -383,11 +383,11 @@ describe("retryN8nExecution", () => {
   it("checks failed status without execution data and retries the original workflow version", async () => {
     const fetchMock = vi.fn()
       .mockResolvedValueOnce(new Response(JSON.stringify({
-        id: "123", workflowId: "wf_1", status: "error",
+        id: 123, workflowId: 42, status: "error",
         data: {resultData: {runData: {private: "must not be read"}}},
       }), {status: 200, headers: {"content-type": "application/json"}}))
       .mockResolvedValueOnce(new Response(JSON.stringify({
-        id: "124", retryOf: "123", workflowId: "wf_1", status: "success", data: {secret: true},
+        id: 124, retryOf: 123, workflowId: 42, status: "success", data: {secret: true},
       }), {status: 200, headers: {"content-type": "application/json"}}));
     vi.stubGlobal("fetch", fetchMock);
 
@@ -397,7 +397,7 @@ describe("retryN8nExecution", () => {
       "123",
     );
 
-    expect(result).toEqual({id: "124", retryOf: "123", workflowId: "wf_1", status: "success"});
+    expect(result).toEqual({id: "124", retryOf: "123", workflowId: "42", status: "success"});
     const [getUrl, getOptions] = fetchMock.mock.calls[0] as [string, RequestInit];
     expect(getUrl).toBe("https://growth-team.app.n8n.cloud/api/v1/executions/123?includeData=false");
     expect(getOptions.method).toBe("GET");
