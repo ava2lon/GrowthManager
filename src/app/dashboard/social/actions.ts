@@ -1783,7 +1783,7 @@ export async function cancelYouTubeSchedule(formData:FormData){
   const metadata=readMetadata(target.uploadMetadata);
   const remainingMetadata = {...metadata};
   delete remainingMetadata.publishAt;
-  const changed=await tx.socialPostTarget.updateMany({where:{id:target.id,workspaceId:context.workspace.id,provider:"YOUTUBE",status:"SCHEDULED"},data:{status:"DRAFT",uploadMetadata:remainingMetadata,errorCode:null,nextCheckAt:null}});
+  const changed=await tx.socialPostTarget.updateMany({where:{id:target.id,workspaceId:context.workspace.id,provider:"YOUTUBE",status:"SCHEDULED"},data:{status:"DRAFT",uploadMetadata:toPrismaJsonObject(remainingMetadata),errorCode:null,nextCheckAt:null}});
   if(changed.count!==1)throw new Error("This YouTube upload started. Refresh to see its latest status.");
   const remaining=await tx.socialPostTarget.count({where:{workspaceId:context.workspace.id,contentPostId:target.contentPostId,status:"SCHEDULED"}});
   await tx.contentPost.updateMany({where:{id:target.contentPostId,workspaceId:context.workspace.id,status:"SCHEDULED"},data:{status:remaining>0?"SCHEDULED":"DRAFT",scheduledAt:remaining>0?undefined:null}});
