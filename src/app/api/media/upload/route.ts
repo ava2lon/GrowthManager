@@ -114,7 +114,7 @@ export async function POST(request: Request) {
         action: "media_asset.upload_started",
         entityType: "MediaAsset",
         entityId: asset.id,
-        metadata: {mimeType: body.mimeType, sizeBytes: Number(body.sizeBytes), brandId},
+        metadata: {mimeType: String(body.mimeType), sizeBytes: Number(body.sizeBytes), brandId},
       },
     });
     return NextResponse.json({
