@@ -9,9 +9,9 @@ export function BrandSymbol({className,priority=false}:BrandSymbolProps){
   return <Image
     src="/growthmanager-mark.png"
     alt=""
-    width={512}
-    height={512}
-    className={className}
+    width={250}
+    height={210}
+    className={className ? `${className} object-contain` : "object-contain"}
     priority={priority}
     aria-hidden="true"
   />;
