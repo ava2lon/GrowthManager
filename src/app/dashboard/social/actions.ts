@@ -1638,14 +1638,13 @@ export async function createXDraft(formData:FormData){
  const brand=await db.brand.findFirst({where:{id:accounts[0].brandId,workspaceId:context.workspace.id,status:"ACTIVE"},select:{id:true}});
  if(!brand)throw new Error("The selected X accounts must belong to an active brand.");
  await enforcePublishLimit(context.workspace.id,context.userId);
- const post=await db.$transaction(async tx=>{
+ await db.$transaction(async tx=>{
   const created=await tx.contentPost.create({data:{workspaceId:context.workspace.id,brandId:brand.id,body,status:scheduledAt?"SCHEDULED":"DRAFT",scheduledAt},select:{id:true}});
   if(mediaAsset)await tx.contentPostMedia.create({data:{workspaceId:context.workspace.id,contentPostId:created.id,mediaAssetId:mediaAsset.id,position:0}});
   await tx.socialPostTarget.createMany({data:accounts.map(a=>({workspaceId:context.workspace.id,contentPostId:created.id,socialAccountId:a.id,provider:"X",status:scheduledAt?"SCHEDULED":"DRAFT",uploadMetadata:altText?{xAltText:altText}:undefined}))});
   await tx.activityLog.create({data:{workspaceId:context.workspace.id,userId:context.userId,action:"social_post.draft_created",entityType:"ContentPost",entityId:created.id,metadata:{provider:"X",targetCount:accounts.length,scheduledAt:scheduledAt?.toISOString()??null,mediaCount:mediaAsset?1:0}}});
-  return created;
  });
- revalidatePath("/dashboard/social");return post.id;
+ revalidatePath("/dashboard/social");
 }
 
 export async function publishXDraft(formData:FormData){
