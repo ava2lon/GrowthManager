@@ -28,7 +28,7 @@ async function registerPinterestVideo(accessToken:string):Promise<{mediaId:strin
  if(uploadUrl.protocol!=="https:"||uploadUrl.hostname!=="pinterest-media-upload.s3-accelerate.amazonaws.com"||uploadUrl.username||uploadUrl.password||uploadUrl.port)throw new Error("PINTEREST_UPLOAD_URL_REJECTED");
  const uploadParameters:Record<string,string>={};
  for(const [key,value] of Object.entries(registered.upload_parameters)){
-  if(!/^[A-Za-z0-9_-]{1,100}$/.test(key)||typeof value!=="string"||/[\\r\\n]/.test(value)||value.length>10000)throw new Error("PINTEREST_UPLOAD_PARAMETERS_INVALID");
+  if(!/^[A-Za-z0-9_-]{1,100}$/.test(key)||typeof value!=="string"||/[\r\n]/.test(value)||value.length>10000)throw new Error("PINTEREST_UPLOAD_PARAMETERS_INVALID");
   uploadParameters[key]=value;
  }
  return {mediaId:registered.media_id,session:{uploadUrl:uploadUrl.toString(),uploadParameters}};
@@ -42,9 +42,9 @@ async function uploadPinterestVideo(asset:Asset,session:PinterestVideoSession):P
  const boundary="----GrowthManagerPinterest"+randomUUID().replace(/-/g,"");
  const encoder=new TextEncoder();
  let prefix="";
- for(const [key,value] of Object.entries(session.uploadParameters))prefix+="--"+boundary+"\\r\\nContent-Disposition: form-data; name=\\""+key+"\\"\\r\\n\\r\\n"+value+"\\r\\n";
- prefix+="--"+boundary+"\\r\\nContent-Disposition: form-data; name=\\"file\\"; filename=\\"video.bin\\"\\r\\nContent-Type: "+asset.mimeType+"\\r\\n\\r\\n";
- const suffix="\\r\\n--"+boundary+"--\\r\\n";
+ for(const [key,value] of Object.entries(session.uploadParameters))prefix+="--"+boundary+"\r\nContent-Disposition: form-data; name=\""+key+"\"\r\n\r\n"+value+"\r\n";
+ prefix+="--"+boundary+"\r\nContent-Disposition: form-data; name=\"file\"; filename=\"video.bin\"\r\nContent-Type: "+asset.mimeType+"\r\n\r\n";
+ const suffix="\r\n--"+boundary+"--\r\n";
  const prefixBytes=encoder.encode(prefix),suffixBytes=encoder.encode(suffix);
  const reader=source.body.getReader();
  const body=new ReadableStream<Uint8Array>({
