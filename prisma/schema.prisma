@@ -524,6 +524,7 @@ model AutomationAlertDelivery {
   lastProviderEventAt DateTime?
   lastErrorCode     String?
   sentAt            DateTime?
+  lastProviderEventAt DateTime?
   createdAt         DateTime @default(now())
   updatedAt         DateTime @updatedAt
   alertEvent        AutomationAlertEvent @relation(fields: [workspaceId, alertEventId], references: [workspaceId, id], onDelete: Cascade)
