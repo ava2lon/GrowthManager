@@ -1,13 +1,13 @@
 "use client";
 
 import {useMemo} from "react";
+import Link from "next/link";
 import {acknowledgeSocialIncident,resolveSocialIncident} from "./incident-actions";
 import {refreshPinterestAnalytics,refreshMetaAnalyticsAction,refreshLinkedInAnalyticsAction,refreshTikTokAnalyticsAction,refreshYouTubeAnalyticsAction,refreshXAnalyticsAction} from "./actions";
 
 type Account={id:string;provider:string;accountName:string;status:string;connectedAt:Date|null;lastValidatedAt:Date|null;lastErrorCode:string|null;tokenExpiresAt:Date|null;scopes:string[]};
 type Finding={level:"critical"|"warning"|"info"|"healthy";title:string;detail:string;account:string;provider:string};
 type Incident={id:string;category:string;severity:string;status:string;message:string;errorCode:string|null;occurrenceCount:number;firstSeenAt:Date;lastSeenAt:Date;acknowledgedAt:Date|null;resolvedAt:Date|null;resolutionMessage:string|null};
-type EmailDeliveryCount={status:string;_count:{_all:number}};
 type AnalyticsOperation={id:string;provider:string;accountName:string;status:string;latestFetchedAt:Date|null;errorCode:string|null;coverage90d:number;missingScopes:string[];optionalScopes:string[];eligible:boolean;nextEligibleAt:Date|null;stale:boolean;reauthorizationRequired:boolean};
 type AnalyticsRefreshEvent={id:string;action:string;entityType:string;entityId:string|null;metadata:unknown;createdAt:Date;user:{name:string|null;email:string}|null};
 const providerLabel=(value:string)=>({FACEBOOK:"Facebook",INSTAGRAM:"Instagram",PINTEREST:"Pinterest",X:"X",YOUTUBE:"YouTube",LINKEDIN:"LinkedIn",TIKTOK:"TikTok"}[value]??value);
@@ -16,7 +16,6 @@ export default function SocialIntegrationHealthCenter({accounts,incidents,emailD
  const findings=useMemo(()=>{
   const result:Finding[]=[];
   for(const account of accounts){
-   const name=account.accountName+" · "+providerLabel(account.provider);
    if(account.status==="DISCONNECTED")continue;
    if(account.status==="ERROR")result.push({level:"critical",title:"Connection error",detail:account.lastErrorCode?.replaceAll("_"," ").toLowerCase()??"Provider connection is in an error state.",account:account.accountName,provider:account.provider});
    else if(account.status!=="CONNECTED")result.push({level:"warning",title:"Connection needs review",detail:"Current account status: "+account.status.replaceAll("_"," ").toLowerCase()+".",account:account.accountName,provider:account.provider});
@@ -67,7 +66,7 @@ export default function SocialIntegrationHealthCenter({accounts,incidents,emailD
 
   </div>
   <div className="mt-6 border-t border-slate-100 pt-5">
-   <div className="flex flex-wrap items-center justify-between gap-2"><div><h4 className="text-sm font-semibold text-slate-900">Incident email delivery</h4><p className="mt-1 text-xs text-slate-500">Workspace-wide outbox totals. SENT means Resend accepted the message; it does not confirm inbox delivery.</p></div><a href="/dashboard/notifications" className="text-xs font-semibold text-indigo-700">Notification preferences</a></div>
+   <div className="flex flex-wrap items-center justify-between gap-2"><div><h4 className="text-sm font-semibold text-slate-900">Incident email delivery</h4><p className="mt-1 text-xs text-slate-500">Workspace-wide outbox totals. SENT means Resend accepted the message; it does not confirm inbox delivery.</p></div><Link href="/dashboard/notifications" className="text-xs font-semibold text-indigo-700">Notification preferences</Link></div>
    <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-4">{["PENDING","RETRY","PROCESSING","SENT","FAILED","CANCELLED"].map(status=>{const count=emailDeliveryCounts.find(item=>item.status===status)?._count._all??0;return <div key={status} className="rounded-lg border border-slate-100 p-3"><p className="text-[10px] font-medium uppercase tracking-wide text-slate-500">{status}</p><p className="mt-1 text-lg font-semibold tabular-nums text-slate-900">{count}</p></div>;})}</div>
   </div>
   <div className="mt-6 border-t border-slate-100 pt-5">
@@ -77,6 +76,6 @@ export default function SocialIntegrationHealthCenter({accounts,incidents,emailD
    <div className="flex items-center justify-between gap-3"><div><h4 className="text-sm font-semibold text-slate-900">Incident history</h4><p className="mt-1 text-xs text-slate-500">Persisted account and publishing incidents, deduplicated by source and category.</p></div><span className="rounded-full bg-slate-100 px-2.5 py-1 text-xs text-slate-600">{incidents.filter(item=>item.status!=="RESOLVED").length} active</span></div>
    <div className="mt-3 space-y-2">{incidents.length===0?<p className="rounded-xl border border-dashed border-slate-200 p-4 text-center text-xs text-slate-500">No social incidents have been recorded.</p>:incidents.map(item=><div key={item.id} className="rounded-xl border border-slate-200 p-3"><div className="flex flex-wrap items-center justify-between gap-2"><p className="text-xs font-semibold text-slate-800">{item.category.replaceAll("_"," ")}</p><span className={"rounded-full px-2 py-1 text-[10px] font-semibold "+(item.status==="RESOLVED"?"bg-emerald-100 text-emerald-700":item.status==="ACKNOWLEDGED"?"bg-sky-100 text-sky-700":item.severity==="CRITICAL"?"bg-rose-100 text-rose-700":"bg-amber-100 text-amber-800")}>{item.status==="RESOLVED"?"RESOLVED":item.status==="ACKNOWLEDGED"?"ACKNOWLEDGED":item.severity+" · OPEN"}</span></div><p className="mt-1 text-xs text-slate-600">{item.message}</p><p className="mt-2 text-[10px] text-slate-400">First seen {new Date(item.firstSeenAt).toLocaleString()} · Last seen {new Date(item.lastSeenAt).toLocaleString()} · Observations {item.occurrenceCount}{item.acknowledgedAt?" · Acknowledged "+new Date(item.acknowledgedAt).toLocaleString():""}{item.resolvedAt?" · Resolved "+new Date(item.resolvedAt).toLocaleString():""}</p>{item.resolutionMessage&&<p className="mt-1 text-xs text-emerald-700">{item.resolutionMessage}</p>}{canManage&&item.status!=="RESOLVED"&&<div className="mt-3 flex flex-wrap items-end gap-2">{item.status==="OPEN"&&<form action={acknowledgeSocialIncident}><input type="hidden" name="incidentId" value={item.id}/><button className="rounded-lg border border-slate-200 px-3 py-1.5 text-[11px] font-semibold text-slate-700">Acknowledge</button></form>}<form action={resolveSocialIncident} className="flex flex-wrap items-end gap-2"><input type="hidden" name="incidentId" value={item.id}/><label className="text-[10px] text-slate-500">Resolution note<input name="resolutionMessage" required maxLength={500} placeholder="What fixed the issue?" className="mt-1 block w-56 max-w-full rounded-lg border border-slate-200 px-2 py-1.5 text-xs"/></label><button className="rounded-lg bg-slate-900 px-3 py-1.5 text-[11px] font-semibold text-white">Resolve</button></form></div>}{canManage&&item.status!=="RESOLVED"&&<p className="mt-2 text-[10px] text-slate-400">If the underlying condition persists, the next monitoring scan can reopen this incident.</p>}</div>)}</div>
   </div>
-  <p className="mt-3 text-[11px] text-slate-400">This overview does not call provider APIs or prove that a token is currently valid. Use each account's Check health action for a live provider check. Missing-scope analysis is intentionally not inferred from generic scope counts.</p>
+  <p className="mt-3 text-[11px] text-slate-400">This overview does not call provider APIs or prove that a token is currently valid. Use each account&apos;s Check health action for a live provider check. Missing-scope analysis is intentionally not inferred from generic scope counts.</p>
  </section>;
 }
