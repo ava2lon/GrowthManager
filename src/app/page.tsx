@@ -1,7 +1,7 @@
 "use client";
 import Link from "next/link";
 import {useState} from "react";
-import {ArrowRight,ArrowUpRight,BarChart3,CalendarDays,ChevronLeft,ChevronRight,Facebook,Globe2,Instagram,Layers3,Linkedin,Mail,Menu,MessageSquare,Play,Plug,ShieldCheck,Sparkles,Target,TrendingUp,Users,Workflow,Youtube,Zap,X,Clock3} from "lucide-react";
+import {ArrowRight,ArrowUpRight,BarChart3,CalendarDays,ChevronLeft,ChevronRight,Facebook,Globe2,Instagram,Layers3,Linkedin,Mail,Menu,MessageSquare,Play,Plug,ShieldCheck,Sparkles,Target,Users,Workflow,Youtube,Zap,X,Clock3} from "lucide-react";
 import {BrandMark} from "@/components/brand-mark";
 
 const views=[
