@@ -27,10 +27,12 @@ export async function uploadTikTokInboxTarget(input:{targetId:string;workspaceId
   !asset.durationMs||asset.durationMs<3000||asset.durationMs>900000||!asset.width||!asset.height||asset.width>1920||asset.height>1920)
   throw new Error("TIKTOK_VIDEO_CONSTRAINTS");
  if(!target.socialAccount.scopes.includes("video.upload"))throw new Error("TIKTOK_UPLOAD_SCOPE_MISSING");
- const claim=await db.socialPostTarget.updateMany({where:{id:target.id,workspaceId:input.workspaceId,status:"DRAFT"},data:{status:"PUBLISHING",errorCode:null}});
- if(claim.count!==1)throw new Error("TIKTOK_TARGET_ALREADY_CLAIMED");
- const prior=await db.socialPublishAttempt.aggregate({where:{workspaceId:input.workspaceId,targetId:target.id},_max:{attemptNumber:true}});
- const attempt=await db.socialPublishAttempt.create({data:{workspaceId:input.workspaceId,targetId:target.id,attemptNumber:(prior._max.attemptNumber??0)+1,idempotencyKey:randomUUID(),status:"STARTED"},select:{id:true}});
+ const attempt=await db.$transaction(async tx=>{
+  const claim=await tx.socialPostTarget.updateMany({where:{id:target.id,workspaceId:input.workspaceId,status:"DRAFT"},data:{status:"PUBLISHING",errorCode:null}});
+  if(claim.count!==1)throw new Error("TIKTOK_TARGET_ALREADY_CLAIMED");
+  const prior=await tx.socialPublishAttempt.aggregate({where:{workspaceId:input.workspaceId,targetId:target.id},_max:{attemptNumber:true}});
+  return tx.socialPublishAttempt.create({data:{workspaceId:input.workspaceId,targetId:target.id,attemptNumber:(prior._max.attemptNumber??0)+1,idempotencyKey:randomUUID(),status:"STARTED"},select:{id:true}});
+ });
   try{
   const {accessToken}=await getFreshTikTokCredentials({workspaceId:input.workspaceId,accountId:target.socialAccount.id});
   const storage=getSupabaseStorageConfig();
