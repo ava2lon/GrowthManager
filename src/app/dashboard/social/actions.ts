@@ -8,6 +8,7 @@ import {db} from "@/lib/db";
 import {consumeRateLimit} from "@/lib/rate-limit";
 import {decryptIntegrationCredentials, encryptIntegrationCredentials} from "@/lib/integration-crypto";
 import {publishFacebookTarget,publishInstagramTarget} from "@/lib/social-publishing";
+import {startInstagramCarouselTarget} from "@/lib/instagram-carousel";
 import {startInstagramReelTarget} from "@/lib/instagram-reels";
 import {getFreshTikTokCredentials} from "@/lib/tiktok-auth";
 import {getFreshYouTubeCredentials} from "@/lib/youtube-auth";
@@ -1157,7 +1158,7 @@ export async function publishInstagramDraft(formData: FormData) {
   await enforcePublishLimit(context.workspace.id, context.userId);
   const result = await publishInstagramTarget({targetId,workspaceId:context.workspace.id,actorUserId:context.userId,allowedStatuses:["DRAFT"]});
   revalidatePath("/dashboard/social");
-  if(result.status!=="PUBLISHED") {
+  if(result.status!=="PUBLISHED" && result.status!=="PROCESSING") {
     throw new Error(result.status==="UNKNOWN"
       ? "Instagram's publishing outcome could not be confirmed. Verify the account before attempting another post."
       : result.status==="SKIPPED"?"This Instagram target is already processing or is no longer eligible."
