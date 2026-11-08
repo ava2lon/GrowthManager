@@ -31,6 +31,7 @@ export async function GET(request: Request) {
       failureRateThreshold: true,
       lookbackMinutes: true,
       cooldownMinutes: true,
+      lastEvaluatedAt: true,
     },
     orderBy: [{lastEvaluatedAt: {sort: "asc", nulls: "first"}}, {createdAt: "asc"}],
     take: 4,
@@ -51,6 +52,19 @@ export async function GET(request: Request) {
 
   // Evaluate a bounded batch concurrently so provider timeouts cannot starve email dispatch.
   await Promise.all(policies.map(async (policy) => {
+    const claimTime = new Date();
+    const claimed = await db.automationAlertPolicy.updateMany({
+      where: {
+        workspaceId: policy.workspaceId,
+        enabled: true,
+        lastEvaluatedAt: policy.lastEvaluatedAt,
+      },
+      data: {lastEvaluatedAt: claimTime},
+    });
+    if (claimed.count !== 1) {
+      skipped += 1;
+      return;
+    }
     try {
       const integration = await db.integration.findFirst({
         where: {workspaceId: policy.workspaceId, provider: "n8n", status: "CONNECTED"},
@@ -137,7 +151,7 @@ export async function GET(request: Request) {
       // Rotate every attempted policy, including skipped and failed workspaces, to prevent starvation.
       try {
         await db.automationAlertPolicy.updateMany({
-          where: {workspaceId: policy.workspaceId},
+          where: {workspaceId: policy.workspaceId, lastEvaluatedAt: claimTime},
           data: {lastEvaluatedAt: new Date()},
         });
       } catch {
