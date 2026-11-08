@@ -132,7 +132,8 @@ export async function processTikTokUploadTarget(input:{targetId:string;workspace
   return {status:"UPLOADING" as const};
  }catch(error){
   const code=error instanceof Error?error.message:"TIKTOK_CHUNK_UPLOAD_UNCERTAIN";
-  if(code==="TIKTOK_CHUNK_UPLOAD_UNCERTAIN"||code==="TIKTOK_MEDIA_DOWNLOAD_UNCERTAIN"){
+  const retryableTransport=error instanceof TypeError||(error instanceof Error&&["AbortError","TimeoutError"].includes(error.name));
+  if(code==="TIKTOK_CHUNK_UPLOAD_UNCERTAIN"||code==="TIKTOK_MEDIA_DOWNLOAD_UNCERTAIN"||retryableTransport){
    await db.socialPostTarget.updateMany({where:{id:target.id,workspaceId:input.workspaceId,status:"PUBLISHING"},data:{nextCheckAt:new Date(Date.now()+60_000),errorCode:code}});
    return {status:"UPLOADING" as const,errorCode:code};
   }
