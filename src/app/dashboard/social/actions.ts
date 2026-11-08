@@ -2,6 +2,7 @@
 
 import {revalidatePath} from "next/cache";
 import {redirect} from "next/navigation";
+import {Prisma} from "@prisma/client";
 import {requireWorkspaceRole} from "@/lib/workspace";
 import {db} from "@/lib/db";
 import {consumeRateLimit} from "@/lib/rate-limit";
@@ -27,6 +28,25 @@ import {deletePublishedSocialTarget} from "@/lib/social-deletion";
 function readMetadata(value: unknown): Record<string, unknown> {
   if (!value || typeof value !== "object" || Array.isArray(value)) return {};
   return value as Record<string, unknown>;
+}
+
+function toPrismaJsonValue(value: unknown): Prisma.InputJsonValue | null {
+  if (value === null || typeof value === "string" || typeof value === "boolean") return value;
+  if (typeof value === "number") return Number.isFinite(value) ? value : null;
+  if (Array.isArray(value)) return value.map(toPrismaJsonValue);
+  if (typeof value === "object") {
+    const result: Prisma.InputJsonObject = {};
+    for (const [key, item] of Object.entries(value)) {
+      if (item !== undefined) result[key] = toPrismaJsonValue(item);
+    }
+    return result;
+  }
+  return null;
+}
+
+function toPrismaJsonObject(value: Record<string, unknown>): Prisma.InputJsonObject {
+  const result = toPrismaJsonValue(value);
+  return result && !Array.isArray(result) && typeof result === "object" ? result : {};
 }
 
 async function auditManualAnalyticsRefresh(workspaceId:string,userId:string,entityId:string,provider:string,outcome:"SUCCESS"|"FAILED",errorCode?:string,entityType:"SocialAccount"|"SocialPostTarget"="SocialAccount"){
@@ -1327,7 +1347,7 @@ export async function checkPinterestAccountHealth(formData:FormData){
  }catch(error){const code=error instanceof Error?error.message:"";failure=["PINTEREST_AUTH_FAILED","PINTEREST_REAUTHORIZATION_REQUIRED","PINTEREST_CREDENTIAL_DECRYPTION_FAILED","PINTEREST_REQUIRED_SCOPE_MISSING","PINTEREST_ACCOUNT_MISMATCH","PINTEREST_ACCOUNT_NOT_CONNECTED"].includes(code)?code:code==="PINTEREST_NOT_CONFIGURED"?"PINTEREST_NOT_CONFIGURED":"PINTEREST_PROVIDER_UNAVAILABLE"}
  const definitive=!!failure&&!["PINTEREST_PROVIDER_ERROR","PINTEREST_PROVIDER_UNAVAILABLE","PINTEREST_NOT_CONFIGURED","PINTEREST_RATE_LIMITED","PINTEREST_REFRESH_UNAVAILABLE"].includes(failure);
  await db.$transaction(async tx=>{
-  const changed=await tx.socialAccount.updateMany({where:{id:account.id,workspaceId:context.workspace.id,provider:"PINTEREST",status:"CONNECTED",credentialsEncrypted:credentialVersion},data:failure?{...(definitive?{status:"ERROR"}:{}),lastValidatedAt:new Date(),lastErrorCode:failure}:{accountName:displayName,metadata,status:"CONNECTED",lastValidatedAt:new Date(),lastErrorCode:null}});
+  const changed=await tx.socialAccount.updateMany({where:{id:account.id,workspaceId:context.workspace.id,provider:"PINTEREST",status:"CONNECTED",credentialsEncrypted:credentialVersion},data:failure?{...(definitive?{status:"ERROR"}:{}),lastValidatedAt:new Date(),lastErrorCode:failure}:{accountName:displayName,metadata:toPrismaJsonObject(metadata),status:"CONNECTED",lastValidatedAt:new Date(),lastErrorCode:null}});
   if(changed.count!==1)throw new Error("Pinterest account changed during the health check. Refresh and retry.");
   await tx.activityLog.create({data:{workspaceId:context.workspace.id,userId:context.userId,action:failure?"social_account.health_check_failed":"social_account.health_check_succeeded",entityType:"SocialAccount",entityId:account.id,metadata:{provider:"PINTEREST",errorCode:failure,boardsDiscovered:boards.length,authorizationStateChanged:definitive}}});
  });
