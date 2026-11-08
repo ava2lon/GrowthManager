@@ -73,7 +73,7 @@ export async function publishFacebookTarget(input:{targetId:string;workspaceId:s
     ?target.socialAccount.metadata as Record<string,unknown>:{};
   if(typeof metadata.pageId!=="string")return failBeforeClaim("META_PAGE_ID_MISSING");
   const version=process.env.META_GRAPH_API_VERSION;
-  if(!version||!/^v\\d+\\.\\d+$/.test(version))return failBeforeClaim("META_API_NOT_CONFIGURED");
+  if(!version||!/^v\d+\.\d+$/.test(version))return failBeforeClaim("META_API_NOT_CONFIGURED");
   let credentials:Record<string,unknown>;
   try{credentials=decryptIntegrationCredentials(target.socialAccount.credentialsEncrypted,input.workspaceId,target.socialAccount.id);}
   catch{return failBeforeClaim("CREDENTIAL_DECRYPTION_FAILED");}
@@ -198,7 +198,7 @@ export async function publishInstagramTarget(input:{targetId:string;workspaceId:
     ?target.socialAccount.metadata as Record<string,unknown>:{};
   if(typeof metadata.instagramUserId!=="string")return failBeforeClaim("INSTAGRAM_ACCOUNT_ID_MISSING");
   const version=process.env.META_GRAPH_API_VERSION;
-  if(!version||!/^v\\d+\\.\\d+$/.test(version))return failBeforeClaim("META_API_NOT_CONFIGURED");
+  if(!version||!/^v\d+\.\d+$/.test(version))return failBeforeClaim("META_API_NOT_CONFIGURED");
   let credentials:Record<string,unknown>;
   try{credentials=decryptIntegrationCredentials(target.socialAccount.credentialsEncrypted,input.workspaceId,target.socialAccount.id);}
   catch{return failBeforeClaim("CREDENTIAL_DECRYPTION_FAILED");}
