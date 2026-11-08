@@ -4,7 +4,7 @@ import {db} from "@/lib/db";
 import {decryptIntegrationCredentials, encryptIntegrationCredentials} from "@/lib/integration-crypto";
 import {getSupabaseStorageConfig, storageHeaders} from "@/lib/media-storage";
 import {getFreshYouTubeCredentials} from "@/lib/youtube-auth";
-import {parseYouTubeCommittedOffset, validateYouTubeMetadata, validateYouTubeSessionUrl} from "@/lib/youtube-upload-utils";
+import {isYouTubeRetryableTransportError, parseYouTubeCommittedOffset, validateYouTubeMetadata, validateYouTubeSessionUrl} from "@/lib/youtube-upload-utils";
 
 const MAX_VIDEO_BYTES = 100 * 1024 * 1024;
 const CHUNK_BYTES = 8 * 1024 * 1024; // Google requires non-final chunks to be multiples of 256 KiB.
@@ -307,7 +307,7 @@ export async function processYouTubeUploadTarget(input: {targetId: string; works
   } catch (error) {
     const code = error instanceof Error ? error.message : "YOUTUBE_UPLOAD_FAILED";
     if (["YOUTUBE_REFRESH_UNAVAILABLE", "YOUTUBE_PROVIDER_UNAVAILABLE", "YOUTUBE_UPLOAD_COMPLETION_UNCERTAIN", "YOUTUBE_VIDEO_STATUS_UNKNOWN"].includes(code) ||
-        error instanceof TypeError || (error instanceof Error && error.name === "AbortError")) {
+        isYouTubeRetryableTransportError(error)) {
       // A transport failure can happen after Google committed bytes. Reconcile from the session URI next run.
       await defer();
       return {status: "PROCESSING" as const};
