@@ -81,7 +81,7 @@ export async function processInstagramCarouselTarget(input:{targetId:string;work
    if(!Number.isInteger(s.childIndex)||s.childIndex<0||s.childIndex>=assets.length)return mark("UNKNOWN","INSTAGRAM_CHILD_INDEX_INVALID");
    if(s.childRequestStarted)return mark("UNKNOWN","INSTAGRAM_CHILD_CREATE_OUTCOME_UNKNOWN");
    const url=await signedUrl(assets[s.childIndex]);const form=new URLSearchParams({image_url:url,is_carousel_item:"true",access_token:token});
-   s={...s,childRequestStarted:true};await save(s);
+   s={...s,childRequestStarted:true};await save(s,false);
    let child:string;try{child=await post(api(version,String(m.instagramUserId)+"/media"),form);}catch(e){const code=e instanceof Error?e.message:"PUBLISH_OUTCOME_UNKNOWN";return mark(code==="PUBLISH_OUTCOME_UNKNOWN"?"UNKNOWN":"FAILED",code);}
    s={...s,childIds:[...s.childIds,child],childIndex:s.childIndex+1,childRequestStarted:false,phase:s.childIndex+1===assets.length?"POLL_CHILDREN":"CREATE_CHILDREN"};
    await save(s);return {status:"PROCESSING"};
@@ -97,7 +97,7 @@ export async function processInstagramCarouselTarget(input:{targetId:string;work
    if(assets.length<2||s.childIds.length!==assets.length||s.childIndex!==assets.length)return mark("UNKNOWN","INSTAGRAM_CHILD_STATE_INCOMPLETE");
    const form=new URLSearchParams({media_type:"CAROUSEL",children:s.childIds.join(","),caption:t.contentPost.body,access_token:token});
    // Persist intent before the POST. If execution dies after this write, never issue the POST again.
-   s={...s,phase:"POLL_PARENT"};await save(s);
+   s={...s,phase:"POLL_PARENT"};await save(s,false);
    let parent:string;try{parent=await post(api(version,String(m.instagramUserId)+"/media"),form);}catch(e){const code=e instanceof Error?e.message:"PUBLISH_OUTCOME_UNKNOWN";return mark(code==="PUBLISH_OUTCOME_UNKNOWN"?"UNKNOWN":"FAILED",code);}
    s={...s,parentId:parent};await save(s);return {status:"PROCESSING"};
   }
@@ -111,7 +111,7 @@ export async function processInstagramCarouselTarget(input:{targetId:string;work
   if(s.phase==="PUBLISH"){
    if(!s.parentId)return mark("UNKNOWN","INSTAGRAM_PARENT_ID_MISSING");
    // Persist publish intent before sending. A crash after this point is an unknown outcome.
-   s={...s,phase:"PUBLISH_REQUEST_STARTED"};await save(s);
+   s={...s,phase:"PUBLISH_REQUEST_STARTED"};await save(s,false);
    let published:string;try{published=await post(api(version,String(m.instagramUserId)+"/media_publish"),new URLSearchParams({creation_id:s.parentId,access_token:token}));}catch(e){const code=e instanceof Error?e.message:"PUBLISH_OUTCOME_UNKNOWN";return mark(code==="PUBLISH_OUTCOME_UNKNOWN"?"UNKNOWN":"FAILED",code);}
    const now=new Date();const done=await db.$transaction(async tx=>{
     const changed=await tx.socialPostTarget.updateMany({where:{id:t.id,workspaceId:input.workspaceId,status:"PROCESSING",nextCheckAt:lease},data:{status:"PUBLISHED",providerPostId:published,publishedAt:now,errorCode:null,nextCheckAt:null,uploadMetadata:{...meta,instagramCarousel:{...s,phase:"COMPLETE"}}}});
@@ -125,7 +125,7 @@ export async function processInstagramCarouselTarget(input:{targetId:string;work
   }
   return mark("UNKNOWN","INSTAGRAM_PUBLISH_OUTCOME_UNKNOWN");
  }catch(e){const code=e instanceof Error?e.message:"INSTAGRAM_CAROUSEL_WORKER_FAILED";return mark(code==="PUBLISH_OUTCOME_UNKNOWN"?"UNKNOWN":"FAILED",code);}
- async function save(next:State){const changed=await db.socialPostTarget.updateMany({where:{id:t.id,workspaceId:input.workspaceId,status:"PROCESSING",nextCheckAt:lease},data:{uploadMetadata:{...meta,instagramCarousel:next},nextCheckAt:new Date(Date.now()+1000),errorCode:null}});if(changed.count!==1)throw new Error("INSTAGRAM_CAROUSEL_LEASE_LOST");}
+ async function save(next:State,releaseLease=true){const changed=await db.socialPostTarget.updateMany({where:{id:t.id,workspaceId:input.workspaceId,status:"PROCESSING",nextCheckAt:lease},data:{uploadMetadata:{...meta,instagramCarousel:next},nextCheckAt:releaseLease?new Date(Date.now()+1000):lease,errorCode:null}});if(changed.count!==1)throw new Error("INSTAGRAM_CAROUSEL_LEASE_LOST");}
  async function reschedule(){await db.socialPostTarget.updateMany({where:{id:t.id,workspaceId:input.workspaceId,status:"PROCESSING",nextCheckAt:lease},data:{nextCheckAt:new Date(Date.now()+30_000)}});}
  async function mark(status:"FAILED"|"UNKNOWN",code:string):Promise<Outcome>{const now=new Date();const committed=await db.$transaction(async tx=>{const changed=await tx.socialPostTarget.updateMany({where:{id:t.id,workspaceId:input.workspaceId,status:"PROCESSING",nextCheckAt:lease},data:{status,errorCode:code,nextCheckAt:null}});if(changed.count!==1)return false;await tx.socialPublishAttempt.updateMany({where:{workspaceId:input.workspaceId,targetId:t.id,status:"STARTED"},data:{status,errorCode:code,finishedAt:now}});await tx.contentPost.updateMany({where:{id:t.contentPost.id,workspaceId:input.workspaceId},data:{status:status==="UNKNOWN"?"PUBLISHING":"FAILED"}});await tx.activityLog.create({data:{workspaceId:input.workspaceId,action:"social_post.publish_outcome_"+status.toLowerCase(),entityType:"ContentPost",entityId:t.contentPost.id,metadata:{provider:"INSTAGRAM",format:"CAROUSEL",targetId:t.id,errorCode:code}}});return true;});return committed?{status,errorCode:code}:{status:"SKIPPED"};}
 }
