@@ -46,6 +46,25 @@ describe("Instagram carousel persisted state", () => {
         version: 1,
         phase: "CREATE_CHILDREN",
         childIds: [],
+        childIndex: -1,
+        startedAt: "2026-11-08T12:00:00.000Z",
+      },
+    })).toBeNull();
+    expect(parseInstagramCarouselState({
+      instagramCarousel: {
+        version: 1,
+        phase: "CREATE_CHILDREN",
+        childIds: [],
+        childIndex: 0,
+        childRequestStarted: "yes",
+        startedAt: "2026-11-08T12:00:00.000Z",
+      },
+    })).toBeNull();
+    expect(parseInstagramCarouselState({
+      instagramCarousel: {
+        version: 1,
+        phase: "CREATE_CHILDREN",
+        childIds: [],
         childIndex: 0,
         startedAt: "not-a-date",
       },
