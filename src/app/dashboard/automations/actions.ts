@@ -86,7 +86,7 @@ export async function evaluateAutomationAlerts() {
 
   const executions = await listN8nExecutions(credentials.baseUrl, credentials.apiKey);
   if (executions.hasMore) {
-    throw new Error("n8n returned more executions than the monitoring sample can safely evaluate. No alert state was changed; reduce the lookback volume or retry after history is synchronized.");
+    throw new Error("n8n has more than 750 executions in its current inventory. Alert evaluation was stopped to avoid changing alert state using an incomplete sample.");
   }
   const cutoff = Date.now() - policy.lookbackMinutes * 60_000;
   const recent = executions.executions.filter((item) => {
