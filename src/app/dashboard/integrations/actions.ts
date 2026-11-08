@@ -702,7 +702,7 @@ export async function syncN8nExecutionHistory(formData: FormData) {
 
   const integration = await db.integration.findFirst({
     where: {id: integrationId, workspaceId: context.workspace.id, provider: "n8n", status: "CONNECTED"},
-    select: {id: true, credentialsEncrypted: true},
+    select: {id: true, credentialsEncrypted: true, lastExecutionSyncCursor: true},
   });
   if (!integration?.credentialsEncrypted) throw new Error("A connected n8n integration is required.");
 
