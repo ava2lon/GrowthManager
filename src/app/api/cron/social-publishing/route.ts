@@ -7,7 +7,7 @@ import {publishFacebookTarget,publishInstagramTarget} from "@/lib/social-publish
 import {startInstagramReelTarget,processInstagramReelTarget} from "@/lib/instagram-reels";
 import {processTikTokInboxTarget,processTikTokUploadTarget} from "@/lib/tiktok-upload";
 import {processYouTubeUploadTarget} from "@/lib/youtube-upload";
-import {publishPinterestTarget} from "@/lib/pinterest-publishing";
+import {publishPinterestTarget,processPinterestVideoTarget} from "@/lib/pinterest-publishing";
 import {publishXTarget} from "@/lib/x-publishing";
 import {refreshPinterestAccountAnalytics} from "@/lib/pinterest-analytics";
 import {refreshPinterestPinAnalytics} from "@/lib/pinterest-pin-analytics";
@@ -37,7 +37,7 @@ export async function GET(request:Request){
   // X owns a resumable upload/publish state machine and reconciles its own expired leases.
   // Do not classify its multi-invocation media uploads as interrupted publishes here.
   const stale=await db.socialPostTarget.findMany({
-    where:{provider:{in:["FACEBOOK","INSTAGRAM","TIKTOK","PINTEREST"]},status:"PUBLISHING",updatedAt:{lt:staleBefore},NOT:{provider:"TIKTOK",uploadSessionEncrypted:{not:null}}},
+    where:{provider:{in:["FACEBOOK","INSTAGRAM","TIKTOK","PINTEREST"]},status:"PUBLISHING",updatedAt:{lt:staleBefore},NOT:[{provider:"TIKTOK",uploadSessionEncrypted:{not:null}},{provider:"PINTEREST",providerContainerId:{not:null}}]},
     select:{id:true,workspaceId:true,contentPostId:true,provider:true},
     take:50,
   });
@@ -154,6 +154,20 @@ export async function GET(request:Request){
       else if(result.status==="UNKNOWN")pinterestUnknown++;
       else pinterestSkipped++;
     }catch{pinterestUnknown++;}
+  }
+
+  const pinterestProcessing=await db.socialPostTarget.findMany({
+    where:{provider:"PINTEREST",status:"PUBLISHING",providerContainerId:{not:null},OR:[{nextCheckAt:null},{nextCheckAt:{lte:now}}]},
+    select:{id:true,workspaceId:true},orderBy:{nextCheckAt:"asc"},take:1,
+  });
+  let pinterestVideoProcessing=0,pinterestVideoFailed=0,pinterestVideoUnknown=0;
+  for(const target of pinterestProcessing){
+    try{
+      const result=await processPinterestVideoTarget({targetId:target.id,workspaceId:target.workspaceId});
+      if(result.status==="PROCESSING")pinterestVideoProcessing++;
+      else if(result.status==="FAILED")pinterestVideoFailed++;
+      else if(result.status==="UNKNOWN")pinterestVideoUnknown++;
+    }catch{pinterestVideoFailed++;}
   }
 
   // Collect at most one account-level Pinterest analytics report per worker run.
@@ -299,5 +313,5 @@ export async function GET(request:Request){
   }
   const incidents=await synchronizeSocialIncidents();
   const incidentEmailDelivery=await dispatchSocialIncidentEmails(3);
-  return NextResponse.json({incidents,incidentEmailDelivery,due:due.length,x:{scheduledChecked:xDue.length,processingChecked:xProcessingDue.length,published:xPublished,failed:xFailed,unknown:xUnknown,processing:xProcessing,skipped:xSkipped,analytics:{accountsRefreshed:xAnalyticsAccountsRefreshed,accountsFailed:xAnalyticsAccountsFailed}},published,failed,unknown,skipped,recoveredUnknown,pinterest:{checked:pinterestDue.length,published:pinterestPublished,failed:pinterestFailed,unknown:pinterestUnknown,skipped:pinterestSkipped,analyticsChecked:pinterestAnalyticsDue.length,analyticsRefreshed:pinterestAnalyticsRefreshed,analyticsFailed:pinterestAnalyticsFailed,pinAnalyticsChecked:pinAnalyticsTarget?1:0,pinAnalyticsRefreshed:pinterestPinAnalyticsRefreshed,pinAnalyticsFailed:pinterestPinAnalyticsFailed},reels:{checked:processing.length,published:reelsPublished,failed:reelsFailed,processing:reelsProcessing,unknown:reelsUnknown},tiktok:{checked:tiktokProcessing.length,uploaded:tiktokUploaded,published:tiktokPublished,failed:tiktokFailed,analytics:{accountsRefreshed:tikTokAccountsRefreshed,accountsFailed:tikTokAccountsFailed,videosRefreshed:tikTokVideosRefreshed,videosFailed:tikTokVideosFailed}},youtube:{checked:youtubeProcessing.length,published:youtubePublished,scheduled:youtubeScheduled,failed:youtubeFailed,processing:youtubeProcessingCount,recoveredInitializations:recoveredYouTubeStarts,analytics:{channelsRefreshed:youtubeAnalyticsAccountsRefreshed,channelsFailed:youtubeAnalyticsAccountsFailed,videosRefreshed:youtubeAnalyticsVideosRefreshed,videosFailed:youtubeAnalyticsVideosFailed}}});
+  return NextResponse.json({incidents,incidentEmailDelivery,due:due.length,x:{scheduledChecked:xDue.length,processingChecked:xProcessingDue.length,published:xPublished,failed:xFailed,unknown:xUnknown,processing:xProcessing,skipped:xSkipped,analytics:{accountsRefreshed:xAnalyticsAccountsRefreshed,accountsFailed:xAnalyticsAccountsFailed}},published,failed,unknown,skipped,recoveredUnknown,pinterest:{checked:pinterestDue.length,published:pinterestPublished,failed:pinterestFailed,unknown:pinterestUnknown,skipped:pinterestSkipped,videoProcessingChecked:pinterestProcessing.length,videoProcessing:pinterestVideoProcessing,videoFailed:pinterestVideoFailed,videoUnknown:pinterestVideoUnknown,analyticsChecked:pinterestAnalyticsDue.length,analyticsRefreshed:pinterestAnalyticsRefreshed,analyticsFailed:pinterestAnalyticsFailed,pinAnalyticsChecked:pinAnalyticsTarget?1:0,pinAnalyticsRefreshed:pinterestPinAnalyticsRefreshed,pinAnalyticsFailed:pinterestPinAnalyticsFailed},reels:{checked:processing.length,published:reelsPublished,failed:reelsFailed,processing:reelsProcessing,unknown:reelsUnknown},tiktok:{checked:tiktokProcessing.length,uploaded:tiktokUploaded,published:tiktokPublished,failed:tiktokFailed,analytics:{accountsRefreshed:tikTokAccountsRefreshed,accountsFailed:tikTokAccountsFailed,videosRefreshed:tikTokVideosRefreshed,videosFailed:tikTokVideosFailed}},youtube:{checked:youtubeProcessing.length,published:youtubePublished,scheduled:youtubeScheduled,failed:youtubeFailed,processing:youtubeProcessingCount,recoveredInitializations:recoveredYouTubeStarts,analytics:{channelsRefreshed:youtubeAnalyticsAccountsRefreshed,channelsFailed:youtubeAnalyticsAccountsFailed,videosRefreshed:youtubeAnalyticsVideosRefreshed,videosFailed:youtubeAnalyticsVideosFailed}}});
 }
