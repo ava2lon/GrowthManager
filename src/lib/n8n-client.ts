@@ -349,14 +349,23 @@ export async function listN8nExecutions(
     for (const item of (payload as {data: unknown[]}).data) {
       if (!item || typeof item !== "object") continue;
       const execution = item as Record<string, unknown>;
-      if (typeof execution.id !== "string" || typeof execution.workflowId !== "string") continue;
+      const executionId = typeof execution.id === "string" || typeof execution.id === "number"
+        ? String(execution.id)
+        : "";
+      const workflowId = typeof execution.workflowId === "string" || typeof execution.workflowId === "number"
+        ? String(execution.workflowId)
+        : "";
+      if (!/^\d{1,20}$/.test(executionId) || !/^[A-Za-z0-9_-]{1,128}$/.test(workflowId)) continue;
       const safeDate = (value: unknown) =>
         typeof value === "string" && !Number.isNaN(Date.parse(value)) ? value : null;
-      const safeId = (value: unknown) =>
-        typeof value === "string" && value.length <= 128 ? value : null;
+      const safeId = (value: unknown) => {
+        if (typeof value !== "string" && typeof value !== "number") return null;
+        const normalized = String(value);
+        return normalized.length <= 128 ? normalized : null;
+      };
       executions.push({
-        id: execution.id.slice(0, 128),
-        workflowId: execution.workflowId.slice(0, 128),
+        id: executionId,
+        workflowId,
         status: typeof execution.status === "string" ? execution.status.slice(0, 40) : "unknown",
         mode: typeof execution.mode === "string" ? execution.mode.slice(0, 40) : "unknown",
         startedAt: safeDate(execution.startedAt),
