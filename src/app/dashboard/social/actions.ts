@@ -1737,7 +1737,8 @@ export async function cancelYouTubeSchedule(formData:FormData){
   const target=await tx.socialPostTarget.findFirst({where:{id:targetId,workspaceId:context.workspace.id,provider:"YOUTUBE",status:"SCHEDULED"},select:{id:true,contentPostId:true,uploadMetadata:true}});
   if(!target)throw new Error("This YouTube schedule is already processing or unavailable.");
   const metadata=readMetadata(target.uploadMetadata);
-  const {publishAt:_publishAt,...remainingMetadata}=metadata;
+  const remainingMetadata = {...metadata};
+  delete remainingMetadata.publishAt;
   const changed=await tx.socialPostTarget.updateMany({where:{id:target.id,workspaceId:context.workspace.id,provider:"YOUTUBE",status:"SCHEDULED"},data:{status:"DRAFT",uploadMetadata:remainingMetadata,errorCode:null,nextCheckAt:null}});
   if(changed.count!==1)throw new Error("This YouTube upload started. Refresh to see its latest status.");
   const remaining=await tx.socialPostTarget.count({where:{workspaceId:context.workspace.id,contentPostId:target.contentPostId,status:"SCHEDULED"}});
