@@ -43,7 +43,7 @@ export async function refreshTikTokAccountAnalytics(input:{workspaceId:string;ac
  const metrics={status:"OK",accountStatsAvailable:statsAllowed,...Object.fromEntries(["follower_count","following_count","likes_count","video_count"].filter(key=>typeof user[key]==="number").map(key=>[key,user[key]]))};
  await db.tikTokAnalyticsSnapshot.upsert({
   where:{workspaceId_socialAccountId_subjectType_subjectId_reportDate:{workspaceId:input.workspaceId,socialAccountId:account.id,subjectType:"ACCOUNT",subjectId:providerUserId,reportDate}},
-  create:{workspaceId:input.workspaceId,socialAccountId:account.id,subjectType:"ACCOUNT",subjectId:account.providerUserId,reportDate,startDate:reportDate,endDate:reportDate,metrics:metrics as Prisma.InputJsonValue,rawResponse:result as unknown as Prisma.InputJsonValue},
+  create:{workspaceId:input.workspaceId,socialAccountId:account.id,subjectType:"ACCOUNT",subjectId:providerUserId,reportDate,startDate:reportDate,endDate:reportDate,metrics:metrics as Prisma.InputJsonValue,rawResponse:result as unknown as Prisma.InputJsonValue},
   update:{startDate:reportDate,endDate:reportDate,metrics:metrics as Prisma.InputJsonValue,rawResponse:result as unknown as Prisma.InputJsonValue,fetchedAt:new Date()},
  });
  return {reportDate:reportDate.toISOString().slice(0,10),metrics};
