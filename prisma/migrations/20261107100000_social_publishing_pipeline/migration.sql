@@ -24,6 +24,8 @@ CREATE TABLE "SocialPostTarget" (
     FOREIGN KEY ("workspaceId", "socialAccountId") REFERENCES "SocialAccount"("workspaceId", "id") ON DELETE CASCADE ON UPDATE CASCADE
 );
 
+CREATE UNIQUE INDEX "SocialPostTarget_workspaceId_id_key" ON "SocialPostTarget"("workspaceId", "id");
+
 CREATE TABLE "SocialPublishAttempt" (
   "id" TEXT NOT NULL,
   "workspaceId" TEXT NOT NULL,
@@ -42,7 +44,6 @@ CREATE TABLE "SocialPublishAttempt" (
     FOREIGN KEY ("workspaceId", "targetId") REFERENCES "SocialPostTarget"("workspaceId", "id") ON DELETE CASCADE ON UPDATE CASCADE
 );
 
-CREATE UNIQUE INDEX "SocialPostTarget_workspaceId_id_key" ON "SocialPostTarget"("workspaceId", "id");
 CREATE UNIQUE INDEX "SocialPostTarget_contentPostId_socialAccountId_key" ON "SocialPostTarget"("contentPostId", "socialAccountId");
 CREATE INDEX "SocialPostTarget_workspaceId_status_createdAt_idx" ON "SocialPostTarget"("workspaceId", "status", "createdAt");
 CREATE INDEX "SocialPostTarget_workspaceId_socialAccountId_status_idx" ON "SocialPostTarget"("workspaceId", "socialAccountId", "status");
