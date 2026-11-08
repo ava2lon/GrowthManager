@@ -125,7 +125,8 @@ export async function processTikTokUploadTarget(input:{targetId:string;workspace
    return {status:"UPLOADING" as const,errorCode:code};
   }
   await db.$transaction(async tx=>{
-   await tx.socialPostTarget.updateMany({where:{id:target.id,workspaceId:input.workspaceId,status:"PUBLISHING"},data:{status:"FAILED",errorCode:code,nextCheckAt:null,uploadSessionEncrypted:null}});
+   const failed=await tx.socialPostTarget.updateMany({where:{id:target.id,workspaceId:input.workspaceId,status:"PUBLISHING"},data:{status:"FAILED",errorCode:code,nextCheckAt:null,uploadSessionEncrypted:null}});
+   if(failed.count!==1)return;
    await tx.socialPublishAttempt.updateMany({where:{workspaceId:input.workspaceId,targetId:target.id,status:"PROCESSING"},data:{status:"FAILED",errorCode:code,finishedAt:new Date()}});
    await tx.contentPost.updateMany({where:{id:target.contentPost.id,workspaceId:input.workspaceId},data:{status:"FAILED"}});
   });
