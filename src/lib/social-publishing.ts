@@ -209,9 +209,12 @@ export async function publishInstagramTarget(input:{targetId:string;workspaceId:
       id:target.id,workspaceId:input.workspaceId,status:{in:allowed},
       ...(target.status === "SCHEDULED" ? {contentPost:{scheduledAt:{lte:new Date()}}} : {}),
     },
-    data:{status:"PUBLISHING",errorCode:null},
+    data:{status:"PUBLISHING",errorCode:null,nextCheckAt:new Date(Date.now()+2*60_000)},
   });
   if(claim.count!==1)return {status:"SKIPPED"};
+  const leaseRow=await db.socialPostTarget.findFirst({where:{id:target.id,workspaceId:input.workspaceId,provider:"INSTAGRAM",status:"PUBLISHING"},select:{nextCheckAt:true}});
+  if(!leaseRow?.nextCheckAt)return {status:"SKIPPED"};
+  const claimLease=leaseRow.nextCheckAt;
   const started=Date.now();
   const previous=await db.socialPublishAttempt.aggregate({where:{workspaceId:input.workspaceId,targetId:target.id},_max:{attemptNumber:true}});
   const attempt=await db.socialPublishAttempt.create({data:{
@@ -254,9 +257,10 @@ export async function publishInstagramTarget(input:{targetId:string;workspaceId:
   }
   const finishedAt=new Date();
   const finalStatus=providerPostId?"PUBLISHED":errorCode==="PUBLISH_OUTCOME_UNKNOWN"?"UNKNOWN":"FAILED";
-  await db.$transaction(async tx=>{
+  const committed=await db.$transaction(async tx=>{
+    const changed=await tx.socialPostTarget.updateMany({where:{id:target.id,workspaceId:input.workspaceId,provider:"INSTAGRAM",status:"PUBLISHING",nextCheckAt:claimLease},data:{status:finalStatus,providerPostId,errorCode,publishedAt:providerPostId?finishedAt:null,nextCheckAt:null}});
+    if(changed.count!==1)return false;
     await tx.socialPublishAttempt.update({where:{id:attempt.id},data:{status:finalStatus,providerPostId,errorCode,httpStatus,finishedAt,durationMs:Math.max(0,Date.now()-started)}});
-    await tx.socialPostTarget.update({where:{id:target.id},data:{status:finalStatus,providerPostId,errorCode,publishedAt:providerPostId?finishedAt:null}});
     const remaining=await tx.socialPostTarget.count({where:{workspaceId:input.workspaceId,contentPostId:target.contentPost.id,status:{not:"PUBLISHED"}}});
     await tx.contentPost.update({where:{id:target.contentPost.id},data:{
       status:remaining===0?"PUBLISHED":finalStatus==="UNKNOWN"?"PUBLISHING":finalStatus==="FAILED"?"FAILED":"PUBLISHING",
@@ -268,8 +272,9 @@ export async function publishInstagramTarget(input:{targetId:string;workspaceId:
       entityType:"ContentPost",entityId:target.contentPost.id,
       metadata:{provider:"INSTAGRAM",targetId:target.id,errorCode,httpStatus,mediaCount:assets.length,source:input.actorUserId?"dashboard":"scheduled_worker"},
     }});
+    return true;
   });
-  return {status:finalStatus,errorCode:errorCode??undefined};
+  return committed?{status:finalStatus,errorCode:errorCode??undefined}:{status:"SKIPPED"};
 
   async function failBeforeClaim(code:string):Promise<PublishResult>{
     await db.$transaction(async tx=>{
