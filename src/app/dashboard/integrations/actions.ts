@@ -72,7 +72,7 @@ export async function disconnectIntegration(formData: FormData) {
 
     const changed = await tx.integration.updateMany({
       where: {id: current.id, workspaceId: context.workspace.id, status: current.status},
-      data: {status: "DISCONNECTED", credentialsEncrypted: null, lastErrorAt: null, lastErrorCode: null},
+      data: {status: "DISCONNECTED", credentialsEncrypted: null, lastExecutionSyncAt: null, lastExecutionSyncCursor: null, lastErrorAt: null, lastErrorCode: null},
     });
     if (changed.count !== 1) throw new Error("Integration changed concurrently. Refresh and retry.");
 
@@ -147,7 +147,7 @@ export async function configureResendIntegration(formData: FormData) {
   await db.$transaction(async (tx) => {
     const changed = await tx.integration.updateMany({
       where: {id: integration.id, workspaceId: context.workspace.id, status: integration.status},
-      data: {credentialsEncrypted: encrypted, status: "CONNECTED", lastValidatedAt: new Date(), lastErrorAt: null, lastErrorCode: null},
+      data: {credentialsEncrypted: encrypted, status: "CONNECTED", lastValidatedAt: new Date(), lastExecutionSyncAt: null, lastExecutionSyncCursor: null, lastErrorAt: null, lastErrorCode: null},
     });
     if (changed.count !== 1) throw new Error("Integration changed concurrently. Refresh and retry.");
     await tx.activityLog.create({
