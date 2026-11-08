@@ -130,6 +130,7 @@ export async function GET(request: Request) {
         provider: "n8n",
         status: "CONNECTED",
         credentialsEncrypted: integration.credentialsEncrypted,
+        lastExecutionSyncCursor: integration.lastExecutionSyncCursor,
       },
       data: {
         lastExecutionSyncAt: new Date(),
