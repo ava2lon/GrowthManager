@@ -37,7 +37,7 @@ async function uploadPinterestVideo(asset:Asset,session:PinterestVideoSession):P
  const mediaUrl=await signedMediaUrl(asset);
  const source=await fetch(mediaUrl,{cache:"no-store",redirect:"error",signal:AbortSignal.timeout(10000)});
  if(!source.ok||!source.body)throw new Error("PINTEREST_MEDIA_DOWNLOAD_FAILED");
- const declared=Number(source.headers.get("content-length"));
+ const declared=Number(source.headers.get("content-length")??asset.sizeBytes);
  if(!Number.isSafeInteger(declared)||declared!==Number(asset.sizeBytes)||declared>100*1024*1024)throw new Error("PINTEREST_VIDEO_INVALID");
  const boundary="----GrowthManagerPinterest"+randomUUID().replace(/-/g,"");
  const encoder=new TextEncoder();
@@ -58,7 +58,7 @@ async function uploadPinterestVideo(asset:Asset,session:PinterestVideoSession):P
   cancel(){void reader.cancel();}
  });
  const contentLength=prefixBytes.byteLength+declared+suffixBytes.byteLength;
- const init={method:"POST",headers:{"Content-Type":"multipart/form-data; boundary="+boundary,"Content-Length":String(contentLength)},body,cache:"no-store",redirect:"error",signal:AbortSignal.timeout(45000),duplex:"half"} as RequestInit & {duplex:"half"};
+ const init={method:"POST",headers:{"Content-Type":"multipart/form-data; boundary="+boundary,"Content-Length":String(contentLength)},body,cache:"no-store",redirect:"error",signal:AbortSignal.timeout(35000),duplex:"half"} as RequestInit & {duplex:"half"};
  let upload:Response;
  try{upload=await fetch(session.uploadUrl,init)}catch{throw new Error("PINTEREST_VIDEO_UPLOAD_UNCERTAIN")}
  if(!upload.ok&&upload.status!==204)throw new Error(upload.status>=500?"PINTEREST_VIDEO_UPLOAD_UNCERTAIN":"PINTEREST_VIDEO_UPLOAD_FAILED");
@@ -97,6 +97,7 @@ export async function processPinterestVideoTarget(input:{targetId:string;workspa
   return {status:"UNKNOWN",errorCode:"PINTEREST_PUBLISH_OUTCOME_UNKNOWN"};
  };
  if(videoState.phase==="PIN_REQUEST_STARTED")return unknown();
+ if(target.processingStartedAt&&Date.now()-target.processingStartedAt.getTime()>30*60_000)return fail("PINTEREST_VIDEO_PROCESSING_TIMEOUT");
  if(target.socialAccount.status!=="CONNECTED"||!target.socialAccount.credentialsEncrypted)return fail("PINTEREST_ACCOUNT_DISCONNECTED");
  if(assets.length!==2||!assets[0].mimeType.startsWith("video/"))return fail("PINTEREST_VIDEO_INVALID");
  const clip=assets[0],cover=assets[1];
@@ -116,7 +117,8 @@ export async function processPinterestVideoTarget(input:{targetId:string;workspa
   if(phase==="VERIFY_UPLOAD"){
    try{
     const check=await fetch("https://api.pinterest.com/v5/media/"+encodeURIComponent(mediaId),{headers:{Authorization:"Bearer "+credentials.accessToken,Accept:"application/json"},cache:"no-store",redirect:"error",signal:AbortSignal.timeout(10000)});
-    if(check.ok){
+    if(!check.ok){await db.socialPostTarget.updateMany({where:{id:target.id,workspaceId:input.workspaceId,status:"PUBLISHING"},data:{nextCheckAt:new Date(Date.now()+60_000)}});return {status:"PROCESSING"}}
+    {
      const detail=await check.json().catch(()=>null) as {status?:string}|null;
      if(detail?.status==="succeeded"){
       const updated=await db.socialPostTarget.updateMany({where:{id:target.id,workspaceId:input.workspaceId,status:"PUBLISHING"},data:{uploadMetadata:{...settings,pinterestVideo:{phase:"PROCESSING",coverAssetId:cover.id}},uploadSessionEncrypted:null,nextCheckAt:new Date(Date.now()+1000),errorCode:null}});
@@ -195,7 +197,7 @@ export async function publishPinterestTarget(input:{targetId:string;workspaceId:
  if(!boards.some(board=>board&&typeof board==="object"&&(board as Record<string,unknown>).id===boardId))return fail("PINTEREST_BOARD_NOT_DISCOVERED");
  if(!["user_accounts:read","boards:read","pins:write"].every(scope=>target.socialAccount.scopes.includes(scope)))return fail("PINTEREST_PERMISSION_DENIED");
  let credentials;try{credentials=await getPinterestCredentials({workspaceId:input.workspaceId,accountId:target.socialAccount.id});}catch(error){return fail(error instanceof Error?error.message:"PINTEREST_AUTH_FAILED");}
- let coverUrl:string;try{coverUrl=await signedMediaUrl(image);}catch(error){return fail(error instanceof Error?error.message:"PINTEREST_MEDIA_SIGNING_FAILED");}
+ let coverUrl="";if(!video){try{coverUrl=await signedMediaUrl(image);}catch(error){return fail(error instanceof Error?error.message:"PINTEREST_MEDIA_SIGNING_FAILED");}}
  const claim=await db.$transaction(async tx=>{
   const scheduledDue = allowedStatuses.includes("SCHEDULED");
   const changed=await tx.socialPostTarget.updateMany({where:{
