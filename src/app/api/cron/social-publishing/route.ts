@@ -34,8 +34,10 @@ export async function GET(request:Request){
   if(!authorized(request))return NextResponse.json({error:"Unauthorized"},{status:401});
   const now=new Date();
   const staleBefore=new Date(now.getTime()-3*60_000);
+  // X owns a resumable upload/publish state machine and reconciles its own expired leases.
+  // Do not classify its multi-invocation media uploads as interrupted publishes here.
   const stale=await db.socialPostTarget.findMany({
-    where:{provider:{in:["FACEBOOK","INSTAGRAM","TIKTOK","PINTEREST","X"]},status:"PUBLISHING",updatedAt:{lt:staleBefore},NOT:{provider:"TIKTOK",uploadSessionEncrypted:{not:null}}},
+    where:{provider:{in:["FACEBOOK","INSTAGRAM","TIKTOK","PINTEREST"]},status:"PUBLISHING",updatedAt:{lt:staleBefore},NOT:{provider:"TIKTOK",uploadSessionEncrypted:{not:null}}},
     select:{id:true,workspaceId:true,contentPostId:true,provider:true},
     take:50,
   });
