@@ -24,6 +24,9 @@ export function parseInstagramCarouselState(value: unknown): InstagramCarouselSt
     !state.childIds.every((id) => typeof id === "string" && id.length > 0) ||
     typeof state.childIndex !== "number" ||
     !Number.isInteger(state.childIndex) ||
+    state.childIndex < 0 ||
+    (state.childRequestStarted !== undefined && typeof state.childRequestStarted !== "boolean") ||
+    (state.parentId !== undefined && (typeof state.parentId !== "string" || state.parentId.length === 0)) ||
     typeof state.startedAt !== "string" ||
     Number.isNaN(Date.parse(state.startedAt))
   ) {
