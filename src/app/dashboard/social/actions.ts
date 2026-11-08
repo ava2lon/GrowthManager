@@ -561,12 +561,17 @@ export async function refreshMetaAuthorization(formData: FormData) {
     throw new Error("Meta could not refresh this authorization. Reconnect the account.");
   }
 
-  const expiry = Number.isFinite(refreshed.expires_in) && (refreshed.expires_in ?? 0) > 0
-    ? new Date(Date.now() + (refreshed.expires_in as number) * 1000)
+  if (!refreshed?.access_token) {
+    throw new Error("Meta token refresh returned an incomplete response. Reconnect this account.");
+  }
+  const refreshedAccessToken = refreshed.access_token;
+  const refreshedExpiresIn = refreshed.expires_in;
+  const expiry = typeof refreshedExpiresIn === "number" && Number.isFinite(refreshedExpiresIn) && refreshedExpiresIn > 0
+    ? new Date(Date.now() + refreshedExpiresIn * 1000)
     : null;
   const pagesUrl = new URL("https://graph.facebook.com/" + version + "/me/accounts");
   pagesUrl.searchParams.set("fields", "id,name,access_token,instagram_business_account{id,username}");
-  pagesUrl.searchParams.set("access_token", refreshed.access_token);
+  pagesUrl.searchParams.set("access_token", refreshedAccessToken);
   let page: {id?: string; name?: string; access_token?: string; instagram_business_account?: {id?: string}} | undefined;
   try {
     const response = await fetch(pagesUrl, {
@@ -591,7 +596,7 @@ export async function refreshMetaAuthorization(formData: FormData) {
   const encrypted = encryptIntegrationCredentials({
     ...credentials,
     accessToken: page.access_token,
-    userAccessToken: refreshed.access_token,
+    userAccessToken: refreshedAccessToken,
     userAccessTokenExpiresAt: expiry?.toISOString() ?? null,
   }, context.workspace.id, account.id);
 
