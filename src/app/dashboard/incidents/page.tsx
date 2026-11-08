@@ -72,7 +72,7 @@ export default async function IncidentsPage({searchParams}:{searchParams:Promise
   </section>
   <section className="rounded-2xl border border-slate-200 bg-white p-4 sm:p-5">
    <div className="flex flex-wrap gap-4">
-    {([["status","Status","ALL",["OPEN","ACKNOWLEDGED","RESOLVED"]],["severity","Severity","ALL",["CRITICAL","WARNING","INFO"]],["source","Source","ALL",["SOCIAL","N8N"]]] as const).map(([key,label,current,options])=><div key={key}><p className="mb-1 text-[10px] font-bold uppercase tracking-wide text-slate-400">{label}</p><div className="flex flex-wrap gap-1">{["ALL",...options].map(option=><Link key={option} href={filterLink(paramsSafe,key,option)} className={"rounded-lg px-2.5 py-1.5 text-xs font-semibold "+((paramsSafe[key]||"ALL")===option?"bg-slate-900 text-white":"border border-slate-200 text-slate-600")}>{option==="ALL"?"All":option}</Link>)}</div></div>)}
+    {([["status","Status",["OPEN","ACKNOWLEDGED","RESOLVED"]],["severity","Severity",["CRITICAL","WARNING","INFO"]],["source","Source",["SOCIAL","N8N"]]] as const).map(([key,label,options])=><div key={key}><p className="mb-1 text-[10px] font-bold uppercase tracking-wide text-slate-400">{label}</p><div className="flex flex-wrap gap-1">{["ALL",...options].map(option=><Link key={option} href={filterLink(paramsSafe,key,option)} className={"rounded-lg px-2.5 py-1.5 text-xs font-semibold "+((paramsSafe[key]||"ALL")===option?"bg-slate-900 text-white":"border border-slate-200 text-slate-600")}>{option==="ALL"?"All":option}</Link>)}</div></div>)}
    </div>
   </section>
   <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white">
