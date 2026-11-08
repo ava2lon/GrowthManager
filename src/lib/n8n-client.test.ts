@@ -366,7 +366,7 @@ describe("listN8nExecutions", () => {
     await expect(listN8nExecutions(
       "https://growth-team.app.n8n.cloud",
       "n8n_test_api_key_123456",
-    )).rejects.toThrow("N8N_PROVIDER_UNAVAILABLE");
+    )).rejects.toThrow("N8N_EXECUTION_CURSOR_MALFORMED");
   });
 
   it("rejects a repeated execution cursor", async () => {
