@@ -63,6 +63,11 @@ export async function GET(request: Request) {
       }
 
       const executionResult = await listN8nExecutions(credentials.baseUrl, credentials.apiKey);
+      if (executionResult.hasMore) {
+        // Never resolve or recalculate alert state from a truncated execution sample.
+        failedWorkspaces += 1;
+        continue;
+      }
       const now = new Date();
       const cutoff = now.getTime() - policy.lookbackMinutes * 60_000;
       const recent = executionResult.executions.filter((execution) => {
