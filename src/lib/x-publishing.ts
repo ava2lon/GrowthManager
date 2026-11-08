@@ -235,11 +235,11 @@ export async function publishXTarget(input:{targetId:string;workspaceId:string;a
  });
  return committed?{status,errorCode:errorCode??undefined}:{status:"SKIPPED"};
 
- async function failBeforeClaim(code:string):Promise<Result>{
+ async function failBeforeClaim(code:string):Promise<Result>{if(!target)return {status:"SKIPPED"};
   const changed=await db.socialPostTarget.updateMany({where:{id:input.targetId,workspaceId:input.workspaceId,provider:"X",status:{in:allowed},...(target.status==="PUBLISHING"?{nextCheckAt:leaseUntil}:{})},data:{status:"FAILED",errorCode:code,nextCheckAt:null}});
   return changed.count===1?{status:"FAILED",errorCode:code}:{status:"SKIPPED"};
  }
- async function failClaimed(code:string):Promise<Result>{
+ async function failClaimed(code:string):Promise<Result>{if(!target)return {status:"SKIPPED"};
   const committed=await db.$transaction(async tx=>{
    const changed=await tx.socialPostTarget.updateMany({where:{id:input.targetId,workspaceId:input.workspaceId,provider:"X",status:"PUBLISHING",nextCheckAt:leaseUntil},data:{status:"FAILED",errorCode:code,nextCheckAt:null}});
    if(changed.count!==1)return false;

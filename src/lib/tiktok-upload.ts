@@ -211,7 +211,7 @@ export async function processTikTokInboxTarget(input:{targetId:string;workspaceI
  await db.socialPostTarget.updateMany({where:{id:target.id,workspaceId:input.workspaceId,status:{in:["PROCESSING","UPLOADED"]},nextCheckAt:claimUntil},data:{nextCheckAt:new Date(Date.now()+5*60_000)}});
  return {status:"PROCESSING" as const};
 
- async function mark(result:"FAILED",code:string){
+ async function mark(result:"FAILED",code:string){if(!target)return {status:"SKIPPED" as const};
   await db.$transaction(async tx=>{
    const changed=await tx.socialPostTarget.updateMany({where:{id:target.id,workspaceId:input.workspaceId,provider:"TIKTOK",status:target.status,nextCheckAt:claimUntil},data:{status:result,errorCode:code,nextCheckAt:null}});
    if(changed.count!==1)return;

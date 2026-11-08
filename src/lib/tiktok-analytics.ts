@@ -31,6 +31,8 @@ async function eligibleAccount(workspaceId:string,accountId:string){
 export async function refreshTikTokAccountAnalytics(input:{workspaceId:string;accountId:string;asOf?:Date}){
  const account=await eligibleAccount(input.workspaceId,input.accountId);
  const reportDate=day(input.asOf??new Date());
+  const providerUserId=account.providerUserId;
+  if(!providerUserId)throw new Error("TIKTOK_ACCOUNT_ID_MISSING");
  const {accessToken}=await getFreshTikTokCredentials(input);
  const fields=["open_id","display_name","follower_count","following_count","likes_count","video_count"];
  const statsAllowed=account.scopes.includes("user.info.stats");
@@ -40,7 +42,7 @@ export async function refreshTikTokAccountAnalytics(input:{workspaceId:string;ac
  if(!user||user.open_id!==account.providerUserId)throw new Error("TIKTOK_ANALYTICS_PROFILE_MISMATCH");
  const metrics={status:"OK",accountStatsAvailable:statsAllowed,...Object.fromEntries(["follower_count","following_count","likes_count","video_count"].filter(key=>typeof user[key]==="number").map(key=>[key,user[key]]))};
  await db.tikTokAnalyticsSnapshot.upsert({
-  where:{workspaceId_socialAccountId_subjectType_subjectId_reportDate:{workspaceId:input.workspaceId,socialAccountId:account.id,subjectType:"ACCOUNT",subjectId:account.providerUserId,reportDate}},
+  where:{workspaceId_socialAccountId_subjectType_subjectId_reportDate:{workspaceId:input.workspaceId,socialAccountId:account.id,subjectType:"ACCOUNT",subjectId:providerUserId,reportDate}},
   create:{workspaceId:input.workspaceId,socialAccountId:account.id,subjectType:"ACCOUNT",subjectId:account.providerUserId,reportDate,startDate:reportDate,endDate:reportDate,metrics:metrics as Prisma.InputJsonValue,rawResponse:result as unknown as Prisma.InputJsonValue},
   update:{startDate:reportDate,endDate:reportDate,metrics:metrics as Prisma.InputJsonValue,rawResponse:result as unknown as Prisma.InputJsonValue,fetchedAt:new Date()},
  });

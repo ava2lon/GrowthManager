@@ -322,6 +322,7 @@ export async function processYouTubeUploadTarget(input: {targetId: string; works
     });
   }
   async function markPublished(videoId: string) {
+     if (!target) return {status: "SKIPPED" as const};
     const finished = new Date();
     const rawMetadata = target.uploadMetadata && typeof target.uploadMetadata === "object" && !Array.isArray(target.uploadMetadata)
       ? target.uploadMetadata as Record<string, unknown> : {};
@@ -354,6 +355,7 @@ export async function processYouTubeUploadTarget(input: {targetId: string; works
   }
 
   async function completeUpload(videoId: string) {
+     if (!target) return {status: "SKIPPED" as const};
     await db.$transaction(async tx => {
       await tx.socialPostTarget.update({
         where: {id: input.targetId},

@@ -1,4 +1,5 @@
 import "server-only";
+import {Prisma} from "@prisma/client";
 import {db} from "@/lib/db";
 import {decryptIntegrationCredentials,encryptIntegrationCredentials} from "@/lib/integration-crypto";
 type Obj=Record<string,unknown>;
@@ -28,9 +29,9 @@ export async function refreshXAnalytics(input:{workspaceId:string;accountId:stri
   if(!target?.providerPostId)throw new Error("X_PUBLISHED_TARGET_NOT_FOUND");
   const tweet=await get("https://api.x.com/2/tweets/"+encodeURIComponent(target.providerPostId)+"?tweet.fields=public_metrics,created_at,possibly_sensitive,lang",token);
   const metrics={status:"OK",tweet:tweet.data??null,accountPublicMetrics:user.public_metrics??null};
-  return db.xAnalyticsSnapshot.upsert({where:{workspaceId_socialAccountId_subjectType_subjectId_reportDate:{workspaceId:input.workspaceId,socialAccountId:account.id,subjectType:"POST",subjectId:target.providerPostId,reportDate}},create:{workspaceId:input.workspaceId,socialAccountId:account.id,subjectType:"POST",subjectId:target.providerPostId,targetId:target.id,reportDate,startDate:target.publishedAt??reportDate,endDate:reportDate,metrics,rawResponse:{profile,tweet},fetchedAt:now},update:{targetId:target.id,startDate:target.publishedAt??reportDate,endDate:reportDate,metrics,rawResponse:{profile,tweet},fetchedAt:now}});
+  return db.xAnalyticsSnapshot.upsert({where:{workspaceId_socialAccountId_subjectType_subjectId_reportDate:{workspaceId:input.workspaceId,socialAccountId:account.id,subjectType:"POST",subjectId:target.providerPostId,reportDate}},create:{workspaceId:input.workspaceId,socialAccountId:account.id,subjectType:"POST",subjectId:target.providerPostId,targetId:target.id,reportDate,startDate:target.publishedAt??reportDate,endDate:reportDate,metrics:metrics as Prisma.InputJsonValue,rawResponse:{profile,tweet} as Prisma.InputJsonValue,fetchedAt:now},update:{targetId:target.id,startDate:target.publishedAt??reportDate,endDate:reportDate,metrics,rawResponse:{profile,tweet},fetchedAt:now}});
  }
  const timeline=await get("https://api.x.com/2/users/"+encodeURIComponent(account.providerUserId!) +"/tweets?max_results=20&exclude=retweets,replies&tweet.fields=public_metrics,created_at,lang",token);
  const metrics={status:"OK",profile:{id:user.id,name:user.name,username:user.username,public_metrics:user.public_metrics??null},timeline:timeline.data??[],resultCount:Array.isArray(timeline.data)?timeline.data.length:0};
- return db.xAnalyticsSnapshot.upsert({where:{workspaceId_socialAccountId_subjectType_subjectId_reportDate:{workspaceId:input.workspaceId,socialAccountId:account.id,subjectType:"ACCOUNT",subjectId:account.providerUserId!,reportDate}},create:{workspaceId:input.workspaceId,socialAccountId:account.id,subjectType:"ACCOUNT",subjectId:account.providerUserId!,reportDate,startDate:reportDate,endDate:reportDate,metrics,rawResponse:{profile,timeline},fetchedAt:now},update:{metrics,rawResponse:{profile,timeline},fetchedAt:now}});
+ return db.xAnalyticsSnapshot.upsert({where:{workspaceId_socialAccountId_subjectType_subjectId_reportDate:{workspaceId:input.workspaceId,socialAccountId:account.id,subjectType:"ACCOUNT",subjectId:account.providerUserId!,reportDate}},create:{workspaceId:input.workspaceId,socialAccountId:account.id,subjectType:"ACCOUNT",subjectId:account.providerUserId!,reportDate,startDate:reportDate,endDate:reportDate,metrics:metrics as Prisma.InputJsonValue,rawResponse:{profile,timeline} as Prisma.InputJsonValue,fetchedAt:now},update:{metrics,rawResponse:{profile,timeline},fetchedAt:now}});
 }
