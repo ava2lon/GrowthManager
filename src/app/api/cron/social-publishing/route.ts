@@ -83,7 +83,7 @@ export async function GET(request:Request){
     where:{provider:{in:["FACEBOOK","INSTAGRAM"]},status:"SCHEDULED",contentPost:{scheduledAt:{lte:now}}},
     select:{id:true,workspaceId:true,provider:true},
     orderBy:{contentPost:{scheduledAt:"asc"}},
-    take:2,
+    take:1,
   });
   let published=0,failed=0,unknown=0,skipped=0;
   for(const target of due){
