@@ -61,22 +61,6 @@ export async function GET(request:Request){
     }
   }
 
-  const pinterestDue=await db.socialPostTarget.findMany({
-    where:{provider:"PINTEREST",status:"SCHEDULED",contentPost:{scheduledAt:{lte:now}}},
-    select:{id:true,workspaceId:true},orderBy:{contentPost:{scheduledAt:"asc"}},take:1,
-  });
-  let pinterestPublished=0,pinterestFailed=0,pinterestUnknown=0,pinterestSkipped=0,pinterestStarted=0;
-  for(const target of pinterestDue){
-    try{
-      const result=await publishPinterestTarget({targetId:target.id,workspaceId:target.workspaceId,allowedStatuses:["SCHEDULED"]});
-      if(result.status==="PUBLISHED")pinterestPublished++;
-      else if(result.status==="FAILED")pinterestFailed++;
-      else if(result.status==="UNKNOWN")pinterestUnknown++;
-      else if(result.status==="PROCESSING")pinterestStarted++;
-      else pinterestSkipped++;
-    }catch{pinterestUnknown++;}
-  }
-
   const pinterestProcessing=await db.socialPostTarget.findMany({
     where:{provider:"PINTEREST",status:"PUBLISHING",providerContainerId:{not:null},OR:[{nextCheckAt:null},{nextCheckAt:{lte:now}}]},
     select:{id:true,workspaceId:true},orderBy:{nextCheckAt:"asc"},take:1,
@@ -89,6 +73,22 @@ export async function GET(request:Request){
       else if(result.status==="FAILED")pinterestVideoFailed++;
       else if(result.status==="UNKNOWN")pinterestVideoUnknown++;
     }catch{pinterestVideoFailed++;}
+  }
+
+  const pinterestDue=pinterestProcessing.length===0?await db.socialPostTarget.findMany({
+    where:{provider:"PINTEREST",status:"SCHEDULED",contentPost:{scheduledAt:{lte:now}}},
+    select:{id:true,workspaceId:true},orderBy:{contentPost:{scheduledAt:"asc"}},take:1,
+  }):[];
+  let pinterestPublished=0,pinterestFailed=0,pinterestUnknown=0,pinterestSkipped=0,pinterestStarted=0;
+  for(const target of pinterestDue){
+    try{
+      const result=await publishPinterestTarget({targetId:target.id,workspaceId:target.workspaceId,allowedStatuses:["SCHEDULED"]});
+      if(result.status==="PUBLISHED")pinterestPublished++;
+      else if(result.status==="FAILED")pinterestFailed++;
+      else if(result.status==="UNKNOWN")pinterestUnknown++;
+      else if(result.status==="PROCESSING")pinterestStarted++;
+      else pinterestSkipped++;
+    }catch{pinterestUnknown++;}
   }
 
   // A process can die after claiming a target but before persisting Google's session URI.
