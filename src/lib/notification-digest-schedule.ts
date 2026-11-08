@@ -18,7 +18,7 @@ function digestPeriodKey(date: string, frequency: string): string {
 export function digestDue(now: Date, timezone: string, frequency: string, sendTime: string): {periodKey: string} | null {
   try {
     const clock = digestClock(now, timezone);
-    const match = /^(\\d{2}):(\\d{2})$/.exec(sendTime);
+    const match = /^(\d{2}):(\d{2})$/.exec(sendTime);
     if (!match) return null;
     const targetMinute = Number(match[1]) * 60 + Number(match[2]);
     if (clock.minute < targetMinute) return null;
