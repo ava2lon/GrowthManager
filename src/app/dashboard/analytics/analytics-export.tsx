@@ -4,7 +4,7 @@ import {useState} from "react";
 
 type ExportRow={provider:string;title:string;publishedAt:string;analyticsSnapshotAvailable:boolean;metricName:string;metricValue:number|string;metricUnit:string};
 
-function csvCell(value:string|boolean){
+function csvCell(value:string|number|boolean){
   const text=String(value);
   return '"'+text.replace(/"/g,'""')+'"';
 }
