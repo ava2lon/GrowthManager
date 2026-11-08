@@ -540,10 +540,18 @@ export async function refreshMetaAuthorization(formData: FormData) {
     const response = await fetch(refreshUrl, {
       cache: "no-store", redirect: "error", signal: AbortSignal.timeout(12000),
     });
-    refreshed = await response.json().catch(() => null) as typeof refreshed;
-    if (!response.ok || !refreshed || typeof refreshed.access_token !== "string") {
+    const payload: unknown = await response.json().catch(() => null);
+    if (!response.ok || !payload || typeof payload !== "object" || Array.isArray(payload)) {
       throw new Error("META_REFRESH_REJECTED");
     }
+    const tokenPayload = payload as Record<string, unknown>;
+    if (typeof tokenPayload.access_token !== "string" || !tokenPayload.access_token) {
+      throw new Error("META_REFRESH_REJECTED");
+    }
+    refreshed = {
+      access_token: tokenPayload.access_token,
+      ...(typeof tokenPayload.expires_in === "number" ? {expires_in: tokenPayload.expires_in} : {}),
+    };
   } catch {
     await db.socialAccount.updateMany({
       where: {id: account.id, workspaceId: context.workspace.id, credentialsEncrypted: account.credentialsEncrypted},
