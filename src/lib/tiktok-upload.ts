@@ -31,8 +31,7 @@ export async function uploadTikTokInboxTarget(input:{targetId:string;workspaceId
  if(claim.count!==1)throw new Error("TIKTOK_TARGET_ALREADY_CLAIMED");
  const prior=await db.socialPublishAttempt.aggregate({where:{workspaceId:input.workspaceId,targetId:target.id},_max:{attemptNumber:true}});
  const attempt=await db.socialPublishAttempt.create({data:{workspaceId:input.workspaceId,targetId:target.id,attemptNumber:(prior._max.attemptNumber??0)+1,idempotencyKey:randomUUID(),status:"STARTED"},select:{id:true}});
- let initialized=false;
- try{
+  try{
   const {accessToken}=await getFreshTikTokCredentials({workspaceId:input.workspaceId,accountId:target.socialAccount.id});
   const storage=getSupabaseStorageConfig();
   if(asset.bucket!==storage.bucket||!asset.objectPath.startsWith(input.workspaceId+"/"))throw new Error("MEDIA_STORAGE_CONFIGURATION_MISMATCH");
@@ -54,14 +53,13 @@ export async function uploadTikTokInboxTarget(input:{targetId:string;workspaceId
   });
   const init=await initResponse.json().catch(()=>null) as TikTokResponse|null;
   if(!initResponse.ok||init?.error?.code!=="ok"||typeof init.data?.publish_id!=="string"||typeof init.data.upload_url!=="string")throw new Error("TIKTOK_UPLOAD_INIT_FAILED");
-  initialized=true;
   const uploadUrl=new URL(init.data.upload_url);
   if(uploadUrl.protocol!=="https:"||uploadUrl.hostname!=="open-upload.tiktokapis.com"||uploadUrl.username||uploadUrl.password)throw new Error("TIKTOK_UPLOAD_URL_INVALID");
   const encryptedSession=encryptIntegrationCredentials({uploadUrl:uploadUrl.toString()},input.workspaceId,target.id);
   const initializedAt=new Date();
   await db.$transaction(async tx=>{
    await tx.socialPostTarget.update({where:{id:target.id},data:{providerContainerId:init.data!.publish_id!,uploadSessionEncrypted:encryptedSession,uploadOffset:0n,uploadTotalBytes:BigInt(video.length),uploadMetadata:{tiktokUpload:{assetId:asset.id,mimeType:asset.mimeType,chunkSize,totalChunks}},processingStartedAt:initializedAt,nextCheckAt:initializedAt,errorCode:null}});
-   await tx.socialPostAttempt.update({where:{id:attempt.id},data:{status:"PROCESSING"}});
+   await tx.socialPublishAttempt.update({where:{id:attempt.id},data:{status:"PROCESSING"}});
    await tx.contentPost.update({where:{id:target.contentPost.id},data:{status:"PUBLISHING"}});
    await tx.activityLog.create({data:{workspaceId:input.workspaceId,userId:input.actorUserId,action:"social_post.tiktok_upload_initialized",entityType:"ContentPost",entityId:target.contentPost.id,metadata:{targetId:target.id,provider:"TIKTOK",publishId:init.data!.publish_id!,videoSizeBytes:video.length,totalChunks}}});
   });
