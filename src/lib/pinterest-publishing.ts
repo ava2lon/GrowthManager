@@ -59,7 +59,7 @@ async function uploadPinterestVideo(asset:Asset,session:PinterestVideoSession):P
   cancel(){void reader.cancel();}
  });
  const contentLength=prefixBytes.byteLength+declared+suffixBytes.byteLength;
- const init={method:"POST",headers:{"Content-Type":"multipart/form-data; boundary="+boundary,"Content-Length":String(contentLength)},body,cache:"no-store",redirect:"error",signal:AbortSignal.timeout(35000),duplex:"half"} as RequestInit & {duplex:"half"};
+ const init={method:"POST",headers:{"Content-Type":"multipart/form-data; boundary="+boundary,"Content-Length":String(contentLength)},body,cache:"no-store",redirect:"error",signal:AbortSignal.timeout(30000),duplex:"half"} as RequestInit & {duplex:"half"};
  let upload:Response;
  try{upload=await fetch(session.uploadUrl,init)}catch{throw new Error("PINTEREST_VIDEO_UPLOAD_UNCERTAIN")}
  if(!upload.ok&&upload.status!==204)throw new Error(upload.status>=500?"PINTEREST_VIDEO_UPLOAD_UNCERTAIN":"PINTEREST_VIDEO_UPLOAD_FAILED");
