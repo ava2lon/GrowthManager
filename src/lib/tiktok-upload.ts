@@ -4,6 +4,7 @@ import {db} from "@/lib/db";
 import {getSupabaseStorageConfig,storageHeaders} from "@/lib/media-storage";
 import {getFreshTikTokCredentials} from "@/lib/tiktok-auth";
 import {decryptIntegrationCredentials,encryptIntegrationCredentials} from "@/lib/integration-crypto";
+import {parseTikTokUploadedOffset} from "@/lib/tiktok-upload-utils";
 
 const MAX_VIDEO_BYTES=100*1024*1024;
 const CHUNK_BYTES=64*1024*1024;
@@ -108,18 +109,23 @@ export async function processTikTokUploadTarget(input:{targetId:string;workspace
   let response:Response;
   try{response=await fetch(uploadUrl,{method:"PUT",headers:{"Content-Type":asset.mimeType,"Content-Length":String(chunk.length),"Content-Range":`bytes ${offset}-${end-1}/${totalBytes}`},body:chunk,cache:"no-store",redirect:"error",signal:AbortSignal.timeout(40000)})}
   catch{throw new Error("TIKTOK_CHUNK_UPLOAD_UNCERTAIN")}
-  if(response.status!==(final?201:206))throw new Error(response.status>=500?"TIKTOK_CHUNK_UPLOAD_UNCERTAIN":"TIKTOK_CHUNK_UPLOAD_FAILED");
+  let confirmedEnd=end;
+  if(response.status===416){
+   const providerOffset=parseTikTokUploadedOffset(response.headers.get("content-range"),totalBytes);
+   if(providerOffset===null||providerOffset<=offset)throw new Error("TIKTOK_UPLOAD_OFFSET_UNCONFIRMED");
+   confirmedEnd=providerOffset;
+  }else if(response.status!==(final?201:206))throw new Error(response.status>=500?"TIKTOK_CHUNK_UPLOAD_UNCERTAIN":"TIKTOK_CHUNK_UPLOAD_FAILED");
   const next=new Date();
-  if(final){
+  if(confirmedEnd===totalBytes){
    await db.$transaction(async tx=>{
-    const completed=await tx.socialPostTarget.updateMany({where:{id:target.id,workspaceId:input.workspaceId,status:"PUBLISHING",uploadOffset:target.uploadOffset},data:{status:"PROCESSING",uploadSessionEncrypted:null,uploadOffset:BigInt(end),processingStartedAt:next,nextCheckAt:new Date(next.getTime()+60_000),errorCode:null}});
+    const completed=await tx.socialPostTarget.updateMany({where:{id:target.id,workspaceId:input.workspaceId,status:"PUBLISHING",uploadOffset:target.uploadOffset},data:{status:"PROCESSING",uploadSessionEncrypted:null,uploadOffset:BigInt(confirmedEnd),processingStartedAt:next,nextCheckAt:new Date(next.getTime()+60_000),errorCode:null}});
     if(completed.count!==1)throw new Error("TIKTOK_UPLOAD_STATE_CHANGED");
     await tx.socialPublishAttempt.updateMany({where:{workspaceId:input.workspaceId,targetId:target.id,status:"PROCESSING"},data:{status:"PROCESSING"}});
     await tx.activityLog.create({data:{workspaceId:input.workspaceId,action:"social_post.tiktok_upload_completed",entityType:"ContentPost",entityId:target.contentPost.id,metadata:{targetId:target.id,provider:"TIKTOK",publishId:target.providerContainerId}}});
    });
    return {status:"PROCESSING" as const};
   }
-  const updated=await db.socialPostTarget.updateMany({where:{id:target.id,workspaceId:input.workspaceId,status:"PUBLISHING",uploadOffset:target.uploadOffset},data:{uploadOffset:BigInt(end),nextCheckAt:new Date(next.getTime()+5_000),errorCode:null}});
+  const updated=await db.socialPostTarget.updateMany({where:{id:target.id,workspaceId:input.workspaceId,status:"PUBLISHING",uploadOffset:target.uploadOffset},data:{uploadOffset:BigInt(confirmedEnd),nextCheckAt:new Date(next.getTime()+5_000),errorCode:null}});
   if(updated.count!==1)return {status:"SKIPPED" as const};
   return {status:"UPLOADING" as const};
  }catch(error){
