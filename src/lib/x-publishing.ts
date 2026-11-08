@@ -99,7 +99,7 @@ async function uploadXMedia(token:string,asset:{id:string;bucket:string;objectPa
   if(!append.ok)throw new Error(append.status===401?"X_REAUTHORIZATION_REQUIRED":append.status===403?"X_PERMISSION_DENIED":append.status===429?"X_RATE_LIMITED":append.status>=500?"X_MEDIA_APPEND_UNCERTAIN":"X_MEDIA_APPEND_REJECTED");
   segmentIndex=index+1;
   await saveXMediaState(workspaceId,targetId,{mediaId,mediaAssetId:asset.id,phase:"UPLOADING",segmentIndex});
-  if(index-startSegment>=1&&segmentIndex<totalChunks)return {mediaId,mediaAssetId:asset.id,phase:"UPLOADING",segmentIndex};
+  if(index-startSegment>=0&&segmentIndex<totalChunks)return {mediaId,mediaAssetId:asset.id,phase:"UPLOADING",segmentIndex};
  }
  let finalize:Response;
  try{finalize=await fetch("https://api.x.com/2/media/upload/"+encodeURIComponent(mediaId)+"/finalize",{method:"POST",headers:{Authorization:"Bearer "+token},cache:"no-store",redirect:"error",signal:AbortSignal.timeout(15000)})}
