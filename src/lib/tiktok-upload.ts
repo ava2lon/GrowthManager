@@ -101,12 +101,15 @@ export async function processTikTokUploadTarget(input:{targetId:string;workspace
   const video=Buffer.from(await mediaResponse.arrayBuffer());
   if(video.length!==totalBytes)throw new Error("MEDIA_SIZE_MISMATCH");
   const end=Math.min(offset+chunkSize,totalBytes),chunk=video.subarray(offset,end),final=end===totalBytes;
-  const response=await fetch(uploadUrl,{method:"PUT",headers:{"Content-Type":asset.mimeType,"Content-Length":String(chunk.length),"Content-Range":`bytes ${offset}-${end-1}/${totalBytes}`},body:chunk,cache:"no-store",redirect:"error",signal:AbortSignal.timeout(40000)});
+  let response:Response;
+  try{response=await fetch(uploadUrl,{method:"PUT",headers:{"Content-Type":asset.mimeType,"Content-Length":String(chunk.length),"Content-Range":`bytes ${offset}-${end-1}/${totalBytes}`},body:chunk,cache:"no-store",redirect:"error",signal:AbortSignal.timeout(40000)})}
+  catch{throw new Error("TIKTOK_CHUNK_UPLOAD_UNCERTAIN")}
   if(response.status!==(final?201:206))throw new Error(response.status>=500?"TIKTOK_CHUNK_UPLOAD_UNCERTAIN":"TIKTOK_CHUNK_UPLOAD_FAILED");
   const next=new Date();
   if(final){
    await db.$transaction(async tx=>{
-    await tx.socialPostTarget.updateMany({where:{id:target.id,workspaceId:input.workspaceId,status:"PUBLISHING",uploadOffset:target.uploadOffset},data:{status:"PROCESSING",uploadSessionEncrypted:null,uploadOffset:BigInt(end),processingStartedAt:next,nextCheckAt:new Date(next.getTime()+60_000),errorCode:null}});
+    const completed=await tx.socialPostTarget.updateMany({where:{id:target.id,workspaceId:input.workspaceId,status:"PUBLISHING",uploadOffset:target.uploadOffset},data:{status:"PROCESSING",uploadSessionEncrypted:null,uploadOffset:BigInt(end),processingStartedAt:next,nextCheckAt:new Date(next.getTime()+60_000),errorCode:null}});
+    if(completed.count!==1)throw new Error("TIKTOK_UPLOAD_STATE_CHANGED");
     await tx.socialPublishAttempt.updateMany({where:{workspaceId:input.workspaceId,targetId:target.id,status:"PROCESSING"},data:{status:"PROCESSING"}});
     await tx.activityLog.create({data:{workspaceId:input.workspaceId,action:"social_post.tiktok_upload_completed",entityType:"ContentPost",entityId:target.contentPost.id,metadata:{targetId:target.id,provider:"TIKTOK",publishId:target.providerContainerId}}});
    });
@@ -117,7 +120,7 @@ export async function processTikTokUploadTarget(input:{targetId:string;workspace
   return {status:"UPLOADING" as const};
  }catch(error){
   const code=error instanceof Error?error.message:"TIKTOK_CHUNK_UPLOAD_UNCERTAIN";
-  if(code==="TIKTOK_CHUNK_UPLOAD_UNCERTAIN"||code==="TIKTOK_UPLOAD_URL_INVALID"||code==="TIKTOK_UPLOAD_SESSION_INVALID"){
+  if(code==="TIKTOK_CHUNK_UPLOAD_UNCERTAIN"){
    await db.socialPostTarget.updateMany({where:{id:target.id,workspaceId:input.workspaceId,status:"PUBLISHING"},data:{nextCheckAt:new Date(Date.now()+60_000),errorCode:code}});
    return {status:"UPLOADING" as const,errorCode:code};
   }
