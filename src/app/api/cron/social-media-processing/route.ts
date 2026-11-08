@@ -29,7 +29,7 @@ export async function GET(request:Request){
   db.socialPostTarget.findMany({where:{provider:"YOUTUBE",status:{in:["PUBLISHING","PROCESSING","SCHEDULED"]},OR:[{status:"PUBLISHING",uploadSessionEncrypted:{not:null}},{status:"PROCESSING",providerPostId:{not:null}},{status:"SCHEDULED",providerPostId:{not:null}}],AND:[{OR:[{nextCheckAt:null},{nextCheckAt:{lte:now}}]}]},select:{id:true,workspaceId:true,status:true,nextCheckAt:true,updatedAt:true},orderBy:{nextCheckAt:"asc"},take:1}),
   db.socialPostTarget.findMany({where:{provider:"INSTAGRAM",status:"PROCESSING",providerContainerId:{not:null},OR:[{nextCheckAt:null},{nextCheckAt:{lte:now}}]},select:{id:true,workspaceId:true,status:true,nextCheckAt:true,updatedAt:true},orderBy:{nextCheckAt:"asc"},take:1}),
   db.socialPostTarget.findMany({where:{provider:"TIKTOK",status:{in:["PUBLISHING","PROCESSING","UPLOADED"]},AND:[{OR:[{status:"PROCESSING"},{status:"UPLOADED",nextCheckAt:{not:null}},{status:"PUBLISHING",uploadSessionEncrypted:{not:null}}]},{OR:[{nextCheckAt:null},{nextCheckAt:{lte:now}}]}]},select:{id:true,workspaceId:true,status:true,nextCheckAt:true,updatedAt:true},orderBy:{nextCheckAt:"asc"},take:1}),
-  db.socialPostTarget.findMany({where:{provider:"X",status:"PUBLISHING",OR:[{nextCheckAt:null},{nextCheckAt:{lte:now}}]},select:{id:true,workspaceId:true,status:true,nextCheckAt:true,updatedAt:true},orderBy:{nextCheckAt:"asc"},take:1}),
+  db.socialPostTarget.findMany({where:{provider:"X",status:{in:["SCHEDULED","PUBLISHING"]},OR:[{status:"PUBLISHING",OR:[{nextCheckAt:null},{nextCheckAt:{lte:now}}]},{status:"SCHEDULED",contentPost:{scheduledAt:{lte:now}}}]},select:{id:true,workspaceId:true,status:true,nextCheckAt:true,updatedAt:true,contentPost:{select:{scheduledAt:true}}},orderBy:{nextCheckAt:"asc"},take:1}),
  ]);
  const candidates:Candidate[]=[];
  for(const t of pinterestProcessing)candidates.push({...t,provider:"PINTEREST",dueAt:t.nextCheckAt??t.updatedAt});
@@ -37,7 +37,7 @@ export async function GET(request:Request){
  for(const t of youtube)candidates.push({...t,provider:"YOUTUBE",dueAt:t.nextCheckAt??t.updatedAt});
  for(const t of instagram)candidates.push({...t,provider:"INSTAGRAM",dueAt:t.nextCheckAt??t.updatedAt});
  for(const t of tiktok)candidates.push({...t,provider:"TIKTOK",dueAt:t.nextCheckAt??t.updatedAt});
- for(const t of x)candidates.push({...t,provider:"X",dueAt:t.nextCheckAt??t.updatedAt});
+ for(const t of x)candidates.push({...t,provider:"X",dueAt:t.nextCheckAt??t.contentPost.scheduledAt??t.updatedAt});
  candidates.sort((a,b)=>a.dueAt.getTime()-b.dueAt.getTime());
  const selected=candidates[0];
  if(!selected)return NextResponse.json({processed:0,reason:"NO_DUE_MEDIA_JOBS"});
@@ -51,7 +51,7 @@ export async function GET(request:Request){
   else if(selected.provider==="TIKTOK")result=selected.status==="PUBLISHING"
    ?await processTikTokUploadTarget({targetId:selected.id,workspaceId:selected.workspaceId})
    :await processTikTokInboxTarget({targetId:selected.id,workspaceId:selected.workspaceId});
-  else result=await publishXTarget({targetId:selected.id,workspaceId:selected.workspaceId,allowedStatuses:["PUBLISHING"]});
+  else result=await publishXTarget({targetId:selected.id,workspaceId:selected.workspaceId,allowedStatuses:selected.status==="SCHEDULED"?["SCHEDULED"]:["PUBLISHING"]});
   return NextResponse.json({processed:1,provider:selected.provider,targetId:selected.id,result},{headers:{"Cache-Control":"no-store"}});
  }catch{
   return NextResponse.json({processed:1,provider:selected.provider,targetId:selected.id,error:"MEDIA_WORKER_FAILED"},{status:502,headers:{"Cache-Control":"no-store"}});
