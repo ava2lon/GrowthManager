@@ -40,7 +40,7 @@ jobs:
           CRON_SECRET: ${{ secrets.GROWTHMANAGER_CRON_SECRET }}
         run: |
           test -n "$CRON_SECRET"
-          curl --fail-with-body --silent --show-error --max-time 55 \\
+          curl --fail-with-body --silent --show-error --max-time 55 \
             -H "Authorization: Bearer $CRON_SECRET" \\
             "https://growthmanager.vercel.app/api/cron/social-analytics"
 
