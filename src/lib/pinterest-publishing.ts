@@ -180,7 +180,8 @@ export async function processPinterestVideoTarget(input:{targetId:string;workspa
  }
  const finished=new Date();
  await db.$transaction(async tx=>{
-  await tx.socialPostTarget.updateMany({where:{id:target.id,workspaceId:input.workspaceId,provider:"PINTEREST",status:"PUBLISHING",nextCheckAt:leaseUntil},data:{status:"PUBLISHED",providerPostId:payload.id,errorCode:null,publishedAt:finished,nextCheckAt:null,uploadSessionEncrypted:null}});
+  const completed=await tx.socialPostTarget.updateMany({where:{id:target.id,workspaceId:input.workspaceId,provider:"PINTEREST",status:"PUBLISHING",nextCheckAt:leaseUntil},data:{status:"PUBLISHED",providerPostId:payload.id,errorCode:null,publishedAt:finished,nextCheckAt:null,uploadSessionEncrypted:null}});
+  if(completed.count!==1)return;
   await tx.socialPublishAttempt.updateMany({where:{workspaceId:input.workspaceId,targetId:target.id,status:"PROCESSING"},data:{status:"PUBLISHED",providerPostId:payload.id,finishedAt:finished}});
   const remaining=await tx.socialPostTarget.count({where:{workspaceId:input.workspaceId,contentPostId:target.contentPost.id,status:{not:"PUBLISHED"}}});
   if(remaining===0)await tx.contentPost.update({where:{id:target.contentPost.id},data:{status:"PUBLISHED",publishedAt:finished}});
