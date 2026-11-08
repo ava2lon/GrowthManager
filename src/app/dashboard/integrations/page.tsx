@@ -39,7 +39,7 @@ export default async function IntegrationsPage({searchParams}: {searchParams: Pr
   const integrations = await db.integration.findMany({
     where: {workspaceId: context.workspace.id},
     orderBy: [{updatedAt:"desc"},{name:"asc"}],
-    select: {id:true,provider:true,name:true,status:true,updatedAt:true,lastValidatedAt:true,lastExecutionSyncAt:true,lastErrorAt:true,lastErrorCode:true,credentialsEncrypted:true},
+    select: {id:true,provider:true,name:true,status:true,updatedAt:true,lastValidatedAt:true,lastExecutionSyncAt:true,lastExecutionSyncCursor:true,lastErrorAt:true,lastErrorCode:true,credentialsEncrypted:true},
   });
   const byProvider = new Map(integrations.map((item) => [item.provider,item]));
   const canManage = ["OWNER","ADMIN"].includes(context.membership.role);
