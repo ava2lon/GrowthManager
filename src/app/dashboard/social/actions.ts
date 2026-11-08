@@ -35,11 +35,11 @@ function toPrismaJsonValue(value: unknown): Prisma.InputJsonValue | null {
   if (typeof value === "number") return Number.isFinite(value) ? value : null;
   if (Array.isArray(value)) return value.map(toPrismaJsonValue);
   if (typeof value === "object") {
-    const result: Prisma.InputJsonObject = {};
+    const entries: Array<[string, Prisma.InputJsonValue | null]> = [];
     for (const [key, item] of Object.entries(value)) {
-      if (item !== undefined) result[key] = toPrismaJsonValue(item);
+      if (item !== undefined) entries.push([key, toPrismaJsonValue(item)]);
     }
-    return result;
+    return Object.fromEntries(entries);
   }
   return null;
 }
