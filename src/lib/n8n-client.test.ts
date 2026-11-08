@@ -280,7 +280,7 @@ describe("listN8nExecutions", () => {
     const fetchMock = vi.fn()
       .mockResolvedValueOnce(new Response(JSON.stringify({
         data: [{
-          id: "123", workflowId: "wf_1", status: "error", mode: "webhook",
+          id: 123, workflowId: "wf_1", status: "error", mode: "webhook",
           startedAt: "2026-11-06T10:00:00.000Z", stoppedAt: "2026-11-06T10:00:02.000Z",
           waitTill: null, retryOf: null, retrySuccessId: null,
           data: {resultData: {runData: {PrivateNode: [{json: {secret: "never return"}}]}}},
@@ -289,14 +289,14 @@ describe("listN8nExecutions", () => {
         nextCursor: "execution-page-two",
       }), {status: 200, headers: {"content-type": "application/json"}}))
       .mockResolvedValueOnce(new Response(JSON.stringify({
-        data: [{id: "124", workflowId: "wf_1", status: "success", mode: "manual"}],
+        data: [{id: 124, workflowId: 42, status: "success", mode: "manual", retryOf: 123, retrySuccessId: 125}],
       }), {status: 200, headers: {"content-type": "application/json"}}));
     vi.stubGlobal("fetch", fetchMock);
     const result = await listN8nExecutions("https://growth-team.app.n8n.cloud", "n8n_test_api_key_123456", {status: "error", workflowId: "wf_1"});
     expect(result).toEqual({
       executions: [
         {id: "123", workflowId: "wf_1", status: "error", mode: "webhook", startedAt: "2026-11-06T10:00:00.000Z", stoppedAt: "2026-11-06T10:00:02.000Z", waitTill: null, retryOf: null, retrySuccessId: null},
-        {id: "124", workflowId: "wf_1", status: "success", mode: "manual", startedAt: null, stoppedAt: null, waitTill: null, retryOf: null, retrySuccessId: null},
+        {id: "124", workflowId: "42", status: "success", mode: "manual", startedAt: null, stoppedAt: null, waitTill: null, retryOf: "123", retrySuccessId: "125"},
       ],
       hasMore: false,
       nextCursor: null,
