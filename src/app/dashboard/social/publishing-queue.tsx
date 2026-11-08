@@ -33,6 +33,6 @@ export default function SocialPublishingQueue({posts}:{posts:QueuePost[]}){
    {rows.length===0&&<p className="py-8 text-center text-sm text-slate-500">No publishing destinations match these filters.</p>}
   </div>
   {rows.length>40&&<p className="mt-2 text-center text-xs text-slate-500">Showing 40 of {rows.length} matching destinations. Refine the filters to narrow the queue.</p>}
-  <p className="mt-3 text-[11px] text-slate-400">Queue actions remain in the publishing activity records below, where each provider's permissions and retry safeguards are enforced.</p>
+  <p className="mt-3 text-[11px] text-slate-400">Queue actions remain in the publishing activity records below, where each provider&apos;s permissions and retry safeguards are enforced.</p>
  </section>;
 }
