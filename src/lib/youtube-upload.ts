@@ -235,7 +235,7 @@ export async function processYouTubeUploadTarget(input: {targetId: string; works
     const statusResponse = await fetch(sessionUrl, {
       method: "PUT",
       headers: {Authorization: "Bearer " + accessToken, "Content-Length": "0", "Content-Range": "bytes */" + total},
-      cache: "no-store", redirect: "error", signal: AbortSignal.timeout(15000),
+      cache: "no-store", redirect: "error", signal: AbortSignal.timeout(10000),
     });
     if (statusResponse.status === 200 || statusResponse.status === 201) {
       const completed = await statusResponse.json().catch(() => null) as {id?: string; status?: {uploadStatus?: string}} | null;
@@ -266,7 +266,7 @@ export async function processYouTubeUploadTarget(input: {targetId: string; works
     const end = Math.min(offset + CHUNK_BYTES, total) - 1;
     const mediaResponse = await fetch(mediaUrl, {
       headers: {...storageHeaders(storage.serviceKey), Range: "bytes=" + offset + "-" + end},
-      cache: "no-store", redirect: "error", signal: AbortSignal.timeout(20000),
+      cache: "no-store", redirect: "error", signal: AbortSignal.timeout(10000),
     });
     if (mediaResponse.status !== 206) throw new Error("MEDIA_RANGE_DOWNLOAD_FAILED");
     const contentRange = mediaResponse.headers.get("content-range");
@@ -282,7 +282,7 @@ export async function processYouTubeUploadTarget(input: {targetId: string; works
         "Content-Length": String(chunk.length),
         "Content-Range": "bytes " + offset + "-" + end + "/" + total,
       },
-      body: chunk, cache: "no-store", redirect: "error", signal: AbortSignal.timeout(45000),
+      body: chunk, cache: "no-store", redirect: "error", signal: AbortSignal.timeout(25000),
     });
     if (uploadResponse.status === 200 || uploadResponse.status === 201) {
       const completed = await uploadResponse.json().catch(() => null) as {id?: string} | null;
