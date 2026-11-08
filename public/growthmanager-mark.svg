@@ -1,4 +1,5 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 96 104" fill="none">
-  <defs><linearGradient id="brand" x1="18" y1="8" x2="76" y2="94" gradientUnits="userSpaceOnUse"><stop stop-color="#20A4FF"/><stop offset=".48" stop-color="#245BFF"/><stop offset="1" stop-color="#702BFF"/></linearGradient></defs>
-  <path fill="url(#brand)" d="M48 3 89 26.5V48L69 59.5V38L48 26 27 38.5v27L48 78l13-7.5V59l-13 7.5-10-5.8V49l10-5.8 30 17.3v23L48 101 7 77.5v-51L48 3Z"/>
+  <defs><linearGradient id="brand" x1="18" y1="5" x2="72" y2="96" gradientUnits="userSpaceOnUse"><stop stop-color="#20A4FF"/><stop offset=".52" stop-color="#245BFF"/><stop offset="1" stop-color="#702BFF"/></linearGradient></defs>
+  <path fill="url(#brand)" d="M48 2 89 26 73 35 48 21 18 38V67L48 84 62 76V64L48 72 37 65 80 40V78L48 99 4 74V29L48 2Z"/>
+  <path fill="url(#brand)" d="m38 50 29-17 13 7-29 17-13-7Z"/>
 </svg>
