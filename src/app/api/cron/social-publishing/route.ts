@@ -141,7 +141,7 @@ export async function GET(request:Request){
 
   const processing=await db.socialPostTarget.findMany({
     where:{provider:"INSTAGRAM",status:"PROCESSING",OR:[{nextCheckAt:null},{nextCheckAt:{lte:now}}]},
-    select:{id:true,workspaceId:true},orderBy:{nextCheckAt:"asc"},take:10,
+    select:{id:true,workspaceId:true},orderBy:{nextCheckAt:"asc"},take:1,
   });
   let reelsPublished=0,reelsFailed=0,reelsProcessing=0,reelsUnknown=0;
   for(const target of processing){
@@ -156,7 +156,7 @@ export async function GET(request:Request){
 
   const tiktokProcessing=await db.socialPostTarget.findMany({
     where:{provider:"TIKTOK",status:{in:["PUBLISHING","PROCESSING","UPLOADED"]},AND:[{OR:[{status:{in:["PROCESSING","UPLOADED"]}},{status:"PUBLISHING",uploadSessionEncrypted:{not:null}}]},{OR:[{nextCheckAt:null},{nextCheckAt:{lte:now}}]}]},
-    select:{id:true,workspaceId:true,status:true},orderBy:{nextCheckAt:"asc"},take:2,
+    select:{id:true,workspaceId:true,status:true},orderBy:{nextCheckAt:"asc"},take:1,
   });
   let tiktokUploaded=0,tiktokPublished=0,tiktokFailed=0;
   for(const target of tiktokProcessing){
