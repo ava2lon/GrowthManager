@@ -1,9 +1,9 @@
 import {describe, expect, it} from "vitest";
-import {stateOf} from "./instagram-carousel";
+import {parseInstagramCarouselState} from "./instagram-carousel-utils";
 
 describe("Instagram carousel persisted state", () => {
   it("accepts a valid initial state", () => {
-    expect(stateOf({
+    expect(parseInstagramCarouselState({
       instagramCarousel: {
         version: 1,
         phase: "CREATE_CHILDREN",
@@ -20,10 +20,10 @@ describe("Instagram carousel persisted state", () => {
   });
 
   it("rejects missing, unsupported, and malformed state", () => {
-    expect(stateOf(null)).toBeNull();
-    expect(stateOf({})).toBeNull();
-    expect(stateOf({instagramCarousel: {version: 2}})).toBeNull();
-    expect(stateOf({
+    expect(parseInstagramCarouselState(null)).toBeNull();
+    expect(parseInstagramCarouselState({})).toBeNull();
+    expect(parseInstagramCarouselState({instagramCarousel: {version: 2}})).toBeNull();
+    expect(parseInstagramCarouselState({
       instagramCarousel: {
         version: 1,
         phase: "UNSUPPORTED",
@@ -32,7 +32,7 @@ describe("Instagram carousel persisted state", () => {
         startedAt: "2026-11-08T12:00:00.000Z",
       },
     })).toBeNull();
-    expect(stateOf({
+    expect(parseInstagramCarouselState({
       instagramCarousel: {
         version: 1,
         phase: "CREATE_CHILDREN",
@@ -41,7 +41,7 @@ describe("Instagram carousel persisted state", () => {
         startedAt: "2026-11-08T12:00:00.000Z",
       },
     })).toBeNull();
-    expect(stateOf({
+    expect(parseInstagramCarouselState({
       instagramCarousel: {
         version: 1,
         phase: "CREATE_CHILDREN",
