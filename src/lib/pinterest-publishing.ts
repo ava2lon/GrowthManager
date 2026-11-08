@@ -126,7 +126,7 @@ export async function processPinterestVideoTarget(input:{targetId:string;workspa
       return {status:updated.count?"PROCESSING":"SKIPPED"};
      }
      if(detail?.status==="failed")return fail("PINTEREST_VIDEO_PROCESSING_FAILED");
-     if(detail?.status==="processing"){
+     if(detail?.status==="processed"||detail?.status==="processing"){
       await db.socialPostTarget.updateMany({where:{id:target.id,workspaceId:input.workspaceId,status:"PUBLISHING"},data:{uploadMetadata:{...settings,pinterestVideo:{phase:"PROCESSING",coverAssetId:cover.id}},uploadSessionEncrypted:null,nextCheckAt:new Date(Date.now()+30_000),errorCode:null}});
       return {status:"PROCESSING"};
      }
