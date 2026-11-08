@@ -4,10 +4,10 @@ import {db} from "@/lib/db";
 import {synchronizeSocialIncidents} from "@/lib/social-incidents";
 import {dispatchSocialIncidentEmails} from "@/lib/social-incident-email-delivery";
 import {publishFacebookTarget,publishInstagramTarget} from "@/lib/social-publishing";
-import {startInstagramReelTarget,processInstagramReelTarget} from "@/lib/instagram-reels";
-import {processTikTokInboxTarget,processTikTokUploadTarget} from "@/lib/tiktok-upload";
-import {processYouTubeUploadTarget} from "@/lib/youtube-upload";
-import {publishPinterestTarget,processPinterestVideoTarget} from "@/lib/pinterest-publishing";
+import {startInstagramReelTarget} from "@/lib/instagram-reels";
+
+
+
 import {publishXTarget} from "@/lib/x-publishing";
 import {refreshPinterestAccountAnalytics} from "@/lib/pinterest-analytics";
 import {refreshPinterestPinAnalytics} from "@/lib/pinterest-pin-analytics";
@@ -61,36 +61,6 @@ export async function GET(request:Request){
     }
   }
 
-  const pinterestProcessing=await db.socialPostTarget.findMany({
-    where:{provider:"PINTEREST",status:"PUBLISHING",providerContainerId:{not:null},OR:[{nextCheckAt:null},{nextCheckAt:{lte:now}}]},
-    select:{id:true,workspaceId:true},orderBy:{nextCheckAt:"asc"},take:1,
-  });
-  let pinterestVideoProcessing=0,pinterestVideoFailed=0,pinterestVideoUnknown=0;
-  for(const target of pinterestProcessing){
-    try{
-      const result=await processPinterestVideoTarget({targetId:target.id,workspaceId:target.workspaceId});
-      if(result.status==="PROCESSING")pinterestVideoProcessing++;
-      else if(result.status==="FAILED")pinterestVideoFailed++;
-      else if(result.status==="UNKNOWN")pinterestVideoUnknown++;
-    }catch{pinterestVideoFailed++;}
-  }
-
-  const pinterestDue=pinterestProcessing.length===0?await db.socialPostTarget.findMany({
-    where:{provider:"PINTEREST",status:"SCHEDULED",contentPost:{scheduledAt:{lte:now}}},
-    select:{id:true,workspaceId:true},orderBy:{contentPost:{scheduledAt:"asc"}},take:1,
-  }):[];
-  let pinterestPublished=0,pinterestFailed=0,pinterestUnknown=0,pinterestSkipped=0,pinterestStarted=0;
-  for(const target of pinterestDue){
-    try{
-      const result=await publishPinterestTarget({targetId:target.id,workspaceId:target.workspaceId,allowedStatuses:["SCHEDULED"]});
-      if(result.status==="PUBLISHED")pinterestPublished++;
-      else if(result.status==="FAILED")pinterestFailed++;
-      else if(result.status==="UNKNOWN")pinterestUnknown++;
-      else if(result.status==="PROCESSING")pinterestStarted++;
-      else pinterestSkipped++;
-    }catch{pinterestUnknown++;}
-  }
-
   // A process can die after claiming a target but before persisting Google's session URI.
   // No video bytes have been transferred at that point, so mark it safely retryable as a failed draft.
   const abandonedYouTubeStarts=await db.socialPostTarget.findMany({
@@ -118,58 +88,6 @@ export async function GET(request:Request){
       recoveredYouTubeStarts++;
     }
   }
-
-  const youtubeProcessing=await db.socialPostTarget.findMany({
-    where:{provider:"YOUTUBE",status:{in:["PUBLISHING","PROCESSING","SCHEDULED"]},OR:[
-      {status:"PUBLISHING",uploadSessionEncrypted:{not:null}},
-      {status:"PROCESSING",providerPostId:{not:null}},
-      {status:"SCHEDULED",providerPostId:{not:null}},
-    ],AND:[{OR:[{nextCheckAt:null},{nextCheckAt:{lte:now}}]}]},
-    select:{id:true,workspaceId:true},orderBy:{nextCheckAt:"asc"},take:1,
-  });
-  let youtubePublished=0,youtubeFailed=0,youtubeProcessingCount=0,youtubeScheduled=0;
-  for(const target of youtubeProcessing){
-    try{
-      const result=await processYouTubeUploadTarget({targetId:target.id,workspaceId:target.workspaceId});
-      if(result.status==="PUBLISHED")youtubePublished++;
-      else if(result.status==="SCHEDULED")youtubeScheduled++;
-      else if(result.status==="FAILED")youtubeFailed++;
-      else if(result.status==="PROCESSING")youtubeProcessingCount++;
-    }catch{youtubeFailed++;}
-  }
-
-
-  const processing=await db.socialPostTarget.findMany({
-    where:{provider:"INSTAGRAM",status:"PROCESSING",OR:[{nextCheckAt:null},{nextCheckAt:{lte:now}}]},
-    select:{id:true,workspaceId:true},orderBy:{nextCheckAt:"asc"},take:1,
-  });
-  let reelsPublished=0,reelsFailed=0,reelsProcessing=0,reelsUnknown=0;
-  for(const target of processing){
-    try{
-      const result=await processInstagramReelTarget({targetId:target.id,workspaceId:target.workspaceId});
-      if(result.status==="PUBLISHED")reelsPublished++;
-      else if(result.status==="FAILED")reelsFailed++;
-      else if(result.status==="UNKNOWN")reelsUnknown++;
-      else if(result.status==="PROCESSING")reelsProcessing++;
-    }catch{reelsUnknown++;}
-  }
-
-  const tiktokProcessing=await db.socialPostTarget.findMany({
-    where:{provider:"TIKTOK",status:{in:["PUBLISHING","PROCESSING","UPLOADED"]},AND:[{OR:[{status:{in:["PROCESSING","UPLOADED"]}},{status:"PUBLISHING",uploadSessionEncrypted:{not:null}}]},{OR:[{nextCheckAt:null},{nextCheckAt:{lte:now}}]}]},
-    select:{id:true,workspaceId:true,status:true},orderBy:{nextCheckAt:"asc"},take:1,
-  });
-  let tiktokUploaded=0,tiktokPublished=0,tiktokFailed=0;
-  for(const target of tiktokProcessing){
-    try{
-      const result=target.status==="PUBLISHING"
-        ?await processTikTokUploadTarget({targetId:target.id,workspaceId:target.workspaceId})
-        :await processTikTokInboxTarget({targetId:target.id,workspaceId:target.workspaceId});
-      if(result.status==="UPLOADED")tiktokUploaded++;
-      else if(result.status==="PUBLISHED")tiktokPublished++;
-      else if(result.status==="FAILED")tiktokFailed++;
-    }catch{tiktokFailed++;}
-  }
-
 
   // Collect at most one account-level Pinterest analytics report per worker run.
   // A failed report is also snapshotted for the UTC day to prevent a tight retry loop.
@@ -301,18 +219,7 @@ export async function GET(request:Request){
     }
   }
   const xDue=await db.socialPostTarget.findMany({where:{provider:"X",status:"SCHEDULED",contentPost:{scheduledAt:{lte:now}}},select:{id:true,workspaceId:true},orderBy:{contentPost:{scheduledAt:"asc"}},take:1});
-  const xProcessingDue=await db.socialPostTarget.findMany({where:{provider:"X",status:"PUBLISHING",nextCheckAt:{lte:now}},select:{id:true,workspaceId:true},orderBy:{nextCheckAt:"asc"},take:1});
-  let xPublished=0,xFailed=0,xUnknown=0,xSkipped=0,xProcessing=0;
-
-  for(const target of xDue){
-    try{const result=await publishXTarget({targetId:target.id,workspaceId:target.workspaceId,allowedStatuses:["SCHEDULED"]});if(result.status==="PUBLISHED")xPublished++;else if(result.status==="FAILED")xFailed++;else if(result.status==="UNKNOWN")xUnknown++;else xSkipped++;}
-    catch{xUnknown++;}
-  }
-  for(const target of xProcessingDue){
-    try{const result=await publishXTarget({targetId:target.id,workspaceId:target.workspaceId,allowedStatuses:["PUBLISHING"]});if(result.status==="PUBLISHED")xPublished++;else if(result.status==="FAILED")xFailed++;else if(result.status==="UNKNOWN")xUnknown++;else if(result.status==="PROCESSING")xProcessing++;else xSkipped++;}
-    catch{xProcessing++;}
-  }
   const incidents=await synchronizeSocialIncidents();
   const incidentEmailDelivery=await dispatchSocialIncidentEmails(3);
-  return NextResponse.json({incidents,incidentEmailDelivery,due:due.length,x:{scheduledChecked:xDue.length,processingChecked:xProcessingDue.length,published:xPublished,failed:xFailed,unknown:xUnknown,processing:xProcessing,skipped:xSkipped,analytics:{accountsRefreshed:xAnalyticsAccountsRefreshed,accountsFailed:xAnalyticsAccountsFailed}},published,failed,unknown,skipped,recoveredUnknown,pinterest:{checked:pinterestDue.length,published:pinterestPublished,failed:pinterestFailed,unknown:pinterestUnknown,processingStarted:pinterestStarted,skipped:pinterestSkipped,videoProcessingChecked:pinterestProcessing.length,videoProcessing:pinterestVideoProcessing,videoFailed:pinterestVideoFailed,videoUnknown:pinterestVideoUnknown,analyticsChecked:pinterestAnalyticsDue.length,analyticsRefreshed:pinterestAnalyticsRefreshed,analyticsFailed:pinterestAnalyticsFailed,pinAnalyticsChecked:pinAnalyticsTarget?1:0,pinAnalyticsRefreshed:pinterestPinAnalyticsRefreshed,pinAnalyticsFailed:pinterestPinAnalyticsFailed},reels:{checked:processing.length,published:reelsPublished,failed:reelsFailed,processing:reelsProcessing,unknown:reelsUnknown},tiktok:{checked:tiktokProcessing.length,uploaded:tiktokUploaded,published:tiktokPublished,failed:tiktokFailed,analytics:{accountsRefreshed:tikTokAccountsRefreshed,accountsFailed:tikTokAccountsFailed,videosRefreshed:tikTokVideosRefreshed,videosFailed:tikTokVideosFailed}},youtube:{checked:youtubeProcessing.length,published:youtubePublished,scheduled:youtubeScheduled,failed:youtubeFailed,processing:youtubeProcessingCount,recoveredInitializations:recoveredYouTubeStarts,analytics:{channelsRefreshed:youtubeAnalyticsAccountsRefreshed,channelsFailed:youtubeAnalyticsAccountsFailed,videosRefreshed:youtubeAnalyticsVideosRefreshed,videosFailed:youtubeAnalyticsVideosFailed}}});
+  return NextResponse.json({incidents,incidentEmailDelivery,due:due.length,x:{scheduledChecked:xDue.length,published:xPublished,failed:xFailed,unknown:xUnknown,skipped:xSkipped,analytics:{accountsRefreshed:xAnalyticsAccountsRefreshed,accountsFailed:xAnalyticsAccountsFailed}},published,failed,unknown,skipped,recoveredUnknown,pinterest:{analyticsChecked:pinterestAnalyticsDue.length,analyticsRefreshed:pinterestAnalyticsRefreshed,analyticsFailed:pinterestAnalyticsFailed,pinAnalyticsChecked:pinAnalyticsTarget?1:0,pinAnalyticsRefreshed:pinterestPinAnalyticsRefreshed,pinAnalyticsFailed:pinterestPinAnalyticsFailed},tiktok:{analytics:{accountsRefreshed:tikTokAccountsRefreshed,accountsFailed:tikTokAccountsFailed,videosRefreshed:tikTokVideosRefreshed,videosFailed:tikTokVideosFailed}},youtube:{recoveredInitializations:recoveredYouTubeStarts,analytics:{channelsRefreshed:youtubeAnalyticsAccountsRefreshed,channelsFailed:youtubeAnalyticsAccountsFailed,videosRefreshed:youtubeAnalyticsVideosRefreshed,videosFailed:youtubeAnalyticsVideosFailed}}});
 }
