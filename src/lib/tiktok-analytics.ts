@@ -3,7 +3,6 @@ import type {Prisma} from "@prisma/client";
 import {db} from "@/lib/db";
 import {getFreshTikTokCredentials} from "@/lib/tiktok-auth";
 
-const DAY=86400000;
 const day=(value:Date)=>new Date(value.toISOString().slice(0,10)+"T00:00:00.000Z");
 type TikTokError={code?:string;message?:string;log_id?:string};
 type UserInfo={data?:{user?:Record<string,unknown>};error?:TikTokError};
