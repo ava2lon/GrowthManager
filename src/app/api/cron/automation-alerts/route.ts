@@ -58,7 +58,7 @@ export async function GET(request: Request) {
       });
       if (!integration?.credentialsEncrypted) {
         skipped += 1;
-        continue;
+        return;
       }
 
       const credentials = decryptIntegrationCredentials(
@@ -68,14 +68,14 @@ export async function GET(request: Request) {
       );
       if (typeof credentials.baseUrl !== "string" || typeof credentials.apiKey !== "string") {
         skipped += 1;
-        continue;
+        return;
       }
 
       const executionResult = await listN8nExecutions(credentials.baseUrl, credentials.apiKey);
       if (executionResult.hasMore) {
         // Never resolve or recalculate alert state from a truncated execution sample.
         failedWorkspaces += 1;
-        continue;
+        return;
       }
       const now = new Date();
       const cutoff = now.getTime() - policy.lookbackMinutes * 60_000;
