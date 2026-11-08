@@ -51,7 +51,10 @@ export async function GET(request:Request){
   else if(selected.provider==="TIKTOK")result=selected.status==="PUBLISHING"
    ?await processTikTokUploadTarget({targetId:selected.id,workspaceId:selected.workspaceId})
    :await processTikTokInboxTarget({targetId:selected.id,workspaceId:selected.workspaceId});
-  else result=await publishXTarget({targetId:selected.id,workspaceId:selected.workspaceId,allowedStatuses:selected.status==="SCHEDULED"?["SCHEDULED"]:["PUBLISHING"]});
+  else{
+   const allowedStatuses:("SCHEDULED"|"PUBLISHING")[]=selected.status==="SCHEDULED"?["SCHEDULED"]:["PUBLISHING"];
+   result=await publishXTarget({targetId:selected.id,workspaceId:selected.workspaceId,allowedStatuses});
+  }
   return NextResponse.json({processed:1,provider:selected.provider,targetId:selected.id,result},{headers:{"Cache-Control":"no-store"}});
  }catch{
   return NextResponse.json({processed:1,provider:selected.provider,targetId:selected.id,error:"MEDIA_WORKER_FAILED"},{status:502,headers:{"Cache-Control":"no-store"}});
