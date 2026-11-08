@@ -98,8 +98,10 @@ export async function processTikTokUploadTarget(input:{targetId:string;workspace
   const storage=getSupabaseStorageConfig();
   if(asset.bucket!==storage.bucket||!asset.objectPath.startsWith(input.workspaceId+"/"))throw new Error("MEDIA_STORAGE_CONFIGURATION_MISMATCH");
   const mediaUrl=storage.baseUrl+"/storage/v1/object/"+encodeURIComponent(asset.bucket)+"/"+asset.objectPath.split("/").map(encodeURIComponent).join("/");
-  const mediaResponse=await fetch(mediaUrl,{headers:storageHeaders(storage.serviceKey),cache:"no-store",redirect:"error",signal:AbortSignal.timeout(20000)});
-  if(!mediaResponse.ok)throw new Error("MEDIA_DOWNLOAD_FAILED");
+  let mediaResponse:Response;
+  try{mediaResponse=await fetch(mediaUrl,{headers:storageHeaders(storage.serviceKey),cache:"no-store",redirect:"error",signal:AbortSignal.timeout(20000)})}
+  catch{throw new Error("TIKTOK_MEDIA_DOWNLOAD_UNCERTAIN")}
+  if(!mediaResponse.ok)throw new Error(mediaResponse.status>=500||mediaResponse.status===429?"TIKTOK_MEDIA_DOWNLOAD_UNCERTAIN":"MEDIA_DOWNLOAD_FAILED");
   const contentLength=Number(mediaResponse.headers.get("content-length"));
   const contentType=mediaResponse.headers.get("content-type")?.split(";")[0]?.trim().toLowerCase();
   if(contentLength!==totalBytes||contentType!==asset.mimeType)throw new Error("MEDIA_STORAGE_METADATA_MISMATCH");
@@ -130,7 +132,7 @@ export async function processTikTokUploadTarget(input:{targetId:string;workspace
   return {status:"UPLOADING" as const};
  }catch(error){
   const code=error instanceof Error?error.message:"TIKTOK_CHUNK_UPLOAD_UNCERTAIN";
-  if(code==="TIKTOK_CHUNK_UPLOAD_UNCERTAIN"){
+  if(code==="TIKTOK_CHUNK_UPLOAD_UNCERTAIN"||code==="TIKTOK_MEDIA_DOWNLOAD_UNCERTAIN"){
    await db.socialPostTarget.updateMany({where:{id:target.id,workspaceId:input.workspaceId,status:"PUBLISHING"},data:{nextCheckAt:new Date(Date.now()+60_000),errorCode:code}});
    return {status:"UPLOADING" as const,errorCode:code};
   }
