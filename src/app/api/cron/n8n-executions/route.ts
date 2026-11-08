@@ -114,7 +114,7 @@ export async function GET(request: Request) {
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : "";
-    const code = message === "N8N_EXECUTION_CURSOR_INVALID" ? "CURSOR_RESET"
+    const code = ["N8N_EXECUTION_CURSOR_INVALID", "N8N_EXECUTION_CURSOR_REPEATED"].includes(message) ? "CURSOR_RESET"
       : message === "N8N_AUTH_FAILED" ? "AUTH_FAILED"
       : message === "N8N_PROVIDER_RATE_LIMITED" ? "PROVIDER_RATE_LIMITED"
         : message === "N8N_HOST_NOT_ALLOWED" ? "HOST_NOT_ALLOWED"
@@ -132,7 +132,7 @@ export async function GET(request: Request) {
       },
       data: {
         lastExecutionSyncAt: new Date(),
-        ...(message === "N8N_EXECUTION_CURSOR_INVALID" ? {lastExecutionSyncCursor: null} : {}),
+        ...(["N8N_EXECUTION_CURSOR_INVALID", "N8N_EXECUTION_CURSOR_REPEATED"].includes(message) ? {lastExecutionSyncCursor: null} : {}),
       },
     });
     await db.activityLog.create({
