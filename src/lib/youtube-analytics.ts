@@ -19,6 +19,7 @@ async function googleGet<T>(url:URL,accessToken:string):Promise<T>{
   if(response.status===401)throw new Error("YOUTUBE_REAUTHORIZATION_REQUIRED");
   if(response.status===403)throw new Error("YOUTUBE_ANALYTICS_ACCESS_DENIED");
   if(response.status===429)throw new Error("YOUTUBE_ANALYTICS_RATE_LIMITED");
+  if(response.status>=500)throw new Error("YOUTUBE_ANALYTICS_PROVIDER_UNAVAILABLE");
   throw new Error("YOUTUBE_ANALYTICS_PROVIDER_ERROR");
  }
  return payload;
