@@ -32,7 +32,7 @@ export async function GET(request: Request) {
       lookbackMinutes: true,
       cooldownMinutes: true,
     },
-    orderBy: {updatedAt: "asc"},
+    orderBy: [{lastEvaluatedAt: {sort: "asc", nulls: "first"}}, {createdAt: "asc"}],
     take: 50,
   });
 
@@ -124,6 +124,16 @@ export async function GET(request: Request) {
     } catch {
       // Do not include provider response bodies, credentials, or workspace identifiers in logs/responses.
       failedWorkspaces += 1;
+    } finally {
+      // Rotate every attempted policy, including skipped and failed workspaces, to prevent starvation.
+      try {
+        await db.automationAlertPolicy.updateMany({
+          where: {workspaceId: policy.workspaceId},
+          data: {lastEvaluatedAt: new Date()},
+        });
+      } catch {
+        failedWorkspaces += 1;
+      }
     }
   }
 
