@@ -6,7 +6,7 @@ import {decryptIntegrationCredentials} from "@/lib/integration-crypto";
 import {getSupabaseStorageConfig,storageHeaders} from "@/lib/media-storage";
 
 type Outcome={status:"PROCESSING"|"PUBLISHED"|"FAILED"|"UNKNOWN"|"SKIPPED";errorCode?:string};
-type State={version:1;phase:"CREATE_CHILDREN"|"POLL_CHILDREN"|"CREATE_PARENT"|"POLL_PARENT"|"PUBLISH"|"PUBLISH_REQUEST_STARTED";childIds:string[];childIndex:number;parentId?:string;startedAt:string};
+type State={version:1;phase:"CREATE_CHILDREN"|"POLL_CHILDREN"|"CREATE_PARENT"|"POLL_PARENT"|"PUBLISH"|"PUBLISH_REQUEST_STARTED";childIds:string[];childIndex:number;childRequestStarted?:boolean;parentId?:string;startedAt:string};
 type Asset={id:string;status:string;mimeType:string;bucket:string;objectPath:string;workspaceId:string;brandId:string|null};
 type Graph={id?:string;status_code?:string;error?:{code?:number;message?:string}};
 
@@ -79,9 +79,11 @@ export async function processInstagramCarouselTarget(input:{targetId:string;work
  try{
   if(s.phase==="CREATE_CHILDREN"){
    if(!Number.isInteger(s.childIndex)||s.childIndex<0||s.childIndex>=assets.length)return mark("UNKNOWN","INSTAGRAM_CHILD_INDEX_INVALID");
+   if(s.childRequestStarted)return mark("UNKNOWN","INSTAGRAM_CHILD_CREATE_OUTCOME_UNKNOWN");
    const url=await signedUrl(assets[s.childIndex]);const form=new URLSearchParams({image_url:url,is_carousel_item:"true",access_token:token});
+   s={...s,childRequestStarted:true};await save(s);
    let child:string;try{child=await post(api(version,String(m.instagramUserId)+"/media"),form);}catch(e){const code=e instanceof Error?e.message:"PUBLISH_OUTCOME_UNKNOWN";return mark(code==="PUBLISH_OUTCOME_UNKNOWN"?"UNKNOWN":"FAILED",code);}
-   s={...s,childIds:[...s.childIds,child],childIndex:s.childIndex+1,phase:s.childIndex+1===assets.length?"POLL_CHILDREN":"CREATE_CHILDREN"};
+   s={...s,childIds:[...s.childIds,child],childIndex:s.childIndex+1,childRequestStarted:false,phase:s.childIndex+1===assets.length?"POLL_CHILDREN":"CREATE_CHILDREN"};
    await save(s);return {status:"PROCESSING"};
   }
   if(s.phase==="POLL_CHILDREN"){
