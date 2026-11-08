@@ -52,7 +52,7 @@ export async function uploadTikTokInboxTarget(input:{targetId:string;workspaceId
   const init=await initResponse.json().catch(()=>null) as TikTokResponse|null;
   if(!initResponse.ok||init?.error?.code!=="ok"||typeof init.data?.publish_id!=="string"||typeof init.data.upload_url!=="string")throw new Error("TIKTOK_UPLOAD_INIT_FAILED");
   const uploadUrl=new URL(init.data.upload_url);
-  if(uploadUrl.protocol!=="https:"||uploadUrl.hostname!=="open-upload.tiktokapis.com"||uploadUrl.username||uploadUrl.password)throw new Error("TIKTOK_UPLOAD_URL_INVALID");
+  if(uploadUrl.protocol!=="https:"||!uploadUrl.hostname.endsWith(".tiktokapis.com")||uploadUrl.port!==""||uploadUrl.username||uploadUrl.password)throw new Error("TIKTOK_UPLOAD_URL_INVALID");
   const encryptedSession=encryptIntegrationCredentials({uploadUrl:uploadUrl.toString()},input.workspaceId,target.id);
   const initializedAt=new Date();
   await db.$transaction(async tx=>{
@@ -94,7 +94,7 @@ export async function processTikTokUploadTarget(input:{targetId:string;workspace
   const session=decryptIntegrationCredentials(target.uploadSessionEncrypted,input.workspaceId,target.id);
   if(typeof session.uploadUrl!=="string")throw new Error("TIKTOK_UPLOAD_SESSION_INVALID");
   const uploadUrl=new URL(session.uploadUrl);
-  if(uploadUrl.protocol!=="https:"||uploadUrl.hostname!=="open-upload.tiktokapis.com"||uploadUrl.username||uploadUrl.password)throw new Error("TIKTOK_UPLOAD_URL_INVALID");
+  if(uploadUrl.protocol!=="https:"||!uploadUrl.hostname.endsWith(".tiktokapis.com")||uploadUrl.port!==""||uploadUrl.username||uploadUrl.password)throw new Error("TIKTOK_UPLOAD_URL_INVALID");
   const storage=getSupabaseStorageConfig();
   if(asset.bucket!==storage.bucket||!asset.objectPath.startsWith(input.workspaceId+"/"))throw new Error("MEDIA_STORAGE_CONFIGURATION_MISMATCH");
   const mediaUrl=storage.baseUrl+"/storage/v1/object/"+encodeURIComponent(asset.bucket)+"/"+asset.objectPath.split("/").map(encodeURIComponent).join("/");
