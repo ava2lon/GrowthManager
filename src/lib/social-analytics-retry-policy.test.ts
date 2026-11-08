@@ -17,6 +17,7 @@ describe("classifyAnalyticsFailure", () => {
     "YOUTUBE_ANALYTICS_PROVIDER_UNAVAILABLE",
     "X_PROVIDER_UNAVAILABLE",
     "PINTEREST_NETWORK_ERROR",
+    "PINTEREST_REFRESH_UNAVAILABLE",
   ])("retries transient failure %s", (code) => {
     expect(classifyAnalyticsFailure(code)).toBe("RETRY");
   });
