@@ -79,24 +79,26 @@ export async function processPinterestVideoTarget(input:{targetId:string;workspa
  const mediaId=target.providerContainerId;
  const assets=target.contentPost.mediaAssets.map(x=>x.mediaAsset as Asset);
  const fail=async(code:string):Promise<Result>=>{
-  await db.$transaction(async tx=>{
-   const changed=await tx.socialPostTarget.updateMany({where:{id:target.id,workspaceId:input.workspaceId,provider:"PINTEREST",status:"PUBLISHING",nextCheckAt:leaseUntil},data:{status:"FAILED",errorCode:code,nextCheckAt:null,uploadSessionEncrypted:null}});
-   if(!changed.count)return;
+  const changed=await db.$transaction(async tx=>{
+   const updated=await tx.socialPostTarget.updateMany({where:{id:target.id,workspaceId:input.workspaceId,provider:"PINTEREST",status:"PUBLISHING",nextCheckAt:leaseUntil},data:{status:"FAILED",errorCode:code,nextCheckAt:null,uploadSessionEncrypted:null}});
+   if(!updated.count)return false;
    await tx.socialPublishAttempt.updateMany({where:{workspaceId:input.workspaceId,targetId:target.id,status:"PROCESSING"},data:{status:"FAILED",errorCode:code,finishedAt:new Date()}});
    await tx.contentPost.updateMany({where:{id:target.contentPost.id,workspaceId:input.workspaceId},data:{status:"FAILED"}});
    await tx.activityLog.create({data:{workspaceId:input.workspaceId,action:"social_post.publish_failed",entityType:"ContentPost",entityId:target.contentPost.id,metadata:{provider:"PINTEREST",targetId:target.id,errorCode,phase:"video_processing"}}});
+   return true;
   });
-  return {status:"FAILED",errorCode:code};
+  return changed?{status:"FAILED",errorCode:code}:{status:"SKIPPED"};
  };
  const unknown=async():Promise<Result>=>{
-  await db.$transaction(async tx=>{
-   const changed=await tx.socialPostTarget.updateMany({where:{id:target.id,workspaceId:input.workspaceId,provider:"PINTEREST",status:"PUBLISHING",nextCheckAt:leaseUntil},data:{status:"UNKNOWN",errorCode:"PINTEREST_PUBLISH_OUTCOME_UNKNOWN",nextCheckAt:null,uploadSessionEncrypted:null}});
-   if(!changed.count)return;
+  const changed=await db.$transaction(async tx=>{
+   const updated=await tx.socialPostTarget.updateMany({where:{id:target.id,workspaceId:input.workspaceId,provider:"PINTEREST",status:"PUBLISHING",nextCheckAt:leaseUntil},data:{status:"UNKNOWN",errorCode:"PINTEREST_PUBLISH_OUTCOME_UNKNOWN",nextCheckAt:null,uploadSessionEncrypted:null}});
+   if(!updated.count)return false;
    await tx.socialPublishAttempt.updateMany({where:{workspaceId:input.workspaceId,targetId:target.id,status:"PROCESSING"},data:{status:"UNKNOWN",errorCode:"PINTEREST_PUBLISH_OUTCOME_UNKNOWN",finishedAt:new Date()}});
    await tx.contentPost.updateMany({where:{id:target.contentPost.id,workspaceId:input.workspaceId},data:{status:"PUBLISHING"}});
    await tx.activityLog.create({data:{workspaceId:input.workspaceId,action:"social_post.publish_outcome_unknown",entityType:"ContentPost",entityId:target.contentPost.id,metadata:{provider:"PINTEREST",targetId:target.id,mediaId,requiresManualVerification:true}}});
+   return true;
   });
-  return {status:"UNKNOWN",errorCode:"PINTEREST_PUBLISH_OUTCOME_UNKNOWN"};
+  return changed?{status:"UNKNOWN",errorCode:"PINTEREST_PUBLISH_OUTCOME_UNKNOWN"}:{status:"SKIPPED"};
  };
  if(videoState.phase==="PIN_REQUEST_STARTED")return unknown();
  if(target.processingStartedAt&&Date.now()-target.processingStartedAt.getTime()>30*60_000)return fail("PINTEREST_VIDEO_PROCESSING_TIMEOUT");
