@@ -476,9 +476,11 @@ model AutomationAlertPolicy {
   cooldownMinutes       Int       @default(60)
   emailNotificationsEnabled Boolean @default(false)
   notificationEmail     String?
+  lastEvaluatedAt       DateTime?
   createdAt             DateTime  @default(now())
   updatedAt             DateTime  @updatedAt
   workspace             Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  @@index([enabled, lastEvaluatedAt])
 }
 
 model AutomationAlertEvent {
