@@ -112,7 +112,7 @@ export async function POST(request: Request) {
 
   const saved = await db.$transaction(async tx => {
     const drafts = [];
-    for (const [index,post] of posts.entries()) {
+    for (const post of posts) {
       const platform = String(post.platform);
       const hashtags = post.hashtags as string[];
       const body = [
