@@ -279,21 +279,41 @@ export type N8nExecutionSummary = {
 export async function listN8nExecutions(
   baseUrl: string,
   apiKey: string,
-  options: {status?: N8nExecutionStatus; workflowId?: string} = {},
-): Promise<{executions: N8nExecutionSummary[]; hasMore: boolean}> {
-  if (typeof apiKey !== "string" || apiKey.length < 16 || apiKey.length > 512) throw new Error("Invalid n8n API key.");
-  if (options.status && !["error", "success", "waiting"].includes(options.status)) throw new Error("Invalid n8n execution status.");
-  if (options.workflowId && !/^[A-Za-z0-9_-]{1,128}$/.test(options.workflowId)) throw new Error("Invalid n8n workflow ID.");
+  options: {
+    status?: N8nExecutionStatus;
+    workflowId?: string;
+    cursor?: string | null;
+    maxPages?: number;
+  } = {},
+): Promise<{executions: N8nExecutionSummary[]; hasMore: boolean; nextCursor: string | null}> {
+  if (typeof apiKey !== "string" || apiKey.length < 16 || apiKey.length > 512) {
+    throw new Error("Invalid n8n API key.");
+  }
+  if (options.status && !["error", "success", "waiting"].includes(options.status)) {
+    throw new Error("Invalid n8n execution status.");
+  }
+  if (options.workflowId && !/^[A-Za-z0-9_-]{1,128}$/.test(options.workflowId)) {
+    throw new Error("Invalid n8n workflow ID.");
+  }
+  if (options.cursor !== undefined && options.cursor !== null &&
+      (typeof options.cursor !== "string" || !options.cursor || options.cursor.length > 2048)) {
+    throw new Error("Invalid n8n execution cursor.");
+  }
+  const maxPages = options.maxPages ?? 3;
+  if (!Number.isInteger(maxPages) || maxPages < 1 || maxPages > 3) {
+    throw new Error("Invalid n8n execution page limit.");
+  }
 
   const normalizedBaseUrl = normalizeN8nBaseUrl(baseUrl);
   const executions: N8nExecutionSummary[] = [];
   const seenCursors = new Set<string>();
-  let cursor: string | undefined;
-  let hasMore = false;
+  let cursor = options.cursor ?? undefined;
+  if (cursor) seenCursors.add(cursor);
+  let nextCursor: string | null = null;
 
-  for (let page = 0; page < 3; page += 1) {
+  for (let page = 0; page < maxPages; page += 1) {
     const url = new URL(normalizedBaseUrl + "/api/v1/executions");
-    url.searchParams.set("limit", "50");
+    url.searchParams.set("limit", "250");
     url.searchParams.set("includeData", "false");
     if (options.status) url.searchParams.set("status", options.status);
     if (options.workflowId) url.searchParams.set("workflowId", options.workflowId);
@@ -313,10 +333,15 @@ export async function listN8nExecutions(
     }
     if (response.status === 401 || response.status === 403) throw new Error("N8N_AUTH_FAILED");
     if (response.status === 429) throw new Error("N8N_PROVIDER_RATE_LIMITED");
+    if (response.status === 400 && cursor) throw new Error("N8N_EXECUTION_CURSOR_INVALID");
     if (!response.ok) throw new Error("N8N_PROVIDER_UNAVAILABLE");
 
     let payload: unknown;
-    try { payload = await response.json(); } catch { throw new Error("N8N_PROVIDER_UNAVAILABLE"); }
+    try {
+      payload = await response.json();
+    } catch {
+      throw new Error("N8N_PROVIDER_UNAVAILABLE");
+    }
     if (!payload || typeof payload !== "object" || !Array.isArray((payload as {data?: unknown}).data)) {
       throw new Error("N8N_PROVIDER_UNAVAILABLE");
     }
@@ -325,8 +350,10 @@ export async function listN8nExecutions(
       if (!item || typeof item !== "object") continue;
       const execution = item as Record<string, unknown>;
       if (typeof execution.id !== "string" || typeof execution.workflowId !== "string") continue;
-      const safeDate = (value: unknown) => typeof value === "string" && !Number.isNaN(Date.parse(value)) ? value : null;
-      const safeId = (value: unknown) => typeof value === "string" && value.length <= 128 ? value : null;
+      const safeDate = (value: unknown) =>
+        typeof value === "string" && !Number.isNaN(Date.parse(value)) ? value : null;
+      const safeId = (value: unknown) =>
+        typeof value === "string" && value.length <= 128 ? value : null;
       executions.push({
         id: execution.id.slice(0, 128),
         workflowId: execution.workflowId.slice(0, 128),
@@ -340,16 +367,20 @@ export async function listN8nExecutions(
       });
     }
 
-    const nextCursor = (payload as {nextCursor?: unknown}).nextCursor;
-    if (typeof nextCursor !== "string" || !nextCursor || nextCursor.length > 2048 || seenCursors.has(nextCursor)) {
-      hasMore = false;
+    const candidate = (payload as {nextCursor?: unknown}).nextCursor;
+    if (typeof candidate !== "string" || !candidate || candidate.length > 2048) {
+      nextCursor = null;
       break;
     }
-    seenCursors.add(nextCursor);
-    cursor = nextCursor;
-    hasMore = page === 2;
+    if (seenCursors.has(candidate)) {
+      throw new Error("N8N_EXECUTION_CURSOR_REPEATED");
+    }
+    seenCursors.add(candidate);
+    nextCursor = candidate;
+    cursor = candidate;
   }
-  return {executions, hasMore};
+
+  return {executions, hasMore: nextCursor !== null, nextCursor};
 }
 
 
