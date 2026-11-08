@@ -5,7 +5,7 @@ import {synchronizeSocialIncidents} from "@/lib/social-incidents";
 import {dispatchSocialIncidentEmails} from "@/lib/social-incident-email-delivery";
 import {publishFacebookTarget,publishInstagramTarget} from "@/lib/social-publishing";
 import {startInstagramReelTarget,processInstagramReelTarget} from "@/lib/instagram-reels";
-import {processTikTokInboxTarget} from "@/lib/tiktok-upload";
+import {processTikTokInboxTarget,processTikTokUploadTarget} from "@/lib/tiktok-upload";
 import {processYouTubeUploadTarget} from "@/lib/youtube-upload";
 import {publishPinterestTarget} from "@/lib/pinterest-publishing";
 import {publishXTarget} from "@/lib/x-publishing";
@@ -35,7 +35,7 @@ export async function GET(request:Request){
   const now=new Date();
   const staleBefore=new Date(now.getTime()-3*60_000);
   const stale=await db.socialPostTarget.findMany({
-    where:{provider:{in:["FACEBOOK","INSTAGRAM","TIKTOK","PINTEREST","X"]},status:"PUBLISHING",updatedAt:{lt:staleBefore}},
+    where:{provider:{in:["FACEBOOK","INSTAGRAM","TIKTOK","PINTEREST","X"]},status:"PUBLISHING",updatedAt:{lt:staleBefore},NOT:{provider:"TIKTOK",uploadSessionEncrypted:{not:null}}},
     select:{id:true,workspaceId:true,contentPostId:true,provider:true},
     take:50,
   });
@@ -123,13 +123,15 @@ export async function GET(request:Request){
   }
 
   const tiktokProcessing=await db.socialPostTarget.findMany({
-    where:{provider:"TIKTOK",status:{in:["PROCESSING","UPLOADED"]},OR:[{nextCheckAt:null},{nextCheckAt:{lte:now}}]},
-    select:{id:true,workspaceId:true},orderBy:{nextCheckAt:"asc"},take:10,
+    where:{provider:"TIKTOK",status:{in:["PUBLISHING","PROCESSING","UPLOADED"]},AND:[{OR:[{status:{in:["PROCESSING","UPLOADED"]}},{status:"PUBLISHING",uploadSessionEncrypted:{not:null}}]},{OR:[{nextCheckAt:null},{nextCheckAt:{lte:now}}]}]},
+    select:{id:true,workspaceId:true,status:true},orderBy:{nextCheckAt:"asc"},take:2,
   });
   let tiktokUploaded=0,tiktokPublished=0,tiktokFailed=0;
   for(const target of tiktokProcessing){
     try{
-      const result=await processTikTokInboxTarget({targetId:target.id,workspaceId:target.workspaceId});
+      const result=target.status==="PUBLISHING"
+        ?await processTikTokUploadTarget({targetId:target.id,workspaceId:target.workspaceId})
+        :await processTikTokInboxTarget({targetId:target.id,workspaceId:target.workspaceId});
       if(result.status==="UPLOADED")tiktokUploaded++;
       else if(result.status==="PUBLISHED")tiktokPublished++;
       else if(result.status==="FAILED")tiktokFailed++;
