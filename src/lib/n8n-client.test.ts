@@ -299,9 +299,11 @@ describe("listN8nExecutions", () => {
         {id: "124", workflowId: "wf_1", status: "success", mode: "manual", startedAt: null, stoppedAt: null, waitTill: null, retryOf: null, retrySuccessId: null},
       ],
       hasMore: false,
+      nextCursor: null,
     });
     const [firstUrl, firstOptions] = fetchMock.mock.calls[0] as [URL, RequestInit];
     expect(firstUrl.searchParams.get("includeData")).toBe("false");
+    expect(firstUrl.searchParams.get("limit")).toBe("250");
     expect(firstUrl.searchParams.get("status")).toBe("error");
     expect(firstUrl.searchParams.get("workflowId")).toBe("wf_1");
     expect((firstOptions.headers as Record<string, string>)["X-N8N-API-KEY"]).toBe("n8n_test_api_key_123456");
@@ -322,6 +324,38 @@ describe("listN8nExecutions", () => {
     expect(fetchMock).toHaveBeenCalledTimes(3);
     expect(result.executions).toHaveLength(3);
     expect(result.hasMore).toBe(true);
+    expect(result.nextCursor).toBe("cursor-4");
+  });
+
+  it("resumes from a persisted cursor with a single bounded page", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({
+      data: [{id: "500", workflowId: "wf_1", status: "success", mode: "trigger"}],
+      nextCursor: "cursor-after-500",
+    }), {status: 200, headers: {"content-type": "application/json"}}));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const result = await listN8nExecutions(
+      "https://growth-team.app.n8n.cloud",
+      "n8n_test_api_key_123456",
+      {cursor: "persisted-cursor", maxPages: 1},
+    );
+
+    expect(result.executions).toHaveLength(1);
+    expect(result.hasMore).toBe(true);
+    expect(result.nextCursor).toBe("cursor-after-500");
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    const [url] = fetchMock.mock.calls[0] as [URL, RequestInit];
+    expect(url.searchParams.get("cursor")).toBe("persisted-cursor");
+    expect(url.searchParams.get("limit")).toBe("250");
+  });
+
+  it("rejects invalid persisted cursors so the sync worker can restart safely", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response("invalid cursor", {status: 400})));
+    await expect(listN8nExecutions(
+      "https://growth-team.app.n8n.cloud",
+      "n8n_test_api_key_123456",
+      {cursor: "expired-cursor", maxPages: 1},
+    )).rejects.toThrow("N8N_EXECUTION_CURSOR_INVALID");
   });
 
   it("rejects invalid filters before making a request", async () => {
