@@ -10,7 +10,6 @@ type Finding={level:"critical"|"warning"|"info"|"healthy";title:string;detail:st
 type Incident={id:string;category:string;severity:string;status:string;message:string;errorCode:string|null;occurrenceCount:number;firstSeenAt:Date;lastSeenAt:Date;acknowledgedAt:Date|null;resolvedAt:Date|null;resolutionMessage:string|null};
 type AnalyticsOperation={id:string;provider:string;accountName:string;status:string;latestFetchedAt:Date|null;errorCode:string|null;coverage90d:number;missingScopes:string[];optionalScopes:string[];eligible:boolean;nextEligibleAt:Date|null;stale:boolean;reauthorizationRequired:boolean};
 type AnalyticsRefreshEvent={id:string;action:string;entityType:string;entityId:string|null;metadata:unknown;createdAt:Date;user:{name:string|null;email:string}|null};
-const providerLabel=(value:string)=>({FACEBOOK:"Facebook",INSTAGRAM:"Instagram",PINTEREST:"Pinterest",X:"X",YOUTUBE:"YouTube",LINKEDIN:"LinkedIn",TIKTOK:"TikTok"}[value]??value);
 export default function SocialIntegrationHealthCenter({accounts,incidents,emailDeliveryCounts,analyticsOperations,analyticsRefreshHistory,canManage,canRefreshAnalytics}:{accounts:Account[];incidents:Incident[];emailDeliveryCounts:Array<{status:string;_count:{_all:number}}>;analyticsOperations:AnalyticsOperation[];analyticsRefreshHistory:AnalyticsRefreshEvent[];canManage:boolean;canRefreshAnalytics:boolean}){
  const now=Date.now();
  const findings=useMemo(()=>{
