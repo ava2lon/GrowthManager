@@ -386,6 +386,7 @@ model Integration {
   credentialsEncrypted String? @db.Text
   lastValidatedAt DateTime?
   lastExecutionSyncAt DateTime?
+  lastExecutionSyncCursor String? @db.Text
   lastErrorAt DateTime?
   lastErrorCode String?
   createdAt   DateTime  @default(now())
