@@ -33,15 +33,24 @@ export async function GET(request: Request) {
       cooldownMinutes: true,
     },
     orderBy: [{lastEvaluatedAt: {sort: "asc", nulls: "first"}}, {createdAt: "asc"}],
-    take: 50,
+    take: 4,
   });
 
   let evaluated = 0;
   let skipped = 0;
   let alertsTriggered = 0;
   let failedWorkspaces = 0;
+  let escalations = {eventsChecked: 0, deliveriesQueued: 0};
+  let emailDelivery: {claimed: number; sent: number; retried: number; failed: number} = {claimed: 0, sent: 0, retried: 0, failed: 0};
+  try {
+    escalations = await enqueueAutomationAlertEscalations();
+    emailDelivery = await dispatchAutomationAlertEmails(2);
+  } catch {
+    failedWorkspaces += 1;
+  }
 
-  for (const policy of policies) {
+  // Evaluate a bounded batch concurrently so provider timeouts cannot starve email dispatch.
+  await Promise.all(policies.map(async (policy) => {
     try {
       const integration = await db.integration.findFirst({
         where: {workspaceId: policy.workspaceId, provider: "n8n", status: "CONNECTED"},
@@ -135,14 +144,7 @@ export async function GET(request: Request) {
         failedWorkspaces += 1;
       }
     }
-  }
-
-  let escalations = {eventsChecked: 0, deliveriesQueued: 0};
-  let emailDelivery: {claimed: number; sent: number; retried: number; failed: number} = {claimed: 0, sent: 0, retried: 0, failed: 0};
-  try {
-    escalations = await enqueueAutomationAlertEscalations();
-    emailDelivery = await dispatchAutomationAlertEmails(5);
-  } catch { failedWorkspaces += 1; }
+  }));
   const result = {policies: policies.length, evaluated, skipped, alertsTriggered, failedWorkspaces, escalations, emailDelivery};
   if (failedWorkspaces) {
     return NextResponse.json(result, {status: 500});
