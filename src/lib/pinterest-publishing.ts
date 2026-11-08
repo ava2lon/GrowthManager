@@ -2,9 +2,10 @@ import "server-only";
 import {randomUUID} from "node:crypto";
 import {db} from "@/lib/db";
 import {getPinterestCredentials} from "@/lib/pinterest-auth";
+import {decryptIntegrationCredentials,encryptIntegrationCredentials} from "@/lib/integration-crypto";
 import {getSupabaseStorageConfig,storageHeaders} from "@/lib/media-storage";
 
-type Result={status:"PUBLISHED"|"FAILED"|"UNKNOWN"|"SKIPPED";errorCode?:string};
+type Result={status:"PUBLISHED"|"FAILED"|"UNKNOWN"|"SKIPPED"|"PROCESSING";errorCode?:string};
 type Asset={id:string;workspaceId:string;brandId:string|null;status:string;mimeType:string;sizeBytes:bigint;bucket:string;objectPath:string;originalFilename:string;width:number|null;height:number|null;durationMs:number|null};
 function metadataOf(value:unknown):Record<string,unknown>{return value&&typeof value==="object"&&!Array.isArray(value)?value as Record<string,unknown>:{}}
 async function signedMediaUrl(asset:Pick<Asset,"bucket"|"objectPath">){
@@ -18,39 +19,51 @@ async function signedMediaUrl(asset:Pick<Asset,"bucket"|"objectPath">){
  if(url.origin!==storage.baseUrl||!url.pathname.startsWith("/storage/v1/object/sign/")||url.protocol!=="https:")throw new Error("PINTEREST_MEDIA_SIGNING_FAILED");
  return url.toString();
 }
-async function uploadPinterestVideo(asset:Asset,accessToken:string):Promise<string>{
- const mediaUrl=await signedMediaUrl(asset);
- const source=await fetch(mediaUrl,{cache:"no-store",redirect:"error",signal:AbortSignal.timeout(30000)});
- if(!source.ok)throw new Error("PINTEREST_MEDIA_DOWNLOAD_FAILED");
- const declared=Number(source.headers.get("content-length")??asset.sizeBytes);
- if(!Number.isSafeInteger(declared)||declared!==Number(asset.sizeBytes)||declared>100*1024*1024)throw new Error("PINTEREST_VIDEO_INVALID");
- const bytes=await source.arrayBuffer();
- if(bytes.byteLength!==Number(asset.sizeBytes)||bytes.byteLength>100*1024*1024)throw new Error("PINTEREST_VIDEO_INVALID");
- const registration=await fetch("https://api.pinterest.com/v5/media",{method:"POST",headers:{Authorization:"Bearer "+accessToken,Accept:"application/json","Content-Type":"application/json"},body:JSON.stringify({media_type:"video"}),cache:"no-store",redirect:"error",signal:AbortSignal.timeout(20000)});
+type PinterestVideoSession={uploadUrl:string;uploadParameters:Record<string,string>};
+async function registerPinterestVideo(accessToken:string):Promise<{mediaId:string;session:PinterestVideoSession}>{
+ const registration=await fetch("https://api.pinterest.com/v5/media",{method:"POST",headers:{Authorization:"Bearer "+accessToken,Accept:"application/json","Content-Type":"application/json"},body:JSON.stringify({media_type:"video"}),cache:"no-store",redirect:"error",signal:AbortSignal.timeout(15000)});
  const registered=await registration.json().catch(()=>null) as {media_id?:string;upload_url?:string;upload_parameters?:Record<string,unknown>}|null;
  if(!registration.ok||!registered||typeof registered.media_id!=="string"||typeof registered.upload_url!=="string"||!registered.upload_parameters||typeof registered.upload_parameters!=="object")throw new Error(registration.status===401?"PINTEREST_AUTH_FAILED":registration.status===403?"PINTEREST_PERMISSION_DENIED":registration.status===429?"PINTEREST_RATE_LIMITED":"PINTEREST_MEDIA_REGISTRATION_FAILED");
  const uploadUrl=new URL(registered.upload_url);
  if(uploadUrl.protocol!=="https:"||uploadUrl.hostname!=="pinterest-media-upload.s3-accelerate.amazonaws.com"||uploadUrl.username||uploadUrl.password||uploadUrl.port)throw new Error("PINTEREST_UPLOAD_URL_REJECTED");
- const form=new FormData();
+ const uploadParameters:Record<string,string>={};
  for(const [key,value] of Object.entries(registered.upload_parameters)){
-  if(typeof value!=="string"||key.length>100||value.length>10000)throw new Error("PINTEREST_UPLOAD_PARAMETERS_INVALID");
-  form.append(key,value);
+  if(!/^[A-Za-z0-9_-]{1,100}$/.test(key)||typeof value!=="string"||/[\\r\\n]/.test(value)||value.length>10000)throw new Error("PINTEREST_UPLOAD_PARAMETERS_INVALID");
+  uploadParameters[key]=value;
  }
- form.append("file",new Blob([bytes],{type:asset.mimeType}),asset.originalFilename);
- const upload=await fetch(uploadUrl,{method:"POST",body:form,cache:"no-store",redirect:"error",signal:AbortSignal.timeout(55000)});
- if(!upload.ok&&upload.status!==204)throw new Error(upload.status>=500?"PINTEREST_VIDEO_UPLOAD_UNCERTAIN":"PINTEREST_VIDEO_UPLOAD_FAILED");
- let mediaStatus="registered";
- for(let attempt=0;attempt<15;attempt++){
-  const check=await fetch("https://api.pinterest.com/v5/media/"+encodeURIComponent(registered.media_id),{headers:{Authorization:"Bearer "+accessToken,Accept:"application/json"},cache:"no-store",redirect:"error",signal:AbortSignal.timeout(10000)});
-  if(!check.ok)throw new Error(check.status===401?"PINTEREST_AUTH_FAILED":check.status===429?"PINTEREST_RATE_LIMITED":"PINTEREST_MEDIA_STATUS_FAILED");
-  const detail=await check.json().catch(()=>null) as {status?:string}|null;
-  mediaStatus=typeof detail?.status==="string"?detail.status:"";
-  if(mediaStatus==="succeeded")return registered.media_id;
-  if(mediaStatus==="failed")throw new Error("PINTEREST_VIDEO_PROCESSING_FAILED");
-  await new Promise(resolve=>setTimeout(resolve,2000));
- }
- throw new Error("PINTEREST_VIDEO_PROCESSING_PENDING");
+ return {mediaId:registered.media_id,session:{uploadUrl:uploadUrl.toString(),uploadParameters}};
 }
+async function uploadPinterestVideo(asset:Asset,session:PinterestVideoSession):Promise<void>{
+ const mediaUrl=await signedMediaUrl(asset);
+ const source=await fetch(mediaUrl,{cache:"no-store",redirect:"error",signal:AbortSignal.timeout(10000)});
+ if(!source.ok||!source.body)throw new Error("PINTEREST_MEDIA_DOWNLOAD_FAILED");
+ const declared=Number(source.headers.get("content-length"));
+ if(!Number.isSafeInteger(declared)||declared!==Number(asset.sizeBytes)||declared>100*1024*1024)throw new Error("PINTEREST_VIDEO_INVALID");
+ const boundary="----GrowthManagerPinterest"+randomUUID().replace(/-/g,"");
+ const encoder=new TextEncoder();
+ let prefix="";
+ for(const [key,value] of Object.entries(session.uploadParameters))prefix+="--"+boundary+"\\r\\nContent-Disposition: form-data; name=\\""+key+"\\"\\r\\n\\r\\n"+value+"\\r\\n";
+ prefix+="--"+boundary+"\\r\\nContent-Disposition: form-data; name=\\"file\\"; filename=\\"video.bin\\"\\r\\nContent-Type: "+asset.mimeType+"\\r\\n\\r\\n";
+ const suffix="\\r\\n--"+boundary+"--\\r\\n";
+ const prefixBytes=encoder.encode(prefix),suffixBytes=encoder.encode(suffix);
+ const reader=source.body.getReader();
+ const body=new ReadableStream<Uint8Array>({
+  async start(controller){
+   try{
+    controller.enqueue(prefixBytes);
+    while(true){const part=await reader.read();if(part.done)break;controller.enqueue(part.value);}
+    controller.enqueue(suffixBytes);controller.close();
+   }catch(error){controller.error(error);}
+  },
+  cancel(){void reader.cancel();}
+ });
+ const contentLength=prefixBytes.byteLength+declared+suffixBytes.byteLength;
+ const init={method:"POST",headers:{"Content-Type":"multipart/form-data; boundary="+boundary,"Content-Length":String(contentLength)},body,cache:"no-store",redirect:"error",signal:AbortSignal.timeout(45000),duplex:"half"} as RequestInit & {duplex:"half"};
+ let upload:Response;
+ try{upload=await fetch(session.uploadUrl,init)}catch{throw new Error("PINTEREST_VIDEO_UPLOAD_UNCERTAIN")}
+ if(!upload.ok&&upload.status!==204)throw new Error(upload.status>=500?"PINTEREST_VIDEO_UPLOAD_UNCERTAIN":"PINTEREST_VIDEO_UPLOAD_FAILED");
+}
+
 export async function publishPinterestTarget(input:{targetId:string;workspaceId:string;actorUserId?:string;allowedStatuses?:Array<"DRAFT"|"SCHEDULED">}):Promise<Result>{
  const allowedStatuses=input.allowedStatuses??["DRAFT"];
  const target=await db.socialPostTarget.findFirst({where:{id:input.targetId,workspaceId:input.workspaceId,provider:"PINTEREST",status:{in:allowedStatuses}},include:{
