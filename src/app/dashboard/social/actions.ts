@@ -378,7 +378,7 @@ export async function checkTikTokAccountHealth(formData: FormData) {
 
   let failureCode: string | null = null;
   let displayName = account.accountName;
-  let grantedScopes = account.scopes;
+  const grantedScopes = account.scopes;
   try {
     const credentials = await getFreshTikTokCredentials({workspaceId: context.workspace.id, accountId: account.id});
     const endpoint = new URL("https://open.tiktokapis.com/v2/user/info/");
