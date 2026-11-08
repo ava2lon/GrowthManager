@@ -5,7 +5,6 @@ import {synchronizeSocialIncidents} from "@/lib/social-incidents";
 import {dispatchSocialIncidentEmails} from "@/lib/social-incident-email-delivery";
 import {publishFacebookTarget,publishInstagramTarget} from "@/lib/social-publishing";
 import {startInstagramReelTarget} from "@/lib/instagram-reels";
-import {publishXTarget} from "@/lib/x-publishing";
 
 export const runtime="nodejs";
 export const dynamic="force-dynamic";
@@ -105,13 +104,7 @@ export async function GET(request:Request){
       failed++;
     }
   }
-  const xDue=await db.socialPostTarget.findMany({where:{provider:"X",status:"SCHEDULED",contentPost:{scheduledAt:{lte:now}}},select:{id:true,workspaceId:true},orderBy:{contentPost:{scheduledAt:"asc"}},take:1});
-  let xPublished=0,xFailed=0,xUnknown=0,xSkipped=0;
-  for(const target of xDue){
-    try{const result=await publishXTarget({targetId:target.id,workspaceId:target.workspaceId,allowedStatuses:["SCHEDULED"]});if(result.status==="PUBLISHED")xPublished++;else if(result.status==="FAILED")xFailed++;else if(result.status==="UNKNOWN")xUnknown++;else xSkipped++;}
-    catch{xUnknown++;}
-  }
   const incidents=await synchronizeSocialIncidents();
   const incidentEmailDelivery=await dispatchSocialIncidentEmails(3);
-  return NextResponse.json({incidents,incidentEmailDelivery,due:due.length,x:{scheduledChecked:xDue.length,published:xPublished,failed:xFailed,unknown:xUnknown,skipped:xSkipped},published,failed,unknown,skipped,recoveredUnknown,recoveredYouTubeInitializations:recoveredYouTubeStarts});
+  return NextResponse.json({incidents,incidentEmailDelivery,due:due.length,published,failed,unknown,skipped,recoveredUnknown,recoveredYouTubeInitializations:recoveredYouTubeStarts});
 }
