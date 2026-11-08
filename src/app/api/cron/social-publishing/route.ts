@@ -219,6 +219,11 @@ export async function GET(request:Request){
     }
   }
   const xDue=await db.socialPostTarget.findMany({where:{provider:"X",status:"SCHEDULED",contentPost:{scheduledAt:{lte:now}}},select:{id:true,workspaceId:true},orderBy:{contentPost:{scheduledAt:"asc"}},take:1});
+  let xPublished=0,xFailed=0,xUnknown=0,xSkipped=0;
+  for(const target of xDue){
+    try{const result=await publishXTarget({targetId:target.id,workspaceId:target.workspaceId,allowedStatuses:["SCHEDULED"]});if(result.status==="PUBLISHED")xPublished++;else if(result.status==="FAILED")xFailed++;else if(result.status==="UNKNOWN")xUnknown++;else xSkipped++;}
+    catch{xUnknown++;}
+  }
   const incidents=await synchronizeSocialIncidents();
   const incidentEmailDelivery=await dispatchSocialIncidentEmails(3);
   return NextResponse.json({incidents,incidentEmailDelivery,due:due.length,x:{scheduledChecked:xDue.length,published:xPublished,failed:xFailed,unknown:xUnknown,skipped:xSkipped,analytics:{accountsRefreshed:xAnalyticsAccountsRefreshed,accountsFailed:xAnalyticsAccountsFailed}},published,failed,unknown,skipped,recoveredUnknown,pinterest:{analyticsChecked:pinterestAnalyticsDue.length,analyticsRefreshed:pinterestAnalyticsRefreshed,analyticsFailed:pinterestAnalyticsFailed,pinAnalyticsChecked:pinAnalyticsTarget?1:0,pinAnalyticsRefreshed:pinterestPinAnalyticsRefreshed,pinAnalyticsFailed:pinterestPinAnalyticsFailed},tiktok:{analytics:{accountsRefreshed:tikTokAccountsRefreshed,accountsFailed:tikTokAccountsFailed,videosRefreshed:tikTokVideosRefreshed,videosFailed:tikTokVideosFailed}},youtube:{recoveredInitializations:recoveredYouTubeStarts,analytics:{channelsRefreshed:youtubeAnalyticsAccountsRefreshed,channelsFailed:youtubeAnalyticsAccountsFailed,videosRefreshed:youtubeAnalyticsVideosRefreshed,videosFailed:youtubeAnalyticsVideosFailed}}});
