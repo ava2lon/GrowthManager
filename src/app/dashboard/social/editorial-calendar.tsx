@@ -22,7 +22,8 @@ export default function SocialEditorialCalendar({initialMonth,posts}:{initialMon
   const [providerFilter,setProviderFilter]=useState<"ALL"|Provider>("ALL");
   const router=useRouter();
   const gridStart=startOfGrid(month);
-  const days=useMemo(()=>Array.from({length:42},(_,i)=>new Date(gridStart.getTime()+i*86400000)),[gridStart.getTime()]);
+  const gridStartTime=gridStart.getTime();
+  const days=useMemo(()=>Array.from({length:42},(_,i)=>new Date(gridStartTime+i*86400000)),[gridStartTime]);
   const visibleDays=view==="month"?days:days.slice(weekOffset*7,weekOffset*7+7);
   const groupedPosts=useMemo(()=>{
     const grouped=new Map<string,CalendarPost>();
