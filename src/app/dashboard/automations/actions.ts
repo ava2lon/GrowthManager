@@ -132,6 +132,10 @@ export async function evaluateAutomationAlerts() {
       metadata: {lookbackMinutes: policy.lookbackMinutes, sampleSize: recent.length, failures: failed.length, failureRate, alertsTriggered: triggers.length},
     },
   });
+  await db.automationAlertPolicy.updateMany({
+    where: {workspaceId: context.workspace.id},
+    data: {lastEvaluatedAt: new Date()},
+  });
   revalidatePath("/dashboard/automations");
 }
 
