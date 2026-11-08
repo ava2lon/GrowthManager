@@ -25,7 +25,7 @@ jobs:
           curl --fail-with-body --silent --show-error             --max-time 75             -H "Authorization: Bearer $CRON_SECRET"             "https://growthmanager.vercel.app/api/cron/social-publishing"
 
       - name: Sync one connected n8n integration execution history
-        if: always()
+        if: ${{ !cancelled() }}
         env:
           CRON_SECRET: ${{ secrets.GROWTHMANAGER_CRON_SECRET }}
         run: |
@@ -35,7 +35,7 @@ jobs:
             "https://growthmanager.vercel.app/api/cron/n8n-executions"
 
       - name: Dispatch content review email outbox
-        if: always()
+        if: ${{ !cancelled() }}
         env:
           CRON_SECRET: ${{ secrets.GROWTHMANAGER_CRON_SECRET }}
         run: |
@@ -45,7 +45,7 @@ jobs:
             "https://growthmanager.vercel.app/api/cron/content-review-emails"
 
       - name: Evaluate automation alert policies and deliver notifications
-        if: always()
+        if: ${{ !cancelled() }}
         env:
           CRON_SECRET: ${{ secrets.GROWTHMANAGER_CRON_SECRET }}
         run: |
