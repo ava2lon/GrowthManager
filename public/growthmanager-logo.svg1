@@ -1,7 +1,0 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 720 150" role="img" aria-labelledby="title desc">
-  <title id="title">GrowthManager</title><desc id="desc">GrowthManager — Data. Insight. Growth.</desc>
-  <defs><linearGradient id="brand" x1="22" y1="8" x2="116" y2="138" gradientUnits="userSpaceOnUse"><stop stop-color="#20A4FF"/><stop offset=".52" stop-color="#245BFF"/><stop offset="1" stop-color="#702BFF"/></linearGradient></defs>
-  <g transform="translate(0 8)"><path fill="url(#brand)" d="M68 2 125 35 103 48 68 28 26 52V94L68 118 88 106V88L68 100 52 90 112 55 132 66V108L68 145 4 108V38L68 2Z"/><path fill="url(#brand)" d="m54 72 43-25 19 11-43 25-19-11Z"/></g>
-  <text x="158" y="91" fill="#F8FAFC" font-family="Inter,Arial,sans-serif" font-size="66" font-weight="500" letter-spacing="-2.8">GrowthManager</text>
-  <text x="160" y="128" fill="#94A3B8" font-family="Inter,Arial,sans-serif" font-size="17" font-weight="500" letter-spacing="5.2">DATA. INSIGHT. <tspan fill="#7860FF">GROWTH.</tspan></text>
-</svg>
