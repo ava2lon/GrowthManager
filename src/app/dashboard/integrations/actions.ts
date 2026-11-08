@@ -764,6 +764,7 @@ export async function syncN8nExecutionHistory(formData: FormData) {
       provider: "n8n",
       status: "CONNECTED",
       credentialsEncrypted: integration.credentialsEncrypted,
+      lastExecutionSyncCursor: integration.lastExecutionSyncCursor,
     },
     data: {lastExecutionSyncAt: now, lastExecutionSyncCursor: result.nextCursor},
   });
