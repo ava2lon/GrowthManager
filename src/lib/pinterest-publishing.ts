@@ -143,9 +143,10 @@ export async function processPinterestVideoTarget(input:{targetId:string;workspa
     return {status:"PROCESSING"};
    }
   }
-  leaseUntil=new Date(Date.now()+3*60_000);
-  const verifyState=await db.socialPostTarget.updateMany({where:{id:target.id,workspaceId:input.workspaceId,provider:"PINTEREST",status:"PUBLISHING",nextCheckAt:leaseUntil},data:{uploadMetadata:{...settings,pinterestVideo:{phase:"VERIFY_UPLOAD",coverAssetId:cover.id}},nextCheckAt:leaseUntil}});
+  const uploadLease=new Date(Date.now()+3*60_000);
+  const verifyState=await db.socialPostTarget.updateMany({where:{id:target.id,workspaceId:input.workspaceId,provider:"PINTEREST",status:"PUBLISHING",nextCheckAt:leaseUntil},data:{uploadMetadata:{...settings,pinterestVideo:{phase:"VERIFY_UPLOAD",coverAssetId:cover.id}},nextCheckAt:uploadLease}});
   if(!verifyState.count)return {status:"SKIPPED"};
+  leaseUntil=uploadLease;
   try{await uploadPinterestVideo(clip,session)}
   catch(error){
    const code=error instanceof Error?error.message:"PINTEREST_VIDEO_UPLOAD_UNCERTAIN";
