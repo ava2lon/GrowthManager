@@ -61,6 +61,36 @@ export async function GET(request:Request){
     }
   }
 
+  const pinterestDue=await db.socialPostTarget.findMany({
+    where:{provider:"PINTEREST",status:"SCHEDULED",contentPost:{scheduledAt:{lte:now}}},
+    select:{id:true,workspaceId:true},orderBy:{contentPost:{scheduledAt:"asc"}},take:1,
+  });
+  let pinterestPublished=0,pinterestFailed=0,pinterestUnknown=0,pinterestSkipped=0,pinterestStarted=0;
+  for(const target of pinterestDue){
+    try{
+      const result=await publishPinterestTarget({targetId:target.id,workspaceId:target.workspaceId,allowedStatuses:["SCHEDULED"]});
+      if(result.status==="PUBLISHED")pinterestPublished++;
+      else if(result.status==="FAILED")pinterestFailed++;
+      else if(result.status==="UNKNOWN")pinterestUnknown++;
+      else if(result.status==="PROCESSING")pinterestStarted++;
+      else pinterestSkipped++;
+    }catch{pinterestUnknown++;}
+  }
+
+  const pinterestProcessing=await db.socialPostTarget.findMany({
+    where:{provider:"PINTEREST",status:"PUBLISHING",providerContainerId:{not:null},OR:[{nextCheckAt:null},{nextCheckAt:{lte:now}}]},
+    select:{id:true,workspaceId:true},orderBy:{nextCheckAt:"asc"},take:1,
+  });
+  let pinterestVideoProcessing=0,pinterestVideoFailed=0,pinterestVideoUnknown=0;
+  for(const target of pinterestProcessing){
+    try{
+      const result=await processPinterestVideoTarget({targetId:target.id,workspaceId:target.workspaceId});
+      if(result.status==="PROCESSING")pinterestVideoProcessing++;
+      else if(result.status==="FAILED")pinterestVideoFailed++;
+      else if(result.status==="UNKNOWN")pinterestVideoUnknown++;
+    }catch{pinterestVideoFailed++;}
+  }
+
   // A process can die after claiming a target but before persisting Google's session URI.
   // No video bytes have been transferred at that point, so mark it safely retryable as a failed draft.
   const abandonedYouTubeStarts=await db.socialPostTarget.findMany({
@@ -140,36 +170,6 @@ export async function GET(request:Request){
     }catch{tiktokFailed++;}
   }
 
-
-  const pinterestDue=await db.socialPostTarget.findMany({
-    where:{provider:"PINTEREST",status:"SCHEDULED",contentPost:{scheduledAt:{lte:now}}},
-    select:{id:true,workspaceId:true},orderBy:{contentPost:{scheduledAt:"asc"}},take:1,
-  });
-  let pinterestPublished=0,pinterestFailed=0,pinterestUnknown=0,pinterestSkipped=0,pinterestStarted=0;
-  for(const target of pinterestDue){
-    try{
-      const result=await publishPinterestTarget({targetId:target.id,workspaceId:target.workspaceId,allowedStatuses:["SCHEDULED"]});
-      if(result.status==="PUBLISHED")pinterestPublished++;
-      else if(result.status==="FAILED")pinterestFailed++;
-      else if(result.status==="UNKNOWN")pinterestUnknown++;
-      else if(result.status==="PROCESSING")pinterestStarted++;
-      else pinterestSkipped++;
-    }catch{pinterestUnknown++;}
-  }
-
-  const pinterestProcessing=await db.socialPostTarget.findMany({
-    where:{provider:"PINTEREST",status:"PUBLISHING",providerContainerId:{not:null},OR:[{nextCheckAt:null},{nextCheckAt:{lte:now}}]},
-    select:{id:true,workspaceId:true},orderBy:{nextCheckAt:"asc"},take:1,
-  });
-  let pinterestVideoProcessing=0,pinterestVideoFailed=0,pinterestVideoUnknown=0;
-  for(const target of pinterestProcessing){
-    try{
-      const result=await processPinterestVideoTarget({targetId:target.id,workspaceId:target.workspaceId});
-      if(result.status==="PROCESSING")pinterestVideoProcessing++;
-      else if(result.status==="FAILED")pinterestVideoFailed++;
-      else if(result.status==="UNKNOWN")pinterestVideoUnknown++;
-    }catch{pinterestVideoFailed++;}
-  }
 
   // Collect at most one account-level Pinterest analytics report per worker run.
   // A failed report is also snapshotted for the UTC day to prevent a tight retry loop.
