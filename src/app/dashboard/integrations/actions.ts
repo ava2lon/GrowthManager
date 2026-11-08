@@ -510,7 +510,7 @@ export async function retryN8nExecutionAction(formData: FormData) {
 
   const integration = await db.integration.findFirst({
     where: {id: integrationId, workspaceId: context.workspace.id, provider: "n8n", status: "CONNECTED"},
-    select: {id: true, credentialsEncrypted: true},
+    select: {id: true, credentialsEncrypted: true, lastExecutionSyncCursor: true},
   });
   if (!integration?.credentialsEncrypted) throw new Error("A connected n8n integration is required.");
 
@@ -716,7 +716,10 @@ export async function syncN8nExecutionHistory(formData: FormData) {
     throw new Error("Saved n8n credentials are incomplete.");
   }
 
-  const result = await listN8nExecutions(credentials.baseUrl, credentials.apiKey);
+  const result = await listN8nExecutions(credentials.baseUrl, credentials.apiKey, {
+    cursor: integration.lastExecutionSyncCursor,
+    maxPages: 1,
+  });
   const now = new Date();
   const operations = result.executions.map((execution) => db.n8nExecutionSnapshot.upsert({
     where: {
@@ -754,6 +757,19 @@ export async function syncN8nExecutionHistory(formData: FormData) {
   }));
 
   if (operations.length) await db.$transaction(operations);
+  const cursorUpdated = await db.integration.updateMany({
+    where: {
+      id: integration.id,
+      workspaceId: context.workspace.id,
+      provider: "n8n",
+      status: "CONNECTED",
+      credentialsEncrypted: integration.credentialsEncrypted,
+    },
+    data: {lastExecutionSyncAt: now, lastExecutionSyncCursor: result.nextCursor},
+  });
+  if (cursorUpdated.count !== 1) {
+    throw new Error("The n8n connection changed during synchronization. Refresh and try again.");
+  }
   await db.activityLog.create({
     data: {
       workspaceId: context.workspace.id,
