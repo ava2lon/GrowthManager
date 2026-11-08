@@ -5,6 +5,7 @@ import {synchronizeSocialIncidents} from "@/lib/social-incidents";
 import {dispatchSocialIncidentEmails} from "@/lib/social-incident-email-delivery";
 import {publishFacebookTarget,publishInstagramTarget} from "@/lib/social-publishing";
 import {startInstagramReelTarget} from "@/lib/instagram-reels";
+import {startInstagramCarouselTarget} from "@/lib/instagram-carousel";
 
 export const runtime="nodejs";
 export const dynamic="force-dynamic";
@@ -26,7 +27,7 @@ export async function GET(request:Request){
   // X owns a resumable upload/publish state machine and reconciles its own expired leases.
   // Do not classify its multi-invocation media uploads as interrupted publishes here.
   const stale=await db.socialPostTarget.findMany({
-    where:{provider:{in:["FACEBOOK","INSTAGRAM","TIKTOK","PINTEREST"]},status:"PUBLISHING",updatedAt:{lt:staleBefore},NOT:[{provider:"TIKTOK",uploadSessionEncrypted:{not:null}},{provider:"PINTEREST",providerContainerId:{not:null}}]},
+    where:{provider:{in:["FACEBOOK","INSTAGRAM","TIKTOK","PINTEREST"]},status:"PUBLISHING",updatedAt:{lt:staleBefore},OR:[{nextCheckAt:null},{nextCheckAt:{lt:staleBefore}}],NOT:[{provider:"TIKTOK",uploadSessionEncrypted:{not:null}},{provider:"PINTEREST",providerContainerId:{not:null}}]},
     select:{id:true,workspaceId:true,contentPostId:true,provider:true},
     take:50,
   });
@@ -87,12 +88,14 @@ export async function GET(request:Request){
   let published=0,failed=0,unknown=0,skipped=0;
   for(const target of due){
     try{
-      const reel=target.provider==="INSTAGRAM"?await db.contentPostMedia.findFirst({
-        where:{workspaceId:target.workspaceId,contentPost:{publishTargets:{some:{id:target.id}}},mediaAsset:{mimeType:{in:["video/mp4","video/quicktime"]}}},
-        select:{id:true},
-      }):null;
+      const media=target.provider==="INSTAGRAM"?await db.contentPostMedia.findMany({
+        where:{workspaceId:target.workspaceId,contentPost:{publishTargets:{some:{id:target.id}}}},
+        select:{id:true,mediaAsset:{select:{mimeType:true}}},orderBy:{position:"asc"},take:2,
+      }):[];
+      const isReel=media.some(item=>item.mediaAsset.mimeType==="video/mp4"||item.mediaAsset.mimeType==="video/quicktime");
       const result=target.provider==="INSTAGRAM"
-        ?reel?await startInstagramReelTarget({targetId:target.id,workspaceId:target.workspaceId,allowedStatuses:["SCHEDULED"]})
+        ?isReel?await startInstagramReelTarget({targetId:target.id,workspaceId:target.workspaceId,allowedStatuses:["SCHEDULED"]})
+          :media.length>1?await startInstagramCarouselTarget({targetId:target.id,workspaceId:target.workspaceId,allowedStatuses:["SCHEDULED"]})
           :await publishInstagramTarget({targetId:target.id,workspaceId:target.workspaceId,allowedStatuses:["SCHEDULED"]})
         :await publishFacebookTarget({targetId:target.id,workspaceId:target.workspaceId,allowedStatuses:["SCHEDULED"]});
       if(result.status==="PUBLISHED")published++;
