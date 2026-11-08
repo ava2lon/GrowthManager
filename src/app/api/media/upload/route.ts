@@ -31,7 +31,7 @@ export async function POST(request: Request) {
 
   let validated;
   try {
-    validated = validateMediaUpload(body);
+    validated = validateMediaUpload({fileName: body.fileName, mimeType: body.mimeType, sizeBytes: body.sizeBytes});
   } catch (error) {
     return NextResponse.json({error: error instanceof Error ? error.message : "Invalid upload."}, {status: 400});
   }
