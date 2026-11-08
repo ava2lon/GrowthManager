@@ -13,7 +13,7 @@ type Graph={id?:string;status_code?:string;error?:{code?:number;message?:string}
 function record(value:unknown):Record<string,unknown>{return value&&typeof value==="object"&&!Array.isArray(value)?value as Record<string,unknown>:{}}
 function stateOf(value:unknown):State|null{
  const s=record(record(value).instagramCarousel);
- if(s.version!==1||typeof s.phase!=="string"||!Array.isArray(s.childIds)||typeof s.childIndex!=="number"||typeof s.startedAt!=="string")return null;
+ if(s.version!==1||!["CREATE_CHILDREN","POLL_CHILDREN","CREATE_PARENT","POLL_PARENT","PUBLISH","PUBLISH_REQUEST_STARTED"].includes(String(s.phase))||!Array.isArray(s.childIds)||!s.childIds.every(id=>typeof id==="string"&&id.length>0)||typeof s.childIndex!=="number"||!Number.isInteger(s.childIndex)||typeof s.startedAt!=="string"||Number.isNaN(Date.parse(s.startedAt)))return null;
  return s as unknown as State;
 }
 function api(version:string,id:string){return new URL("https://graph.facebook.com/"+version+"/"+id.split("/").map(encodeURIComponent).join("/"));}
@@ -29,6 +29,7 @@ async function signedUrl(asset:Asset){
 async function post(url:URL,form:URLSearchParams):Promise<string>{
  let response:Response;try{response=await fetch(url,{method:"POST",headers:{"Content-Type":"application/x-www-form-urlencoded"},body:form.toString(),cache:"no-store",redirect:"error",signal:AbortSignal.timeout(15000)});}catch{throw new Error("PUBLISH_OUTCOME_UNKNOWN");}
  const body=await response.json().catch(()=>null) as Graph|null;
+ if(response.status>=500||response.status===408||response.ok&&typeof body?.id!=="string")throw new Error("PUBLISH_OUTCOME_UNKNOWN");
  if(!response.ok||typeof body?.id!=="string")throw new Error(body?metaError(response,body):"PUBLISH_OUTCOME_UNKNOWN");
  return body.id;
 }
@@ -61,7 +62,7 @@ export async function startInstagramCarouselTarget(input:{targetId:string;worksp
  });
  if(!started)return {status:"SKIPPED"};
  return {status:"PROCESSING"};
- async function fail(code:string):Promise<Outcome>{await db.socialPostTarget.updateMany({where:{id:input.targetId,workspaceId:input.workspaceId,status:{in:allowed}},data:{status:"FAILED",errorCode:code}});return {status:"FAILED",errorCode:code};}
+ async function fail(code:string):Promise<Outcome>{await db.$transaction(async tx=>{const changed=await tx.socialPostTarget.updateMany({where:{id:input.targetId,workspaceId:input.workspaceId,status:{in:allowed}},data:{status:"FAILED",errorCode:code}});if(changed.count)await tx.contentPost.updateMany({where:{id:t.contentPost.id,workspaceId:input.workspaceId},data:{status:"FAILED"}});});return {status:"FAILED",errorCode:code};}
 }
 export async function processInstagramCarouselTarget(input:{targetId:string;workspaceId:string}):Promise<Outcome>{
  const t=await db.socialPostTarget.findFirst({where:{id:input.targetId,workspaceId:input.workspaceId,provider:"INSTAGRAM",status:"PROCESSING",OR:[{nextCheckAt:null},{nextCheckAt:{lte:new Date()}}]},include:{contentPost:{select:{id:true,workspaceId:true,body:true,brandId:true,mediaAssets:{orderBy:{position:"asc"},select:{mediaAsset:{select:{id:true,status:true,mimeType:true,bucket:true,objectPath:true,workspaceId:true,brandId:true}}}}}},socialAccount:{select:{id:true,workspaceId:true,status:true,scopes:true,credentialsEncrypted:true,metadata:true}}}});
@@ -84,12 +85,14 @@ export async function processInstagramCarouselTarget(input:{targetId:string;work
    await save(s);return {status:"PROCESSING"};
   }
   if(s.phase==="POLL_CHILDREN"){
+   if(assets.length<2||s.childIds.length!==assets.length||s.childIndex!==assets.length)return mark("UNKNOWN","INSTAGRAM_CHILD_STATE_INCOMPLETE");
    const statuses=await Promise.all(s.childIds.map(id=>getStatus(id,version,token)));
    if(statuses.some(x=>x==="ERROR"||x==="EXPIRED"))return mark("FAILED","INSTAGRAM_CHILD_PROCESSING_FAILED");
    if(statuses.some(x=>x!=="FINISHED")){await reschedule();return {status:"PROCESSING"};}
    s={...s,phase:"CREATE_PARENT"};await save(s);return {status:"PROCESSING"};
   }
   if(s.phase==="CREATE_PARENT"){
+   if(assets.length<2||s.childIds.length!==assets.length||s.childIndex!==assets.length)return mark("UNKNOWN","INSTAGRAM_CHILD_STATE_INCOMPLETE");
    const form=new URLSearchParams({media_type:"CAROUSEL",children:s.childIds.join(","),caption:t.contentPost.body,access_token:token});
    // Persist intent before the POST. If execution dies after this write, never issue the POST again.
    s={...s,phase:"POLL_PARENT"};await save(s);
