@@ -24,10 +24,10 @@ export async function GET(request:Request){
  if(!authorized(request))return NextResponse.json({error:"Unauthorized"},{status:401});
  const now=new Date();
  const analyticsSlot=Math.floor(now.getTime()/300000)%6;
+ const analyticsDay=new Date(now.toISOString().slice(0,10)+"T00:00:00.000Z");
  if(analyticsSlot===0){
   // Collect at most one account-level Pinterest analytics report per worker run.
   // A failed report is also snapshotted for the UTC day to prevent a tight retry loop.
-  const analyticsDay=new Date(now.toISOString().slice(0,10)+"T00:00:00.000Z");
   const pinterestAnalyticsDue=await db.socialAccount.findMany({
     where:{provider:"PINTEREST",status:"CONNECTED",scopes:{has:"user_accounts:read"},pinterestAnalyticsSnapshots:{none:{reportDate:analyticsDay}}},
     select:{id:true,workspaceId:true},
