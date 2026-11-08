@@ -23,13 +23,14 @@ type Candidate={id:string;workspaceId:string;provider:"PINTEREST"|"YOUTUBE"|"INS
 export async function GET(request:Request){
  if(!authorized(request))return NextResponse.json({error:"Unauthorized"},{status:401});
  const now=new Date();
- const [pinterestProcessing,pinterestScheduled,youtube,instagram,tiktok,x]=await Promise.all([
+ const [pinterestProcessing,pinterestScheduled,youtube,instagram,tiktok,xProcessing,xScheduled]=await Promise.all([
   db.socialPostTarget.findMany({where:{provider:"PINTEREST",status:"PUBLISHING",providerContainerId:{not:null},OR:[{nextCheckAt:null},{nextCheckAt:{lte:now}}]},select:{id:true,workspaceId:true,status:true,nextCheckAt:true,updatedAt:true},orderBy:{nextCheckAt:"asc"},take:1}),
   db.socialPostTarget.findMany({where:{provider:"PINTEREST",status:"SCHEDULED",contentPost:{scheduledAt:{lte:now}}},select:{id:true,workspaceId:true,status:true,updatedAt:true,contentPost:{select:{scheduledAt:true}}},orderBy:{contentPost:{scheduledAt:"asc"}},take:1}),
   db.socialPostTarget.findMany({where:{provider:"YOUTUBE",status:{in:["PUBLISHING","PROCESSING","SCHEDULED"]},OR:[{status:"PUBLISHING",uploadSessionEncrypted:{not:null}},{status:"PROCESSING",providerPostId:{not:null}},{status:"SCHEDULED",providerPostId:{not:null}}],AND:[{OR:[{nextCheckAt:null},{nextCheckAt:{lte:now}}]}]},select:{id:true,workspaceId:true,status:true,nextCheckAt:true,updatedAt:true},orderBy:{nextCheckAt:"asc"},take:1}),
   db.socialPostTarget.findMany({where:{provider:"INSTAGRAM",status:"PROCESSING",providerContainerId:{not:null},OR:[{nextCheckAt:null},{nextCheckAt:{lte:now}}]},select:{id:true,workspaceId:true,status:true,nextCheckAt:true,updatedAt:true},orderBy:{nextCheckAt:"asc"},take:1}),
   db.socialPostTarget.findMany({where:{provider:"TIKTOK",status:{in:["PUBLISHING","PROCESSING","UPLOADED"]},AND:[{OR:[{status:"PROCESSING"},{status:"UPLOADED",nextCheckAt:{not:null}},{status:"PUBLISHING",uploadSessionEncrypted:{not:null}}]},{OR:[{nextCheckAt:null},{nextCheckAt:{lte:now}}]}]},select:{id:true,workspaceId:true,status:true,nextCheckAt:true,updatedAt:true},orderBy:{nextCheckAt:"asc"},take:1}),
-  db.socialPostTarget.findMany({where:{provider:"X",status:{in:["SCHEDULED","PUBLISHING"]},OR:[{status:"PUBLISHING",OR:[{nextCheckAt:null},{nextCheckAt:{lte:now}}]},{status:"SCHEDULED",contentPost:{scheduledAt:{lte:now}}}]},select:{id:true,workspaceId:true,status:true,nextCheckAt:true,updatedAt:true,contentPost:{select:{scheduledAt:true}}},orderBy:{nextCheckAt:"asc"},take:1}),
+  db.socialPostTarget.findMany({where:{provider:"X",status:"PUBLISHING",OR:[{nextCheckAt:null},{nextCheckAt:{lte:now}}]},select:{id:true,workspaceId:true,status:true,nextCheckAt:true,updatedAt:true},orderBy:{nextCheckAt:"asc"},take:1}),
+  db.socialPostTarget.findMany({where:{provider:"X",status:"SCHEDULED",contentPost:{scheduledAt:{lte:now}}},select:{id:true,workspaceId:true,status:true,nextCheckAt:true,updatedAt:true,contentPost:{select:{scheduledAt:true}}},orderBy:{contentPost:{scheduledAt:"asc"}},take:1}),
  ]);
  const candidates:Candidate[]=[];
  for(const t of pinterestProcessing)candidates.push({...t,provider:"PINTEREST",dueAt:t.nextCheckAt??t.updatedAt});
@@ -37,7 +38,8 @@ export async function GET(request:Request){
  for(const t of youtube)candidates.push({...t,provider:"YOUTUBE",dueAt:t.nextCheckAt??t.updatedAt});
  for(const t of instagram)candidates.push({...t,provider:"INSTAGRAM",dueAt:t.nextCheckAt??t.updatedAt});
  for(const t of tiktok)candidates.push({...t,provider:"TIKTOK",dueAt:t.nextCheckAt??t.updatedAt});
- for(const t of x)candidates.push({...t,provider:"X",dueAt:t.nextCheckAt??t.contentPost.scheduledAt??t.updatedAt});
+ for(const t of xProcessing)candidates.push({...t,provider:"X",dueAt:t.nextCheckAt??t.updatedAt});
+ for(const t of xScheduled)candidates.push({...t,provider:"X",dueAt:t.contentPost.scheduledAt??t.updatedAt});
  candidates.sort((a,b)=>a.dueAt.getTime()-b.dueAt.getTime());
  const selected=candidates[0];
  if(!selected)return NextResponse.json({processed:0,reason:"NO_DUE_MEDIA_JOBS"});
