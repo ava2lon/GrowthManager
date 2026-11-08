@@ -124,20 +124,21 @@ export async function GET(request: Request) {
     if (!user?.open_id || user.open_id !== token.open_id || !user.display_name) {
       throw new Error("TIKTOK_PROFILE_INVALID");
     }
-
+    const providerUserId = user.open_id;
+    const accountName = user.display_name;
 
     const tokenExpiresAt = Number.isFinite(token.expires_in) && (token.expires_in ?? 0) > 0
       ? new Date(Date.now() + (token.expires_in as number) * 1000) : null;
     const refreshExpiresAt = Number.isFinite(token.refresh_expires_in) && (token.refresh_expires_in ?? 0) > 0
       ? new Date(Date.now() + (token.refresh_expires_in as number) * 1000) : null;
     const existing = await db.socialAccount.findFirst({
-      where: {workspaceId:state.workspaceId,provider:"TIKTOK",providerUserId:user.open_id},
+      where: {workspaceId:state.workspaceId,provider:"TIKTOK",providerUserId},
       select: {id:true},
     });
     const id = existing?.id ?? randomUUID();
     const metadata = {
-      openId: user.open_id,
-      displayName: user.display_name,
+      openId: providerUserId,
+      displayName: accountName,
       avatarUrl: typeof user.avatar_url === "string" ? user.avatar_url : null,
       inboxUploadEnabled: scopes.includes("video.upload"),
       analyticsEnabled: scopes.includes("video.list"),
@@ -150,20 +151,20 @@ export async function GET(request: Request) {
       tokenType:token.token_type ?? "Bearer",
       accessTokenExpiresAt:tokenExpiresAt?.toISOString() ?? null,
       refreshTokenExpiresAt:refreshExpiresAt?.toISOString() ?? null,
-      openId:user.open_id,
+      openId:providerUserId,
     }, state.workspaceId, id);
 
     await db.$transaction(async (tx) => {
       await tx.socialAccount.upsert({
-        where: {workspaceId_provider_providerUserId:{workspaceId:state.workspaceId,provider:"TIKTOK",providerUserId:user.open_id}},
+        where: {workspaceId_provider_providerUserId:{workspaceId:state.workspaceId,provider:"TIKTOK",providerUserId}},
         create: {
           id,workspaceId:state.workspaceId,brandId:state.brandId,provider:"TIKTOK",
-          providerUserId:user.open_id,accountName:user.display_name as string,
+          providerUserId,accountName,
           credentialsEncrypted:encrypted,status:"CONNECTED",scopes,
           connectedAt:new Date(),lastValidatedAt:new Date(),tokenExpiresAt,lastErrorCode:null,metadata: metadata as Prisma.InputJsonValue,
         },
         update: {
-          brandId:state.brandId,accountName:user.display_name as string,
+          brandId:state.brandId,accountName,
           credentialsEncrypted:encrypted,status:"CONNECTED",scopes,
           connectedAt:new Date(),lastValidatedAt:new Date(),tokenExpiresAt,lastErrorCode:null,metadata: metadata as Prisma.InputJsonValue,
         },
