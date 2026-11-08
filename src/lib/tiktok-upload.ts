@@ -35,20 +35,13 @@ export async function uploadTikTokInboxTarget(input:{targetId:string;workspaceId
   const {accessToken}=await getFreshTikTokCredentials({workspaceId:input.workspaceId,accountId:target.socialAccount.id});
   const storage=getSupabaseStorageConfig();
   if(asset.bucket!==storage.bucket||!asset.objectPath.startsWith(input.workspaceId+"/"))throw new Error("MEDIA_STORAGE_CONFIGURATION_MISMATCH");
-  const encodedPath=asset.objectPath.split("/").map(encodeURIComponent).join("/");
-  const mediaUrl=storage.baseUrl+"/storage/v1/object/"+encodeURIComponent(asset.bucket)+"/"+encodedPath;
-  const mediaResponse=await fetch(mediaUrl,{headers:storageHeaders(storage.serviceKey),cache:"no-store",redirect:"error",signal:AbortSignal.timeout(20000)});
-  if(!mediaResponse.ok)throw new Error("MEDIA_DOWNLOAD_FAILED");
-  const contentLength=Number(mediaResponse.headers.get("content-length"));
-  const contentType=mediaResponse.headers.get("content-type")?.split(";")[0]?.trim().toLowerCase();
-  if(contentLength!==Number(asset.sizeBytes)||contentType!==asset.mimeType)throw new Error("MEDIA_STORAGE_METADATA_MISMATCH");
-  const video=Buffer.from(await mediaResponse.arrayBuffer());
-  if(video.length!==Number(asset.sizeBytes)||video.length>MAX_VIDEO_BYTES)throw new Error("MEDIA_SIZE_MISMATCH");
-  const chunkSize=Math.min(CHUNK_BYTES,video.length);
-  const totalChunks=Math.ceil(video.length/chunkSize);
+  const videoSize=Number(asset.sizeBytes);
+  if(!Number.isSafeInteger(videoSize)||videoSize<1||videoSize>MAX_VIDEO_BYTES)throw new Error("TIKTOK_VIDEO_CONSTRAINTS");
+  const chunkSize=Math.min(CHUNK_BYTES,videoSize);
+  const totalChunks=Math.ceil(videoSize/chunkSize);
   const initResponse=await fetch("https://open.tiktokapis.com/v2/post/publish/inbox/video/init/",{
    method:"POST",headers:{Authorization:"Bearer "+accessToken,"Content-Type":"application/json; charset=UTF-8"},
-   body:JSON.stringify({source_info:{source:"FILE_UPLOAD",video_size:video.length,chunk_size:chunkSize,total_chunk_count:totalChunks}}),
+   body:JSON.stringify({source_info:{source:"FILE_UPLOAD",video_size:videoSize,chunk_size:chunkSize,total_chunk_count:totalChunks}}),
    cache:"no-store",redirect:"error",signal:AbortSignal.timeout(15000),
   });
   const init=await initResponse.json().catch(()=>null) as TikTokResponse|null;
@@ -58,10 +51,10 @@ export async function uploadTikTokInboxTarget(input:{targetId:string;workspaceId
   const encryptedSession=encryptIntegrationCredentials({uploadUrl:uploadUrl.toString()},input.workspaceId,target.id);
   const initializedAt=new Date();
   await db.$transaction(async tx=>{
-   await tx.socialPostTarget.update({where:{id:target.id},data:{providerContainerId:init.data!.publish_id!,uploadSessionEncrypted:encryptedSession,uploadOffset:0n,uploadTotalBytes:BigInt(video.length),uploadMetadata:{tiktokUpload:{assetId:asset.id,mimeType:asset.mimeType,chunkSize,totalChunks}},processingStartedAt:initializedAt,nextCheckAt:initializedAt,errorCode:null}});
+   await tx.socialPostTarget.update({where:{id:target.id},data:{providerContainerId:init.data!.publish_id!,uploadSessionEncrypted:encryptedSession,uploadOffset:0n,uploadTotalBytes:BigInt(videoSize),uploadMetadata:{tiktokUpload:{assetId:asset.id,mimeType:asset.mimeType,chunkSize,totalChunks}},processingStartedAt:initializedAt,nextCheckAt:initializedAt,errorCode:null}});
    await tx.socialPublishAttempt.update({where:{id:attempt.id},data:{status:"PROCESSING"}});
    await tx.contentPost.update({where:{id:target.contentPost.id},data:{status:"PUBLISHING"}});
-   await tx.activityLog.create({data:{workspaceId:input.workspaceId,userId:input.actorUserId,action:"social_post.tiktok_upload_initialized",entityType:"ContentPost",entityId:target.contentPost.id,metadata:{targetId:target.id,provider:"TIKTOK",publishId:init.data!.publish_id!,videoSizeBytes:video.length,totalChunks}}});
+   await tx.activityLog.create({data:{workspaceId:input.workspaceId,userId:input.actorUserId,action:"social_post.tiktok_upload_initialized",entityType:"ContentPost",entityId:target.contentPost.id,metadata:{targetId:target.id,provider:"TIKTOK",publishId:init.data!.publish_id!,videoSizeBytes:videoSize,totalChunks}}});
   });
   return {status:"UPLOADING" as const};
  }catch(error){
