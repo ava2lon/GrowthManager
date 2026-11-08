@@ -39,8 +39,10 @@ export async function uploadTikTokInboxTarget(input:{targetId:string;workspaceId
   if(asset.bucket!==storage.bucket||!asset.objectPath.startsWith(input.workspaceId+"/"))throw new Error("MEDIA_STORAGE_CONFIGURATION_MISMATCH");
   const videoSize=Number(asset.sizeBytes);
   if(!Number.isSafeInteger(videoSize)||videoSize<1||videoSize>MAX_VIDEO_BYTES)throw new Error("TIKTOK_VIDEO_CONSTRAINTS");
-  const chunkSize=Math.min(CHUNK_BYTES,videoSize);
-  const totalChunks=Math.ceil(videoSize/chunkSize);
+  // TikTok requires total_chunk_count=floor(video_size/chunk_size); the final chunk may be larger.
+  // Keep every multi-part chunk within 5–64 MiB and use a single whole-file chunk below 64 MiB.
+  const chunkSize=videoSize>CHUNK_BYTES?Math.floor(videoSize/2):videoSize;
+  const totalChunks=Math.floor(videoSize/chunkSize);
   const initResponse=await fetch("https://open.tiktokapis.com/v2/post/publish/inbox/video/init/",{
    method:"POST",headers:{Authorization:"Bearer "+accessToken,"Content-Type":"application/json; charset=UTF-8"},
    body:JSON.stringify({source_info:{source:"FILE_UPLOAD",video_size:videoSize,chunk_size:chunkSize,total_chunk_count:totalChunks}}),
