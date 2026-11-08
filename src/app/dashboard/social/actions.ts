@@ -1156,7 +1156,10 @@ export async function publishInstagramDraft(formData: FormData) {
   const targetId = String(formData.get("targetId") ?? "").trim();
   if (!targetId || targetId.length > 128) throw new Error("Invalid publishing target.");
   await enforcePublishLimit(context.workspace.id, context.userId);
-  const result = await publishInstagramTarget({targetId,workspaceId:context.workspace.id,actorUserId:context.userId,allowedStatuses:["DRAFT"]});
+  const media = await db.contentPostMedia.findMany({where:{workspaceId:context.workspace.id,contentPost:{publishTargets:{some:{id:targetId,provider:"INSTAGRAM"}}}},select:{id:true},take:2});
+  const result = media.length>1
+    ? await startInstagramCarouselTarget({targetId,workspaceId:context.workspace.id,actorUserId:context.userId,allowedStatuses:["DRAFT"]})
+    : await publishInstagramTarget({targetId,workspaceId:context.workspace.id,actorUserId:context.userId,allowedStatuses:["DRAFT"]});
   revalidatePath("/dashboard/social");
   if(result.status!=="PUBLISHED" && result.status!=="PROCESSING") {
     throw new Error(result.status==="UNKNOWN"

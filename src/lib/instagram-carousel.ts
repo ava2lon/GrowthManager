@@ -50,10 +50,16 @@ export async function startInstagramCarouselTarget(input:{targetId:string;worksp
  try{decryptIntegrationCredentials(t.socialAccount.credentialsEncrypted,input.workspaceId,t.socialAccount.id);}catch{return fail("CREDENTIAL_DECRYPTION_FAILED");}
  const version=process.env.META_GRAPH_API_VERSION;if(!version||!/^v\d+\.\d+$/.test(version))return fail("META_API_NOT_CONFIGURED");
  const lease=new Date(Date.now()+3*60_000);
- const claimed=await db.socialPostTarget.updateMany({where:{id:t.id,workspaceId:input.workspaceId,status:{in:allowed},...(t.status==="SCHEDULED"?{contentPost:{scheduledAt:{lte:new Date()}}}:{})},data:{status:"PROCESSING",errorCode:null,nextCheckAt:lease,uploadMetadata:{...record(t.uploadMetadata),instagramCarousel:{version:1,phase:"CREATE_CHILDREN",childIds:[],childIndex:0,startedAt:new Date().toISOString()}}}});
- if(claimed.count!==1)return {status:"SKIPPED"};
  const previous=await db.socialPublishAttempt.aggregate({where:{workspaceId:input.workspaceId,targetId:t.id},_max:{attemptNumber:true}});
- await db.socialPublishAttempt.create({data:{workspaceId:input.workspaceId,targetId:t.id,attemptNumber:(previous._max.attemptNumber??0)+1,idempotencyKey:randomUUID(),status:"STARTED"}});
+ const started=await db.$transaction(async tx=>{
+  const claimed=await tx.socialPostTarget.updateMany({where:{id:t.id,workspaceId:input.workspaceId,status:{in:allowed},...(t.status==="SCHEDULED"?{contentPost:{scheduledAt:{lte:new Date()}}}:{})},data:{status:"PROCESSING",errorCode:null,nextCheckAt:lease,uploadMetadata:{...record(t.uploadMetadata),instagramCarousel:{version:1,phase:"CREATE_CHILDREN",childIds:[],childIndex:0,startedAt:new Date().toISOString()}}}});
+  if(claimed.count!==1)return false;
+  await tx.socialPublishAttempt.create({data:{workspaceId:input.workspaceId,targetId:t.id,attemptNumber:(previous._max.attemptNumber??0)+1,idempotencyKey:randomUUID(),status:"STARTED"}});
+  await tx.contentPost.updateMany({where:{id:t.contentPost.id,workspaceId:input.workspaceId},data:{status:"PUBLISHING"}});
+  await tx.activityLog.create({data:{workspaceId:input.workspaceId,userId:input.actorUserId??null,action:"social_post.processing",entityType:"ContentPost",entityId:t.contentPost.id,metadata:{provider:"INSTAGRAM",format:"CAROUSEL",targetId:t.id}}});
+  return true;
+ });
+ if(!started)return {status:"SKIPPED"};
  return {status:"PROCESSING"};
  async function fail(code:string):Promise<Outcome>{await db.socialPostTarget.updateMany({where:{id:input.targetId,workspaceId:input.workspaceId,status:{in:allowed}},data:{status:"FAILED",errorCode:code}});return {status:"FAILED",errorCode:code};}
 }
@@ -68,9 +74,10 @@ export async function processInstagramCarouselTarget(input:{targetId:string;work
  let credentials:Record<string,unknown>;try{credentials=decryptIntegrationCredentials(t.socialAccount.credentialsEncrypted,input.workspaceId,t.socialAccount.id);}catch{return mark("FAILED","CREDENTIAL_DECRYPTION_FAILED");}
  if(typeof credentials.accessToken!=="string"||!credentials.accessToken)return mark("FAILED","META_TOKEN_MISSING");
  const token=credentials.accessToken,version=process.env.META_GRAPH_API_VERSION;if(!version||!/^v\d+\.\d+$/.test(version))return mark("FAILED","META_API_NOT_CONFIGURED");
- if(Date.now()-new Date(s.startedAt).getTime()>30*60_000)return mark("UNKNOWN","INSTAGRAM_CAROUSEL_PROCESSING_EXPIRED");
+ if(Date.now()-new Date(s.startedAt).getTime()>4*60*60_000)return mark("UNKNOWN","INSTAGRAM_CAROUSEL_PROCESSING_EXPIRED");
  try{
   if(s.phase==="CREATE_CHILDREN"){
+   if(!Number.isInteger(s.childIndex)||s.childIndex<0||s.childIndex>=assets.length)return mark("UNKNOWN","INSTAGRAM_CHILD_INDEX_INVALID");
    const url=await signedUrl(assets[s.childIndex]);const form=new URLSearchParams({image_url:url,is_carousel_item:"true",access_token:token});
    let child:string;try{child=await post(api(version,String(m.instagramUserId)+"/media"),form);}catch(e){const code=e instanceof Error?e.message:"PUBLISH_OUTCOME_UNKNOWN";return mark(code==="PUBLISH_OUTCOME_UNKNOWN"?"UNKNOWN":"FAILED",code);}
    s={...s,childIds:[...s.childIds,child],childIndex:s.childIndex+1,phase:s.childIndex+1===assets.length?"POLL_CHILDREN":"CREATE_CHILDREN"};
