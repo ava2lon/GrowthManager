@@ -524,7 +524,6 @@ model AutomationAlertDelivery {
   lastProviderEventAt DateTime?
   lastErrorCode     String?
   sentAt            DateTime?
-  lastProviderEventAt DateTime?
   createdAt         DateTime @default(now())
   updatedAt         DateTime @updatedAt
   alertEvent        AutomationAlertEvent @relation(fields: [workspaceId, alertEventId], references: [workspaceId, id], onDelete: Cascade)
@@ -731,6 +730,7 @@ model ContentReviewEmailDelivery {
   providerMessageId String?
   lastErrorCode     String?
   sentAt            DateTime?
+  lastProviderEventAt DateTime?
   createdAt         DateTime                  @default(now())
   updatedAt         DateTime                  @updatedAt
   workspace         Workspace                 @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
