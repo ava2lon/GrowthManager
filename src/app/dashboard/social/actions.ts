@@ -165,6 +165,7 @@ export async function checkSocialAccountHealth(formData: FormData) {
   }
 
   let failureCode: string | null = null;
+  let grantedScopes: string[] = [];
   const userAccessToken = credentials.userAccessToken;
   if (typeof userAccessToken === "string") {
     try {
