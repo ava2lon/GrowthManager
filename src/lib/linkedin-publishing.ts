@@ -10,8 +10,8 @@ export async function publishLinkedInTarget(input:{targetId:string;workspaceId:s
  if(!target||target.contentPost.workspaceId!==input.workspaceId||target.socialAccount.workspaceId!==input.workspaceId||target.contentPost.brandId!==target.socialAccount.brandId||target.socialAccount.status!=="CONNECTED"||!target.socialAccount.credentialsEncrypted)return {status:"SKIPPED"};
  if(target.contentPost.mediaAssets.length)return failBeforeClaim("LINKEDIN_TEXT_ONLY_PHASE");
  const metadata=target.socialAccount.metadata&&typeof target.socialAccount.metadata==="object"&&!Array.isArray(target.socialAccount.metadata)?target.socialAccount.metadata as Record<string,unknown>:{};
- const authorUrn=metadata.authorUrn,accountType=metadata.accountType==="ORGANIZATION"?"ORGANIZATION":"MEMBER";
- if(typeof authorUrn!=="string"||authorUrn!==target.socialAccount.providerUserId||!["MEMBER","ORGANIZATION"].includes(String(accountType)))return failBeforeClaim("LINKEDIN_AUTHOR_IDENTITY_INVALID");
+ const authorUrn=metadata.authorUrn,accountType=metadata.accountType==="ORGANIZATION"?"ORGANIZATION":metadata.accountType==="MEMBER"?"MEMBER":null;
+ if(typeof authorUrn!=="string"||authorUrn!==target.socialAccount.providerUserId||!accountType)return failBeforeClaim("LINKEDIN_AUTHOR_IDENTITY_INVALID");
  let credentials:Awaited<ReturnType<typeof getLinkedInCredentials>>;
  try{credentials=await getLinkedInCredentials({workspaceId:input.workspaceId,accountId:target.socialAccount.id})}catch(error){return failBeforeClaim(error instanceof Error?error.message:"LINKEDIN_CREDENTIALS_INVALID")}
  const required=accountType==="ORGANIZATION"?"w_organization_social":"w_member_social";
