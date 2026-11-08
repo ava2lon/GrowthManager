@@ -24,7 +24,7 @@ async function accountContext(targetId:string,workspaceId:string){
  const m=t.socialAccount.metadata&&typeof t.socialAccount.metadata==="object"&&!Array.isArray(t.socialAccount.metadata)?t.socialAccount.metadata as Record<string,unknown>:{};
  if(typeof m.instagramUserId!=="string"||!t.socialAccount.scopes.includes("instagram_basic")||!t.socialAccount.scopes.includes("instagram_content_publish"))return null;
  let c:Record<string,unknown>;try{c=decryptIntegrationCredentials(t.socialAccount.credentialsEncrypted,workspaceId,t.socialAccount.id)}catch{return null;}
- if(typeof c.accessToken!=="string"||!c.accessToken)return null;const version=process.env.META_GRAPH_API_VERSION;if(!version||!/^v\\d+\\.\\d+$/.test(version))return null;
+ if(typeof c.accessToken!=="string"||!c.accessToken)return null;const version=process.env.META_GRAPH_API_VERSION;if(!version||!/^v\d+\.\d+$/.test(version))return null;
  return {t,m,token:c.accessToken,version};
 }
 export async function startInstagramReelTarget(input:{targetId:string;workspaceId:string;actorUserId?:string|null;allowedStatuses?:("DRAFT"|"SCHEDULED")[]}):Promise<Result>{
@@ -51,7 +51,7 @@ export async function processInstagramReelTarget(input:{targetId:string;workspac
  if(!t||!t.providerContainerId)return {status:"SKIPPED"};if(t.socialAccount.status!=="CONNECTED"||!t.socialAccount.credentialsEncrypted)return mark("FAILED","INSTAGRAM_ACCOUNT_DISCONNECTED");
  const m=t.socialAccount.metadata&&typeof t.socialAccount.metadata==="object"?t.socialAccount.metadata as Record<string,unknown>:{};if(typeof m.instagramUserId!=="string")return mark("FAILED","INSTAGRAM_ACCOUNT_ID_MISSING");
  let c:Record<string,unknown>;try{c=decryptIntegrationCredentials(t.socialAccount.credentialsEncrypted,input.workspaceId,t.socialAccount.id)}catch{return mark("FAILED","CREDENTIAL_DECRYPTION_FAILED")};
- if(typeof c.accessToken!=="string"||!c.accessToken)return mark("FAILED","META_TOKEN_MISSING");const version=process.env.META_GRAPH_API_VERSION;if(!version||!/^v\\d+\\.\\d+$/.test(version))return mark("FAILED","META_API_NOT_CONFIGURED");
+ if(typeof c.accessToken!=="string"||!c.accessToken)return mark("FAILED","META_TOKEN_MISSING");const version=process.env.META_GRAPH_API_VERSION;if(!version||!/^v\d+\.\d+$/.test(version))return mark("FAILED","META_API_NOT_CONFIGURED");
  let state:Graph;try{const u=api(version,t.providerContainerId);u.searchParams.set("fields","status_code,status");u.searchParams.set("access_token",c.accessToken);state=await graph(u)}catch{if(Date.now()-(t.processingStartedAt?.getTime()??t.createdAt.getTime())>10*60000)return mark("FAILED","INSTAGRAM_REEL_PROCESSING_TIMEOUT");await db.socialPostTarget.updateMany({where:{id:t.id,workspaceId:input.workspaceId,status:"PROCESSING"},data:{nextCheckAt:new Date(Date.now()+60000)}});return {status:"PROCESSING"}}
  if(state.status_code==="IN_PROGRESS"||!state.status_code){if(Date.now()-(t.processingStartedAt?.getTime()??t.createdAt.getTime())>10*60000)return mark("FAILED","INSTAGRAM_REEL_PROCESSING_TIMEOUT");await db.socialPostTarget.updateMany({where:{id:t.id,workspaceId:input.workspaceId,status:"PROCESSING"},data:{nextCheckAt:new Date(Date.now()+60000)}});return {status:"PROCESSING"}}
  if(state.status_code==="ERROR"||state.status_code==="EXPIRED")return mark("FAILED","INSTAGRAM_REEL_PROCESSING_FAILED");if(state.status_code==="PUBLISHED")return mark("UNKNOWN","INSTAGRAM_REEL_ALREADY_PUBLISHED_RECONCILE");if(state.status_code!=="FINISHED")return {status:"PROCESSING"};
