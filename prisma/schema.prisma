@@ -86,7 +86,6 @@ model User {
   contentReviewEmailDeliveries ContentReviewEmailDelivery[]
   contentReviewEmailDigests ContentReviewEmailDigest[]
   socialIncidentEmailDeliveries WorkspaceIncidentEmailDelivery[]
-  socialAnalyticsRetries SocialAnalyticsRetry[]
 }
 
 model Workspace {
@@ -113,6 +112,7 @@ model Workspace {
   notificationPreferences WorkspaceNotificationPreference[]
   incidents WorkspaceIncident[]
   socialIncidentEmailDeliveries WorkspaceIncidentEmailDelivery[]
+  socialAnalyticsRetries SocialAnalyticsRetry[]
 }
 
 model WorkspaceInvitation {
