@@ -26,7 +26,7 @@ export async function GET(request:Request){
  const now=new Date();
  const analyticsSlot=Math.floor(now.getTime()/300000)%6;
  const analyticsDay=new Date(now.toISOString().slice(0,10)+"T00:00:00.000Z");
- await processOneDueSocialAnalyticsRetry(now);
+ const retryProcessed=await processOneDueSocialAnalyticsRetry(now);
  if(analyticsSlot===0){
   // Collect at most one account-level Pinterest analytics report per worker run.
   // A failed report is also snapshotted for the UTC day to prevent a tight retry loop.
@@ -148,5 +148,5 @@ export async function GET(request:Request){
 
 
  }
- return NextResponse.json({processed:true,asOf:now.toISOString(),slot:analyticsSlot},{headers:{"Cache-Control":"no-store"}});
+ return NextResponse.json({processed:true,retryProcessed,asOf:now.toISOString(),slot:analyticsSlot},{headers:{"Cache-Control":"no-store"}});
 }
