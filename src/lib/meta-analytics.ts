@@ -4,12 +4,14 @@ import {db} from "@/lib/db";
 import {decryptIntegrationCredentials} from "@/lib/integration-crypto";
 type Obj=Record<string,unknown>;
 const obj=(v:unknown):Obj=>v&&typeof v==="object"&&!Array.isArray(v)?v as Obj:{};
-function providerCode(v:unknown){const e=obj(obj(v).error),c=Number(e.code);if(c===190)return "META_AUTH_FAILED";if(c===10||c===200)return "META_PERMISSION_DENIED";if([4,17,32,613].includes(c))return "META_RATE_LIMITED";if(c===100)return "META_METRIC_UNAVAILABLE";return "META_ANALYTICS_PROVIDER_ERROR";}
+function providerCode(v:unknown,status:number){const e=obj(obj(v).error),c=Number(e.code);if(c===190)return "META_AUTH_FAILED";if(c===10||c===200)return "META_PERMISSION_DENIED";if([4,17,32,613].includes(c)||status===429)return "META_RATE_LIMITED";if(c===100)return "META_METRIC_UNAVAILABLE";if(status>=500)return "META_PROVIDER_UNAVAILABLE";return "META_ANALYTICS_PROVIDER_ERROR";}
 async function requestInsights(version:string,id:string,token:string,metrics:string,instagram:boolean,media:boolean,since:string,until:string){
  const u=new URL("https://graph.facebook.com/"+version+"/"+encodeURIComponent(id)+"/insights");u.searchParams.set("metric",metrics);
  if(instagram&&!media)u.searchParams.set("metric_type","total_value");if(!media){u.searchParams.set("period","day");u.searchParams.set("since",since);u.searchParams.set("until",until)}
- u.searchParams.set("access_token",token);const r=await fetch(u,{cache:"no-store",redirect:"error",signal:AbortSignal.timeout(15000)});const b=await r.json().catch(()=>null);
- if(!r.ok||!b)throw new Error(providerCode(b));return b as Obj;
+ u.searchParams.set("access_token",token);
+ let r:Response;try{r=await fetch(u,{cache:"no-store",redirect:"error",signal:AbortSignal.timeout(15000)});}catch{throw new Error("META_NETWORK_ERROR");}
+ const b=await r.json().catch(()=>null);
+ if(!r.ok||!b)throw new Error(providerCode(b,r.status));return b as Obj;
 }
 export async function refreshMetaAnalytics(input:{workspaceId:string;accountId:string;targetId?:string;asOf?:Date}){
  const now=input.asOf??new Date(),reportDate=new Date(now.toISOString().slice(0,10)+"T00:00:00.000Z");

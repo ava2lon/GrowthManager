@@ -8,11 +8,16 @@ import {
 describe("classifyAnalyticsFailure", () => {
   it.each([
     "META_RATE_LIMITED",
+    "META_NETWORK_ERROR",
+    "META_PROVIDER_UNAVAILABLE",
     "LINKEDIN_PROVIDER_UNAVAILABLE",
     "TIKTOK_ANALYTICS_NETWORK_ERROR",
+    "TIKTOK_ANALYTICS_PROVIDER_UNAVAILABLE",
     "YOUTUBE_ANALYTICS_RATE_LIMITED",
+    "YOUTUBE_ANALYTICS_PROVIDER_UNAVAILABLE",
     "X_PROVIDER_UNAVAILABLE",
     "PINTEREST_NETWORK_ERROR",
+    "PINTEREST_REFRESH_UNAVAILABLE",
   ])("retries transient failure %s", (code) => {
     expect(classifyAnalyticsFailure(code)).toBe("RETRY");
   });

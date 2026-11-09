@@ -14,6 +14,7 @@ async function request<T>(url:string,token:string,body?:unknown):Promise<T>{
  catch{throw new Error("TIKTOK_ANALYTICS_NETWORK_ERROR");}
  const payload=await response.json().catch(()=>null) as (T&{error?:TikTokError})|null;
  if(response.status===429)throw new Error("TIKTOK_ANALYTICS_RATE_LIMITED");
+ if(response.status>=500)throw new Error("TIKTOK_ANALYTICS_PROVIDER_UNAVAILABLE");
  if(!response.ok||!payload|| (payload.error?.code&&payload.error.code!=="ok")){
   const code=payload?.error?.code;
   throw new Error(code==="scope_not_authorized"?"TIKTOK_ANALYTICS_SCOPE_MISSING":code==="invalid_token"?"TIKTOK_REAUTHORIZATION_REQUIRED":"TIKTOK_ANALYTICS_PROVIDER_ERROR");

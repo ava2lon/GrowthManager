@@ -112,6 +112,7 @@ model Workspace {
   notificationPreferences WorkspaceNotificationPreference[]
   incidents WorkspaceIncident[]
   socialIncidentEmailDeliveries WorkspaceIncidentEmailDelivery[]
+  socialAnalyticsRetries SocialAnalyticsRetry[]
 }
 
 model WorkspaceInvitation {
@@ -871,4 +872,26 @@ model WorkspaceIncidentEmailDelivery {
   @@index([status, nextAttemptAt])
   @@index([workspaceId, createdAt])
   @@index([providerMessageId])
+}
+
+
+model SocialAnalyticsRetry {
+  id             String   @id @default(cuid())
+  workspaceId    String
+  provider       String
+  subjectType    String
+  subjectId      String
+  reportDate     DateTime @db.Date
+  status         String   @default("PENDING")
+  attemptCount   Int      @default(0)
+  nextAttemptAt  DateTime @default(now())
+  lockedAt       DateTime?
+  lastErrorCode  String?
+  completedAt    DateTime?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+  workspace      Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  @@unique([workspaceId, provider, subjectType, subjectId, reportDate])
+  @@index([status, nextAttemptAt])
+  @@index([workspaceId, status, nextAttemptAt])
 }
