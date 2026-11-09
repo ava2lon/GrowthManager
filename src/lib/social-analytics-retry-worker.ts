@@ -1,4 +1,5 @@
 import "server-only";
+import type {SocialProvider} from "@prisma/client";
 import {db} from "@/lib/db";
 import {
   claimDueSocialAnalyticsRetry,
@@ -45,7 +46,7 @@ async function resolvePublishedTarget(input:{
     where:{
       id:input.targetId,
       workspaceId:input.workspaceId,
-      provider:{in:input.providers as never[]},
+      provider:{in:input.providers as SocialProvider[]},
       status:"PUBLISHED",
       providerPostId:{not:null},
       socialAccount:{
