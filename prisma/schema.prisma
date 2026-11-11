@@ -363,6 +363,7 @@ model MediaAsset {
   storageProvider  String           @default("SUPABASE")
   bucket           String
   objectPath       String
+  url              String?          @db.Text
   originalFilename String
   mimeType         String
   sizeBytes        BigInt
