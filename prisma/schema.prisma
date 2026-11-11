@@ -837,6 +837,7 @@ model WorkspaceIncident {
   lastSeenAt         DateTime @default(now())
   resolvedAt         DateTime?
   escalatedAt        DateTime?
+  escalationRecipientCursor String?
   resolutionMessage  String?  @db.Text
   metadata           Json?
   createdAt          DateTime @default(now())
@@ -850,6 +851,7 @@ model WorkspaceIncident {
   @@index([workspaceId, status, severity, lastSeenAt])
   @@index([workspaceId, sourceType, sourceId])
   @@index([status, lastSeenAt])
+  @@index([status, escalatedAt, firstSeenAt, id], map: "workspace_incident_escalation_due_idx")
 }
 
 
