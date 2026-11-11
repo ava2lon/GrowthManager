@@ -32,6 +32,7 @@ export function MediaUploader({brands}:{brands:BrandOption[]}) {
         }
         return {width,height,durationMs};
       }
+      if(!file.type.startsWith("image/"))return {width:null,height:null,durationMs:null};
       const image=new Image();
       image.src=url;
       await image.decode();
@@ -86,7 +87,7 @@ export function MediaUploader({brands}:{brands:BrandOption[]}) {
           </select>
         </div>
       </div>
-      <label htmlFor="media-file" className="mt-5 block text-xs font-medium text-slate-600">Choose an image or video</label>
+      <label htmlFor="media-file" className="mt-5 block text-xs font-medium text-slate-600">Choose an image, video or document</label>
       <input id="media-file" ref={inputRef} type="file" accept="image/jpeg,image/png,image/webp,video/mp4,video/quicktime,application/pdf,text/plain,text/csv,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.openxmlformats-officedocument.presentationml.presentation" className="mt-2 block w-full cursor-pointer rounded-xl border border-dashed border-slate-300 bg-slate-50 p-4 text-sm file:mr-4 file:rounded-lg file:border-0 file:bg-indigo-600 file:px-4 file:py-2 file:text-sm file:font-semibold file:text-white" disabled={busy} onChange={(event)=>void upload(event.target.files?.[0])}/>
       {busy&&<p role="status" className="mt-3 text-sm text-indigo-700">Uploading and verifying media…</p>}
       {message&&<p role="status" className="mt-3 text-sm text-emerald-700">{message}</p>}
