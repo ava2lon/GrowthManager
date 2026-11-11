@@ -902,3 +902,13 @@ model SocialAnalyticsRetry {
   @@index([status, nextAttemptAt])
   @@index([workspaceId, status, nextAttemptAt])
 }
+
+
+model SocialIncidentSyncState {
+  phase      String   @id
+  cursor     String?
+  leaseToken String?
+  leaseUntil DateTime?
+  updatedAt  DateTime @updatedAt
+  @@index([leaseUntil])
+}
