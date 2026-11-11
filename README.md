@@ -20,10 +20,10 @@ External publishing, AI providers, billing, and automation execution are staged 
 - [Vercel deployment](docs/deployment.md)
 - [Security model](docs/security.md)
 
-The public `/api/v1`, website tracking, unified lead management, and generic outbound webhook delivery are documented as planned capabilities; they are not represented as implemented until their routes, schema, services, and tests are merged.
+Phase 2 adds website management and first-party website event ingestion under `/api/v1`, including the browser tracker and workspace-scoped dashboard. Unified lead management and generic outbound webhook delivery remain planned.
 
 ## Setup
-Use Node.js 20.9+ and PostgreSQL. Copy .env.example to .env and configure DATABASE_URL, AUTH_SECRET, and AUTH_URL. Run npm install, npm run db:generate, npm run db:migrate, then npm run dev.
+Use Node.js 20.9+ and PostgreSQL. Copy .env.example to .env and configure DATABASE_URL, AUTH_SECRET, AUTH_URL, and NEXT_PUBLIC_APP_URL. Run npm install, npm run db:generate, npm run db:migrate, then npm run dev.
 
 ## Vercel
 Set DATABASE_URL to a managed PostgreSQL connection string, AUTH_SECRET to a cryptographically random 32+ byte secret, AUTH_URL to the canonical deployment URL, and UPSTASH_REDIS_REST_URL plus UPSTASH_REDIS_REST_TOKEN from an Upstash Redis database. Configure the database before enabling account registration. Use committed Prisma migrations for production schema changes. Configure `DIRECT_URL` for Prisma migration connections (Supabase session pooler on port 5432) and `DATABASE_URL` for serverless runtime queries (transaction pooler on port 6543, with `pgbouncer=true&connection_limit=1`). Apply production migrations with `npm run db:deploy`.
