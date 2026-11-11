@@ -246,3 +246,19 @@ Campaigns at `/dashboard/campaigns` support objectives, descriptions, budgets, d
 Media folders and tags are workspace-scoped. The reusable media picker attaches ready, same-workspace assets to content. Stable media URLs are authenticated application download routes; signed object-store URLs are short-lived and are never persisted. The storage adapter contract is provider-neutral, with Supabase Storage as the configured implementation. Configure `MEDIA_STORAGE_PROVIDER=SUPABASE` (or leave unset) and the private bucket's allowlist for the supported image, video, PDF, text, CSV, DOCX, XLSX, and PPTX MIME types.
 
 Apply the Phase 3 migration with `npm run db:deploy` after verifying the GrowthManager production database target. Do not use `prisma db push` for production changes.
+
+
+## Phase 4: AI Content & Growth Assistant
+
+The AI assistant is available at `/dashboard/ai`. It uses active-workspace brand context (industry, description, target audience), campaign details, recent content, and connected social platforms. Brand context can be maintained from **Brands → Edit brand context for AI**. The Phase 3 Add Brand workflow remains available.
+
+Supported providers are OpenAI, Anthropic, and Groq. Configure credentials only as server-side environment variables:
+- `OPENAI_API_KEY`, optional `OPENAI_MODEL`, and optional `OPENAI_BASE_URL`
+- `ANTHROPIC_API_KEY` and optional `ANTHROPIC_MODEL`
+- `GROQ_API_KEY` and optional `GROQ_MODEL`
+
+Workspace owners and administrators choose the provider/model and set a monthly request limit from the AI Assistant page. Credentials are never saved in workspace settings or exposed to browsers. Each generation is recorded in tenant-scoped history with provider/model, request/result, user, timestamp, and token usage when returned by the provider. Monthly request reservations are atomic to prevent concurrent requests from exceeding the workspace limit. The quota resets on the first day of each UTC calendar month. Provider rate limits and hourly request protection are also enforced.
+
+Apply the committed migration `20261111180000_phase4_ai_content_growth_assistant` using `npm run db:deploy` only after verifying the configured GrowthManager database target. Do not use `prisma db push` in production.
+
+Generated output is editable and can be saved explicitly to the content library as a DRAFT. The assistant never approves, schedules, or publishes AI-generated content. AI usage metadata reports provider token counts when available; monetary cost remains unset unless a provider supplies reliable cost data. Deleting a campaign clears its optional association from retained AI history so campaign maintenance does not remove generation records.

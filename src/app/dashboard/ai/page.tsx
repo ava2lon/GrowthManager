@@ -4,6 +4,7 @@ import {ContentStrategist} from "./content-strategist";
 import {ContentProductionStudio} from "./content-production-studio";
 import {ContentReviewQueue} from "./content-review-queue";
 import {ContentReviewEmailMonitor} from "./content-review-email-monitor";
+import {AIGrowthAssistant} from "./ai-growth-assistant";
 
 export default async function AiPage() {
   const {workspace,membership} = await requireWorkspaceContext();
@@ -11,7 +12,7 @@ export default async function AiPage() {
   const [brands, accounts, campaigns, reviewItems, reviewers, myReviews, notifications, emailDeliveries] = await Promise.all([
     db.brand.findMany({
       where: {workspaceId: workspace.id, status: "ACTIVE"},
-      select: {id: true, name: true, description: true, websiteUrl: true},
+      select: {id: true, name: true, description: true, websiteUrl: true, industry: true, targetAudience: true},
       orderBy: {name: "asc"},
       take: 100,
     }),
@@ -40,6 +41,7 @@ export default async function AiPage() {
 
   return (
     <div className="space-y-6">
+      <AIGrowthAssistant brands={brands.map(({id,name,industry,description,targetAudience})=>({id,name,industry,description,targetAudience}))} campaigns={campaigns.map(({id,name,brandId})=>({id,name,brandId}))} />
       <ContentProductionStudio brands={brands.map(({id,name})=>({id,name}))} campaigns={campaigns.map(({id,name,brandId})=>({id,name,brandId}))} />
       {canManage && <ContentReviewEmailMonitor deliveries={emailDeliveries} />}
       <ContentReviewQueue items={reviewItems} canEdit={membership.role!=="VIEWER"} canApprove={membership.role==="OWNER"||membership.role==="ADMIN"} reviewers={reviewers.map(m=>({id:m.userId,name:m.user.name,email:m.user.email}))} myReviews={myReviews} notifications={notifications} />
