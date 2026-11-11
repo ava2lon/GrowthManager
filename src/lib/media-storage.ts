@@ -71,7 +71,7 @@ function assertStorageUrl(value: string, baseUrl: string, pathPrefix: string) {
 export interface MediaStorageProvider {
   readonly name: string;
   getBucket(): string;
-  createUploadUrl(objectPath: string): Promise<{uploadUrl: string; method: "PUT"; headers: Record<string,string>}>;
+  createUploadUrl(objectPath: string, mimeType: string): Promise<{uploadUrl: string; method: "PUT"; headers: Record<string,string>}>;
   verifyObject(input: {bucket: string; objectPath: string}): Promise<{sizeBytes: number; mimeType: string}>;
   createDownloadUrl(input: {bucket: string; objectPath: string; expiresInSeconds: number}): Promise<string>;
 }
@@ -81,7 +81,7 @@ const supabaseProvider: MediaStorageProvider = {
   getBucket() {
     return getSupabaseStorageConfig().bucket;
   },
-  async createUploadUrl(objectPath) {
+  async createUploadUrl(objectPath, mimeType) {
     const config = getSupabaseStorageConfig();
     const path = encodeObjectPath(objectPath);
     const endpoint = config.baseUrl + "/storage/v1/object/upload/sign/" + encodeURIComponent(config.bucket) + "/" + path;
@@ -108,7 +108,7 @@ const supabaseProvider: MediaStorageProvider = {
     if (uploadUrl.origin !== config.baseUrl || !uploadUrl.pathname.startsWith("/storage/v1/object/upload/sign/") || !uploadUrl.searchParams.has("token")) {
       throw new Error("Storage returned an unsafe upload URL.");
     }
-    return {uploadUrl: uploadUrl.toString(), method: "PUT", headers: {"Content-Type": "application/octet-stream", "x-upsert": "false"}};
+    return {uploadUrl: uploadUrl.toString(), method: "PUT", headers: {"Content-Type": mimeType, "x-upsert": "false"}};
   },
   async verifyObject(input) {
     const config = getSupabaseStorageConfig();
