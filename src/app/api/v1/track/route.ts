@@ -72,8 +72,8 @@ export async function POST(request:Request){
    if(isNew)await tx.websiteEvent.create({data:{websiteId:website.id,visitorId:visitor.id,sessionId,eventName:"session_start",eventType:"session_start",pageUrl,pagePath,pageTitle:event.page?.title||null,referrer,timestamp:now,userAgent:ua||null}});
    await tx.websiteEvent.create({data:{
     websiteId:website.id,visitorId:visitor.id,sessionId,eventName:event.event,eventType:eventType(event.event),
-    pageUrl:event.page?.url||null,pagePath:event.page?.path||null,pageTitle:event.page?.title||null,
-    referrer:event.referrer||null,timestamp:clientTime,userAgent:ua||null,metadata:properties as Prisma.InputJsonValue
+    pageUrl,pagePath,pageTitle:event.page?.title||null,
+    referrer,timestamp:clientTime,userAgent:ua||null,metadata:properties as Prisma.InputJsonValue
    }});
    return {sessionId};
   });
