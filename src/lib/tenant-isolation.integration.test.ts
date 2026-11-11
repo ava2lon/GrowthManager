@@ -36,7 +36,9 @@ integration("PostgreSQL tenant isolation constraints", () => {
   let userA: {id: string};
   let userB: {id: string};
   let brandA: {id: string};
-  let brandB: {id: string};\n  let websiteA: {id: string};\n  let websiteB: {id: string};
+  let brandB: {id: string};
+  let websiteA: {id: string};
+  let websiteB: {id: string};
 
   beforeAll(async () => {
     const [a, b] = await Promise.all([
@@ -83,7 +85,14 @@ integration("PostgreSQL tenant isolation constraints", () => {
       }),
     ]);
     brandA = ba;
-    brandB = bb;\n\n    const [wa, wb] = await Promise.all([\n      prisma.website.create({data: {workspaceId: workspaceA.id, name: "Tenant A site", domain: "tenant-a.example.test", trackingId: "site_" + suffix.replace(/-/g, "").slice(0, 24)}, select: {id: true}}),\n      prisma.website.create({data: {workspaceId: workspaceB.id, name: "Tenant B site", domain: "tenant-b.example.test", trackingId: "site_" + randomUUID().replace(/-/g, "").slice(0, 24)}, select: {id: true}}),\n    ]);\n    websiteA = wa;\n    websiteB = wb;
+    brandB = bb;
+
+    const [wa, wb] = await Promise.all([
+      prisma.website.create({data: {workspaceId: workspaceA.id, name: "Tenant A site", domain: "tenant-a.example.test", trackingId: "site_" + suffix.replace(/-/g, "").slice(0, 24)}, select: {id: true}}),
+      prisma.website.create({data: {workspaceId: workspaceB.id, name: "Tenant B site", domain: "tenant-b.example.test", trackingId: "site_" + randomUUID().replace(/-/g, "").slice(0, 24)}, select: {id: true}}),
+    ]);
+    websiteA = wa;
+    websiteB = wb;
   }, 30_000);
 
   afterAll(async () => {
@@ -104,6 +113,46 @@ integration("PostgreSQL tenant isolation constraints", () => {
     expect(brandsA.map((brand) => brand.id)).toEqual([brandA.id]);
     expect(brandsB.map((brand) => brand.id)).toEqual([brandB.id]);
     expect(brandsA.some((brand) => brand.id === brandB.id)).toBe(false);
+  });
+
+
+  it("isolates website visitors and cascades website-owned tracking data", async () => {
+    const visitor = await prisma.websiteVisitor.create({
+      data: {websiteId: websiteA.id, anonymousId: "anon_" + randomUUID().replace(/-/g, "")},
+      select: {id: true},
+    });
+    await expect(prisma.websiteSession.create({
+      data: {
+        websiteId: websiteB.id,
+        visitorId: visitor.id,
+        sessionId: "sess_" + randomUUID().replace(/-/g, ""),
+      },
+    })).rejects.toMatchObject({code: "P2003"});
+
+    const sessionId = "sess_" + randomUUID().replace(/-/g, "");
+    await prisma.websiteSession.create({
+      data: {websiteId: websiteA.id, visitorId: visitor.id, sessionId},
+    });
+    await prisma.websiteEvent.create({
+      data: {websiteId: websiteA.id, visitorId: visitor.id, sessionId, eventName: "page_view", eventType: "page_view"},
+    });
+    await prisma.websiteIdentity.create({
+      data: {websiteId: websiteA.id, visitorId: visitor.id, email: "visitor@example.test"},
+    });
+
+    const [tenantA, tenantB] = await Promise.all([
+      prisma.website.findMany({where: {workspaceId: workspaceA.id}, select: {id: true}}),
+      prisma.website.findMany({where: {workspaceId: workspaceB.id}, select: {id: true}}),
+    ]);
+    expect(tenantA.map(x => x.id)).toContain(websiteA.id);
+    expect(tenantB.map(x => x.id)).toContain(websiteB.id);
+    expect(tenantA.map(x => x.id)).not.toContain(websiteB.id);
+
+    await prisma.website.delete({where: {id: websiteA.id}});
+    expect(await prisma.websiteVisitor.count({where: {websiteId: websiteA.id}})).toBe(0);
+    expect(await prisma.websiteSession.count({where: {websiteId: websiteA.id}})).toBe(0);
+    expect(await prisma.websiteEvent.count({where: {websiteId: websiteA.id}})).toBe(0);
+    expect(await prisma.websiteIdentity.count({where: {websiteId: websiteA.id}})).toBe(0);
   });
 
   it("rejects a social account whose brand belongs to another workspace", async () => {
