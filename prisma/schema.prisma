@@ -139,6 +139,7 @@ model Workspace {
   aiSettings WorkspaceAISettings?
   aiUsage WorkspaceAIUsage[]
   aiGenerations AIGeneration[]
+  websites Website[]
 }
 
 model WorkspaceInvitation {
@@ -1037,4 +1038,125 @@ model AIGeneration {
   @@index([workspaceId, brandId, createdAt])
   @@index([workspaceId, userId, createdAt])
   @@index([workspaceId, campaignId, createdAt])
+}
+
+
+enum WebsiteStatus {
+  ACTIVE
+  PAUSED
+}
+
+model Website {
+  id              String        @id @default(cuid())
+  workspaceId     String
+  name            String
+  domain          String
+  description     String?       @db.Text
+  status          WebsiteStatus @default(ACTIVE)
+  trackingId      String        @unique
+  trackingEnabled Boolean       @default(true)
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+  workspace       Workspace     @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  visitors        WebsiteVisitor[]
+  sessions        WebsiteSession[]
+  events          WebsiteEvent[]
+  identities      WebsiteIdentity[]
+  @@unique([workspaceId, id])
+  @@unique([workspaceId, domain])
+  @@index([workspaceId, status, createdAt])
+  @@index([workspaceId, updatedAt])
+}
+
+model WebsiteVisitor {
+  id               String             @id @default(cuid())
+  websiteId        String
+  anonymousId      String
+  firstSeenAt      DateTime           @default(now())
+  lastSeenAt       DateTime           @default(now())
+  firstReferrer    String?            @db.VarChar(2048)
+  firstLandingPage String?            @db.VarChar(2048)
+  userAgent        String?            @db.VarChar(500)
+  deviceType       String?
+  metadata         Json?
+  createdAt        DateTime           @default(now())
+  updatedAt        DateTime           @updatedAt
+  website          Website            @relation(fields: [websiteId], references: [id], onDelete: Cascade)
+  sessions         WebsiteSession[]
+  events           WebsiteEvent[]
+  identity         WebsiteIdentity?
+  @@unique([websiteId, anonymousId])
+  @@unique([websiteId, id])
+  @@index([websiteId, lastSeenAt])
+}
+
+model WebsiteSession {
+  id             String          @id @default(cuid())
+  websiteId      String
+  visitorId      String
+  sessionId      String
+  startedAt      DateTime        @default(now())
+  lastActivityAt DateTime        @default(now())
+  landingPage    String?         @db.VarChar(2048)
+  exitPage       String?         @db.VarChar(2048)
+  referrer       String?         @db.VarChar(2048)
+  utmSource      String?         @db.VarChar(200)
+  utmMedium      String?         @db.VarChar(200)
+  utmCampaign    String?         @db.VarChar(200)
+  utmTerm        String?         @db.VarChar(200)
+  utmContent     String?         @db.VarChar(200)
+  deviceType     String?
+  browser        String?
+  userAgent      String?         @db.VarChar(500)
+  metadata       Json?
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
+  website        Website         @relation(fields: [websiteId], references: [id], onDelete: Cascade)
+  visitor        WebsiteVisitor  @relation(fields: [websiteId, visitorId], references: [websiteId, id], onDelete: Cascade)
+  events         WebsiteEvent[]
+  @@unique([websiteId, sessionId])
+  @@unique([websiteId, id])
+  @@index([websiteId, startedAt])
+  @@index([websiteId, visitorId, startedAt])
+}
+
+model WebsiteEvent {
+  id        String          @id @default(cuid())
+  websiteId String
+  visitorId String?
+  sessionId String?
+  eventName String          @db.VarChar(100)
+  eventType String          @db.VarChar(32)
+  pageUrl   String?         @db.VarChar(2048)
+  pagePath  String?         @db.VarChar(1024)
+  pageTitle String?         @db.VarChar(300)
+  referrer  String?         @db.VarChar(2048)
+  timestamp DateTime        @default(now())
+  userAgent String?         @db.VarChar(500)
+  metadata  Json?
+  createdAt DateTime        @default(now())
+  website   Website         @relation(fields: [websiteId], references: [id], onDelete: Cascade)
+  visitor   WebsiteVisitor? @relation(fields: [websiteId, visitorId], references: [websiteId, id], onDelete: Cascade)
+  session   WebsiteSession? @relation(fields: [websiteId, sessionId], references: [websiteId, sessionId], onDelete: Cascade)
+  @@index([websiteId, timestamp])
+  @@index([websiteId, eventName, timestamp])
+  @@index([websiteId, visitorId, timestamp])
+  @@index([websiteId, sessionId, timestamp])
+  @@index([websiteId, eventType, timestamp])
+}
+
+model WebsiteIdentity {
+  id           String         @id @default(cuid())
+  websiteId    String
+  visitorId    String
+  email        String?        @db.VarChar(320)
+  externalId   String?        @db.VarChar(191)
+  metadata     Json?
+  identifiedAt DateTime       @default(now())
+  createdAt    DateTime       @default(now())
+  updatedAt    DateTime       @updatedAt
+  website      Website        @relation(fields: [websiteId], references: [id], onDelete: Cascade)
+  visitor      WebsiteVisitor @relation(fields: [websiteId, visitorId], references: [websiteId, id], onDelete: Cascade)
+  @@unique([websiteId, visitorId])
+  @@index([websiteId, email])
 }
