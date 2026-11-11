@@ -36,7 +36,12 @@ export async function getPinterestCredentials(input:{workspaceId:string;accountI
 }
 export async function pinterestApi<T>(accessToken:string,path:string,init:RequestInit={}):Promise<T>{
  if(!path.startsWith("/v5/")||path.startsWith("//"))throw new Error("PINTEREST_INVALID_API_PATH");
- const response=await fetch("https://api.pinterest.com"+path,{...init,headers:{Authorization:"Bearer "+accessToken,Accept:"application/json",...(init.body?{"Content-Type":"application/json"}:{}),...(init.headers??{})},cache:"no-store",redirect:"error",signal:init.signal??AbortSignal.timeout(12000)});
+ let response:Response;
+ try{
+  response=await fetch("https://api.pinterest.com"+path,{...init,headers:{Authorization:"Bearer "+accessToken,Accept:"application/json",...(init.body?{"Content-Type":"application/json"}:{}),...(init.headers??{})},cache:"no-store",redirect:"error",signal:init.signal??AbortSignal.timeout(12000)});
+ }catch{
+  throw new Error("PINTEREST_NETWORK_ERROR");
+ }
  const payload=await response.json().catch(()=>null);
  if(!response.ok)throw new Error(response.status===401?"PINTEREST_AUTH_FAILED":response.status===403?"PINTEREST_PERMISSION_DENIED":response.status===429?"PINTEREST_RATE_LIMITED":response.status>=500?"PINTEREST_PROVIDER_UNAVAILABLE":"PINTEREST_PROVIDER_ERROR");
  if(!payload)throw new Error("PINTEREST_PROVIDER_ERROR");
