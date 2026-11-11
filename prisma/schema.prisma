@@ -478,10 +478,12 @@ model AutomationAlertPolicy {
   emailNotificationsEnabled Boolean @default(false)
   notificationEmail     String?
   lastEvaluatedAt       DateTime?
+  lastEscalationAt      DateTime?
   createdAt             DateTime  @default(now())
   updatedAt             DateTime  @updatedAt
   workspace             Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
   @@index([enabled, lastEvaluatedAt])
+  @@index([enabled, lastEscalationAt, createdAt], map: "automation_alert_policy_escalation_idx")
 }
 
 model AutomationAlertEvent {
@@ -500,6 +502,8 @@ model AutomationAlertEvent {
   acknowledgedAt    DateTime?
   acknowledgedById  String?
   lastNotifiedAt    DateTime?
+  escalationRecipientCursor String?
+  escalatedAt       DateTime?
   resolvedAt        DateTime?
   resolutionMessage String?
   createdAt         DateTime  @default(now())
@@ -509,6 +513,7 @@ model AutomationAlertEvent {
   @@unique([workspaceId, dedupeKey])
   @@unique([workspaceId, id])
   @@index([workspaceId, status, createdAt])
+  @@index([workspaceId, status, lastNotifiedAt, escalatedAt, createdAt], map: "automation_alert_escalation_due_idx")
   @@index([workspaceId, integrationId, createdAt])
 }
 
