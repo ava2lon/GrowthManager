@@ -7,6 +7,12 @@ type Signal = {
   socialAccountId?:string; socialPostTargetId?:string; category:string; severity:"CRITICAL"|"WARNING";
   dedupeKey:string; message:string; errorCode?:string|null; metadata:Prisma.InputJsonObject;
 };
+export function getSocialIncidentEscalationPage<T extends {id:string}>(memberships:T[],pageSize:number):{recipients:T[];hasMore:boolean;nextCursor:string|null}{
+  if(!Number.isInteger(pageSize)||pageSize<1)throw new Error("INVALID_ESCALATION_PAGE_SIZE");
+  const hasMore=memberships.length>pageSize;
+  const recipients=memberships.slice(0,pageSize);
+  return {recipients,hasMore,nextCursor:hasMore?recipients[recipients.length-1]?.id??null:null};
+}
 function safeCode(value:string|null|undefined,fallback:string):string {
   return value&&/^[A-Z0-9_]{1,100}$/.test(value)?value:fallback;
 }
@@ -159,10 +165,9 @@ export async function synchronizeSocialIncidents():Promise<{created:number;reope
         take:RECIPIENT_BATCH_SIZE+1,
         select:{id:true,userId:true,user:{select:{email:true}}},
       });
-      const hasMoreRecipients=memberships.length>RECIPIENT_BATCH_SIZE;
-      const recipientPage=memberships.slice(0,RECIPIENT_BATCH_SIZE);
+      const page=getSocialIncidentEscalationPage(memberships,RECIPIENT_BATCH_SIZE);
+      const {recipients:recipientPage,hasMore:hasMoreRecipients,nextCursor:nextCursor}=page;
       if(!recipientPage.length)return 0;
-      const nextCursor=hasMoreRecipients?recipientPage[recipientPage.length-1].id:null;
       const claimed=await tx.workspaceIncident.updateMany({
         where:{
           id:incident.id,
