@@ -73,7 +73,6 @@ export async function POST(request:Request){
      create:sessionData,
      update:{lastActivityAt:now,exitPage:pageUrl||undefined}
     });
-    isNew=!session;
    }
    if(event.identity)await tx.websiteIdentity.upsert({
     where:{websiteId_visitorId:{websiteId:website.id,visitorId:visitor.id}},
