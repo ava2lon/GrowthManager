@@ -39,7 +39,7 @@ export async function POST(request:Request){
   if(!isSafeTrackingId(trackingId))return errorResponse("NOT_FOUND","Website tracking configuration not found.",404,requestId);
   const website=await db.website.findUnique({where:{trackingId},select:{id:true,workspaceId:true,domain:true,status:true,trackingEnabled:true}});
   if(!website||website.status!=="ACTIVE"||!website.trackingEnabled)return errorResponse("NOT_FOUND","Website tracking configuration not found.",404,requestId);
-  if(origin&&originHost(origin)!==website.domain)return errorResponse("FORBIDDEN","Origin is not authorized for this website.",403,requestId);
+  if(!origin||originHost(origin)!==website.domain)return errorResponse("FORBIDDEN","A matching website Origin is required for tracking ingestion.",403,requestId);
   const properties=validateMetadataDepth(event.properties??{});if(!properties)return errorResponse("VALIDATION_ERROR","Event properties are invalid.",400,requestId,origin);
   const now=new Date(),clientTime=event.timestamp?new Date(event.timestamp):now;
   if(clientTime.getTime()>now.getTime()+5*60*1000||clientTime.getTime()<now.getTime()-30*86400000)return errorResponse("VALIDATION_ERROR","Event timestamp is outside the accepted clock-skew window.",400,requestId,origin);
