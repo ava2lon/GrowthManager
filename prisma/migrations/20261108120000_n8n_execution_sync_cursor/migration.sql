@@ -1,2 +1,2 @@
 ALTER TABLE "Integration"
-ADD COLUMN "lastExecutionSyncCursor" TEXT;
+ADD COLUMN IF NOT EXISTS "lastExecutionSyncCursor" TEXT;
