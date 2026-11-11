@@ -2,7 +2,7 @@ import {NextResponse} from "next/server";
 import {requireWorkspaceRole} from "@/lib/workspace";
 import {db} from "@/lib/db";
 import {consumeRateLimit} from "@/lib/rate-limit";
-import {getSupabaseStorageConfig, storageHeaders} from "@/lib/media-storage";
+import {getMediaStorageProvider, storageHeaders} from "@/lib/media-storage";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -31,7 +31,7 @@ export async function GET(_request: Request, {params}: {params: Promise<{assetId
 
   let storage;
   try {
-    storage = getSupabaseStorageConfig();
+    storage = getMediaStorageProvider().getConfig();
   } catch {
     return NextResponse.json({error: "Media storage is not configured."}, {status: 503});
   }
