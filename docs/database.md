@@ -8,7 +8,7 @@ GrowthManager uses PostgreSQL with Prisma 6. The canonical schema is prisma/sche
 
 The schema currently includes identity/workspace membership, invitations, brands, social accounts, content posts and revisions, content review, campaigns, media assets/folders, social publication targets and attempts, integrations, automations, tasks, activity logs, notifications, provider analytics snapshots, incidents, and AI usage/generation records.
 
-There are not yet first-class Website, WebsiteEvent, Lead, Contact, Conversion, ApiKey, generic Webhook, or WebhookDelivery models. Add these only with reviewed migrations and explicit tenant ownership.
+Phase 2 adds Website, WebsiteVisitor, WebsiteSession, WebsiteEvent, and WebsiteIdentity. Lead, Contact, Conversion, ApiKey, generic Webhook, and WebhookDelivery models remain unimplemented. Website-owned records are linked through Website and use website-scoped compound unique keys for visitor/session identity.
 
 ## Tenant integrity
 
