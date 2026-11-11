@@ -3,7 +3,7 @@ import {NextResponse} from "next/server";
 import {requireWorkspaceRole} from "@/lib/workspace";
 import {db} from "@/lib/db";
 import {consumeRateLimit} from "@/lib/rate-limit";
-import {getSupabaseStorageConfig, storageHeaders, validateMediaUpload} from "@/lib/media-storage";
+import {getMediaStorageProvider, storageHeaders, validateMediaUpload} from "@/lib/media-storage";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -45,7 +45,7 @@ export async function POST(request: Request) {
 
   let storage;
   try {
-    storage = getSupabaseStorageConfig();
+    storage = getMediaStorageProvider().getConfig();
   } catch {
     return NextResponse.json({error: "Media storage is not configured."}, {status: 503});
   }
@@ -58,7 +58,7 @@ export async function POST(request: Request) {
       workspaceId: context.workspace.id,
       brandId,
       createdById: context.userId,
-      storageProvider: "SUPABASE",
+      storageProvider: getMediaStorageProvider().name,
       bucket: storage.bucket,
       objectPath,
       originalFilename: validated.safeName,
