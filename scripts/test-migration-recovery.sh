@@ -92,6 +92,13 @@ BEGIN
   IF EXISTS (
     SELECT expected.index_name
     FROM unnest(ARRAY[
+      'AutomationAlertPolicy_enabled_lastEvaluatedAt_idx',
+      'automation_alert_policy_escalation_idx',
+      'automation_alert_escalation_due_idx',
+      'workspace_incident_escalation_due_idx',
+      'SocialAnalyticsRetry_workspaceId_provider_subjectType_subjectId_reportDate_key',
+      'SocialAnalyticsRetry_status_nextAttemptAt_idx',
+      'SocialAnalyticsRetry_workspaceId_status_nextAttemptAt_idx',
       'ContentPost_workspaceId_workflowStatus_createdAt_idx',
       'ContentPost_workspaceId_campaignId_idx',
       'ContentPost_workspaceId_archivedAt_updatedAt_idx',
@@ -132,6 +139,37 @@ BEGIN
     WHERE NOT EXISTS (SELECT 1 FROM pg_indexes WHERE schemaname='public' AND indexname=expected.index_name)
   ) THEN
     RAISE EXCEPTION 'One or more expected recovery indexes are missing';
+  END IF;
+  IF EXISTS (
+    SELECT expected.constraint_name
+    FROM unnest(ARRAY[
+      'SocialAnalyticsRetry_workspaceId_fkey',
+      'ContentPost_workspaceId_campaignId_fkey',
+      'ContentPost_authorId_fkey',
+      'MediaFolder_workspaceId_fkey',
+      'MediaFolder_workspaceId_brandId_fkey',
+      'MediaAsset_workspaceId_folderId_fkey',
+      'CampaignSocialAccount_workspaceId_campaignId_fkey',
+      'CampaignSocialAccount_workspaceId_socialAccountId_fkey',
+      'WorkspaceAISettings_workspaceId_fkey',
+      'WorkspaceAIUsage_workspaceId_fkey',
+      'AIGeneration_workspaceId_fkey',
+      'AIGeneration_workspaceId_brandId_fkey',
+      'AIGeneration_workspaceId_campaignId_fkey',
+      'AIGeneration_userId_fkey',
+      'Website_workspaceId_fkey',
+      'WebsiteVisitor_websiteId_fkey',
+      'WebsiteSession_websiteId_fkey',
+      'WebsiteSession_websiteId_visitorId_fkey',
+      'WebsiteEvent_websiteId_fkey',
+      'WebsiteEvent_websiteId_visitorId_fkey',
+      'WebsiteEvent_websiteId_sessionId_fkey',
+      'WebsiteIdentity_websiteId_fkey',
+      'WebsiteIdentity_websiteId_visitorId_fkey'
+    ]) AS expected(constraint_name)
+    WHERE NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname=expected.constraint_name)
+  ) THEN
+    RAISE EXCEPTION 'One or more expected recovery foreign keys are missing';
   END IF;
 END $;
 SQL
