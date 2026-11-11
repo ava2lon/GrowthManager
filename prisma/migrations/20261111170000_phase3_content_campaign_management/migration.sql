@@ -28,6 +28,7 @@ ALTER TABLE "Campaign"
 
 CREATE UNIQUE INDEX "Campaign_workspaceId_id_key" ON "Campaign"("workspaceId", "id");
 
+
 CREATE TABLE "MediaFolder" (
   "id" TEXT NOT NULL,
   "workspaceId" TEXT NOT NULL,
