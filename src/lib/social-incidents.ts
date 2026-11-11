@@ -122,7 +122,6 @@ export async function synchronizeSocialIncidents():Promise<{created:number;reope
       await db.$transaction(async tx=>{
         await tx.activityLog.create({data:{workspaceId:incident.workspaceId,action:"social.incident_auto_resolved",entityType:"workspace_incident",entityId:incident.id,metadata:{category:incident.category,severity:incident.severity}}});
         const admins=await tx.workspaceMembership.findMany({where:{workspaceId:incident.workspaceId,role:{in:["OWNER","ADMIN"]}},select:{userId:true,user:{select:{email:true}}}});
-        await tx.activityLog.create({data:{workspaceId:incident.workspaceId,action:"social.incident_escalated",entityType:"workspace_incident",entityId:incident.id,metadata:{category:incident.category,severity:incident.severity,escalationAfterMinutes:30}}});
       const prefs=await tx.workspaceNotificationPreference.findMany({where:{workspaceId:incident.workspaceId,userId:{in:admins.map(member=>member.userId)}},select:{userId:true,inAppSocialIncidents:true,emailSocialIncidents:true}});
         const byUser=new Map(prefs.map(item=>[item.userId,item]));
         const inApp=admins.filter(member=>byUser.get(member.userId)?.inAppSocialIncidents??true);
