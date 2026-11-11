@@ -47,8 +47,13 @@ export async function recordSocialAnalyticsRetryFailure(
       return await db.$transaction(async (tx) => {
         const existing = await tx.socialAnalyticsRetry.findUnique({
           where: uniqueWhere(input),
-          select: { id: true, attemptCount: true },
+          select: { id: true, attemptCount: true, status: true },
         });
+
+        // Do not release or rewrite a lease owned by an active retry worker.
+        // That worker is responsible for recording its own completion/failure.
+        if (existing?.status === "PROCESSING") return existing;
+
         const attemptCount = (existing?.attemptCount ?? 0) + 1;
         const retryAt =
           classifyAnalyticsFailure(errorCode) === "RETRY"
@@ -98,32 +103,43 @@ export async function recordSocialAnalyticsRetryFailure(
     }
   }
   throw new Error("SOCIAL_ANALYTICS_RETRY_RECORDING_CONFLICT");
-
 }
 
 /**
- * Compare-and-set claim. Concurrent workers may select the same candidate, but
- * only one updateMany can transition its eligible row into PROCESSING.
+ * Claims due retries and reclaims PROCESSING rows whose worker lease expired.
+ * Compare-and-set ensures only one worker can own the refreshed lease.
  */
 export async function claimDueSocialAnalyticsRetry(now = new Date()) {
   const staleBefore = new Date(now.getTime() - LEASE_MS);
   const candidate = await db.socialAnalyticsRetry.findFirst({
     where: {
-      status: "RETRY",
-      nextAttemptAt: { lte: now },
-      OR: [{ lockedAt: null }, { lockedAt: { lt: staleBefore } }],
+      OR: [
+        {
+          status: "RETRY",
+          nextAttemptAt: { lte: now },
+          OR: [{ lockedAt: null }, { lockedAt: { lt: staleBefore } }],
+        },
+        {
+          status: "PROCESSING",
+          lockedAt: { lt: staleBefore },
+        },
+      ],
     },
     orderBy: [{ nextAttemptAt: "asc" }, { createdAt: "asc" }],
-    select: { id: true, lockedAt: true },
+    select: { id: true, status: true, lockedAt: true },
   });
   if (!candidate) return null;
 
   const claimed = await db.socialAnalyticsRetry.updateMany({
     where: {
       id: candidate.id,
-      status: "RETRY",
-      nextAttemptAt: { lte: now },
-      lockedAt: candidate.lockedAt,
+      status: candidate.status,
+      AND: [
+        { lockedAt: candidate.lockedAt },
+        candidate.status === "RETRY"
+          ? { nextAttemptAt: { lte: now } }
+          : { lockedAt: { lt: staleBefore } },
+      ],
     },
     data: { status: "PROCESSING", lockedAt: now },
   });
