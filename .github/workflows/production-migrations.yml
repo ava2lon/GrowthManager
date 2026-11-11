@@ -1,0 +1,82 @@
+name: Production database migrations
+
+on:
+  workflow_dispatch:
+    inputs:
+      backup_verified:
+        description: "Confirm a fresh Supabase backup/PITR restore point is complete and verified"
+        required: true
+        type: choice
+        options:
+          - "false"
+          - "true"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: growthmanager-production-database-migrations
+  cancel-in-progress: false
+
+jobs:
+  migrate:
+    name: Deploy reviewed Prisma migrations
+    if: inputs.backup_verified == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    environment: production-migrations
+    steps:
+      - name: Check out approved commit
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install locked dependencies
+        run: npm ci --include=optional --no-audit --no-fund
+
+      - name: Validate Prisma schema
+        run: npx prisma validate
+
+      - name: Generate Prisma Client
+        run: npx prisma generate
+
+      - name: Verify migration connection is configured
+        env:
+          DIRECT_URL: ${{ secrets.PRODUCTION_DIRECT_URL }}
+        run: |
+          if [ -z "$DIRECT_URL" ]; then
+            echo "::error::PRODUCTION_DIRECT_URL is not configured in the production-migrations environment."
+            exit 1
+          fi
+
+      - name: Inspect pending migration status
+        env:
+          DIRECT_URL: ${{ secrets.PRODUCTION_DIRECT_URL }}
+          DATABASE_URL: ${{ secrets.PRODUCTION_DIRECT_URL }}
+        run: npx prisma migrate status
+
+      - name: Deploy additive migrations
+        env:
+          DIRECT_URL: ${{ secrets.PRODUCTION_DIRECT_URL }}
+          DATABASE_URL: ${{ secrets.PRODUCTION_DIRECT_URL }}
+        run: npx prisma migrate deploy
+
+      - name: Verify migration history after deployment
+        if: success()
+        env:
+          DIRECT_URL: ${{ secrets.PRODUCTION_DIRECT_URL }}
+          DATABASE_URL: ${{ secrets.PRODUCTION_DIRECT_URL }}
+        run: npx prisma migrate status
+
+  backup-not-confirmed:
+    name: Require verified backup
+    if: inputs.backup_verified != 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - run: |
+          echo "::error::Production migration blocked. Verify a fresh backup/PITR restore point, then dispatch again."
+          exit 1
