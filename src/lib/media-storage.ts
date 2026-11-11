@@ -33,7 +33,7 @@ export function validateMediaUpload(input: {fileName: unknown; mimeType: unknown
   if (input.sizeBytes > maximum) {
     throw new Error(isVideo ? "Videos must be 100 MB or smaller." : "Images and documents must be 20 MB or smaller.");
   }
-  const safeName = input.fileName.replace(/[^\\p{L}\\p{N}._ -]/gu, "_").trim();
+  const safeName = input.fileName.replace(/[^\p{L}\p{N}._ -]/gu, "_").trim();
   if (!safeName) throw new Error("The filename is invalid.");
   return {safeName, extension: MIME_EXTENSIONS[input.mimeType], isVideo, isImage};
 }
