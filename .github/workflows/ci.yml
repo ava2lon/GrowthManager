@@ -82,6 +82,16 @@ jobs:
           DATABASE_URL: postgresql://postgres:postgres@localhost:5432/growthmanager_test_ci
           DIRECT_URL: postgresql://postgres:postgres@localhost:5432/growthmanager_test_ci
 
+      - name: Create disposable Prisma shadow database
+        run: createdb --host=localhost --username=postgres growthmanager_shadow_ci
+        env:
+          PGPASSWORD: postgres
+
+      - name: Verify migrations match the Prisma data model
+        run: npx prisma migrate diff --from-migrations prisma/migrations --to-schema-datamodel prisma/schema.prisma --shadow-database-url "$SHADOW_DATABASE_URL" --exit-code
+        env:
+          SHADOW_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/growthmanager_shadow_ci
+
       - name: Install PostgreSQL client for migration recovery tests
         run: |
           sudo apt-get update
