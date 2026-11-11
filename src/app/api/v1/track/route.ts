@@ -2,7 +2,7 @@ import {createHash,randomBytes} from "node:crypto";
 import {Prisma} from "@prisma/client";
 import {NextResponse} from "next/server";
 import {db} from "@/lib/db";
-import {apiErrorResponse,createRequestId,internalApiErrorResponse} from "@/lib/api-response";
+import {apiErrorResponse,createRequestId} from "@/lib/api-response";
 import {consumeRateLimit,getClientIp} from "@/lib/rate-limit";
 import {WEBSITE_EVENT_MAX_BODY_BYTES,WEBSITE_SESSION_TIMEOUT_SECONDS,WEBSITE_TRACKING_RATE_LIMIT,WEBSITE_TRACKING_RATE_WINDOW_SECONDS} from "@/lib/websites/config";
 import {isSafeTrackingId,trackingEventSchema,validateMetadataDepth} from "@/lib/websites/validation";
@@ -56,8 +56,8 @@ export async function POST(request:Request){
     select:{id:true}
    });
    let sessionId=event.session_id;
-   let session=await tx.websiteSession.findUnique({where:{websiteId_sessionId:{websiteId:website.id,sessionId}},select:{id:true,visitorId:true,lastActivityAt:true}});
-   let isNew=!session||session.visitorId!==visitor.id||now.getTime()-session.lastActivityAt.getTime()>WEBSITE_SESSION_TIMEOUT_SECONDS*1000;
+   const session=await tx.websiteSession.findUnique({where:{websiteId_sessionId:{websiteId:website.id,sessionId}},select:{id:true,visitorId:true,lastActivityAt:true}});
+   const isNew=!session||session.visitorId!==visitor.id||now.getTime()-session.lastActivityAt.getTime()>WEBSITE_SESSION_TIMEOUT_SECONDS*1000;
    if(session && !isNew){
     await tx.websiteSession.update({where:{id:session.id},data:{lastActivityAt:now,exitPage:pageUrl||undefined}});
    }else{
