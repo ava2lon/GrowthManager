@@ -177,7 +177,7 @@ BEGIN
   ) THEN
     RAISE EXCEPTION 'One or more expected recovery foreign keys are missing';
   END IF;
-END $;
+END $recovery$;
 SQL
 
 echo "Migration replay and populated-data preservation checks passed."
