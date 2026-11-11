@@ -1,4 +1,4 @@
-CREATE TABLE "SocialAnalyticsRetry" (
+CREATE TABLE IF NOT EXISTS "SocialAnalyticsRetry" (
   "id" TEXT NOT NULL,
   "workspaceId" TEXT NOT NULL,
   "provider" TEXT NOT NULL,
@@ -16,9 +16,9 @@ CREATE TABLE "SocialAnalyticsRetry" (
   CONSTRAINT "SocialAnalyticsRetry_pkey" PRIMARY KEY ("id"),
   CONSTRAINT "SocialAnalyticsRetry_workspaceId_fkey" FOREIGN KEY ("workspaceId") REFERENCES "Workspace"("id") ON DELETE CASCADE ON UPDATE CASCADE
 );
-CREATE UNIQUE INDEX "SocialAnalyticsRetry_workspaceId_provider_subjectType_subjectId_reportDate_key"
+CREATE UNIQUE INDEX IF NOT EXISTS "SocialAnalyticsRetry_workspaceId_provider_subjectType_subjectId_reportDate_key"
   ON "SocialAnalyticsRetry"("workspaceId", "provider", "subjectType", "subjectId", "reportDate");
-CREATE INDEX "SocialAnalyticsRetry_status_nextAttemptAt_idx"
+CREATE INDEX IF NOT EXISTS "SocialAnalyticsRetry_status_nextAttemptAt_idx"
   ON "SocialAnalyticsRetry"("status", "nextAttemptAt");
-CREATE INDEX "SocialAnalyticsRetry_workspaceId_status_nextAttemptAt_idx"
+CREATE INDEX IF NOT EXISTS "SocialAnalyticsRetry_workspaceId_status_nextAttemptAt_idx"
   ON "SocialAnalyticsRetry"("workspaceId", "status", "nextAttemptAt");
