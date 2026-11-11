@@ -1,14 +1,14 @@
 import "server-only";
 
 const MAX_IMAGE_BYTES = 20 * 1024 * 1024;
-const MAX_VIDEO_BYTES = 100 * 1024 * 1024;
+const MAX_VIDEO_BYTES = 100 * 1024 * 1024;\nconst MAX_FILE_BYTES = 20 * 1024 * 1024;
 
 const MIME_EXTENSIONS: Record<string, string> = {
   "image/jpeg": "jpg",
   "image/png": "png",
   "image/webp": "webp",
   "video/mp4": "mp4",
-  "video/quicktime": "mov",
+  "video/quicktime": "mov",\n  "application/pdf": "pdf",\n  "text/plain": "txt",\n  "text/csv": "csv",\n  "application/vnd.openxmlformats-officedocument.wordprocessingml.document": "docx",\n  "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": "xlsx",\n  "application/vnd.openxmlformats-officedocument.presentationml.presentation": "pptx",
 };
 
 export function validateMediaUpload(input: {fileName: unknown; mimeType: unknown; sizeBytes: unknown}) {
@@ -28,7 +28,7 @@ export function validateMediaUpload(input: {fileName: unknown; mimeType: unknown
   }
   const safeName = input.fileName.replace(/[^\p{L}\p{N}._ -]/gu, "_").trim();
   if (!safeName) throw new Error("The filename is invalid.");
-  return {safeName, extension: MIME_EXTENSIONS[input.mimeType], isVideo};
+  return {safeName, extension: MIME_EXTENSIONS[input.mimeType], isVideo, isImage};
 }
 
 export function getSupabaseStorageConfig() {
