@@ -11,7 +11,7 @@ function boot(options:{siteId?:string;fetchImpl?:typeof fetch;storage?:Map<strin
   return {ok:true,json:async()=>({session_id:"sess_server_rotated_1234567890123456"})} as Response;
  });
  const windowObject={addEventListener:vi.fn()};
- const documentObject={currentScript:{src:"https://app.growthmanager.test/tracker.js",getAttribute:()=>options.siteId??"site_12345678901234567890123456789012"},title:"Pricing",visibilityState:"visible",addEventListener:vi.fn()};
+ const documentObject={currentScript:{src:"https://app.growthmanager.test/tracker.js",getAttribute:()=>options.siteId??"site_12345678901234567890123456789012"},title:"Pricing",referrer:"",visibilityState:"visible",addEventListener:vi.fn()};
  const localStorageObject={getItem:(key:string)=>store.get(key)??null,setItem:(key:string,value:string)=>store.set(key,value)};
  const sandbox:Record<string,unknown>={
   window:windowObject,document:documentObject,
