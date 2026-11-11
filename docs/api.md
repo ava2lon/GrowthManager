@@ -2,11 +2,11 @@
 
 ## Current status
 
-The repository currently has internal Route Handlers for authentication, registration, integrations, media, AI, cron jobs and provider webhooks. A complete public /api/v1 resource API and API-key authentication are not implemented yet. This document defines the contract to use when that surface is introduced; it does not imply that the endpoints are already available.
+The repository has internal Route Handlers for authentication, registration, integrations, media, AI, cron jobs and provider webhooks. Phase 2 implements authenticated website management and public website event ingestion under `/api/v1`. Workspace API-key authentication and the broader public resource API remain unimplemented.
 
 ## Planned base path
 
-All public resources will live under /api/v1. Initial resource groups are workspaces, leads, content, campaigns, websites, website events, social accounts/posts, analytics and webhooks.
+Implemented Phase 2 routes: `GET/POST /api/v1/websites`, `GET/PATCH/DELETE /api/v1/websites/:websiteId`, `GET /api/v1/websites/:websiteId/events`, `GET /api/v1/websites/:websiteId/stats`, and public `POST /api/v1/track`. Website dashboard routes use the authenticated workspace context. Other resource groups and API-key authentication remain planned.
 
 ## Authentication
 
