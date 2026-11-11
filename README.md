@@ -10,6 +10,18 @@ Responsive public page and dashboard; bcrypt password hashing; account registrat
 
 External publishing, AI providers, billing, and automation execution are staged for later phases and are not represented as live integrations.
 
+## Engineering documentation
+
+- [Architecture](docs/architecture.md)
+- [Database and migrations](docs/database.md)
+- [Public API standards and implementation status](docs/api.md)
+- [Provider integrations](docs/integrations.md)
+- [n8n integration](docs/n8n.md)
+- [Vercel deployment](docs/deployment.md)
+- [Security model](docs/security.md)
+
+The public `/api/v1`, website tracking, unified lead management, and generic outbound webhook delivery are documented as planned capabilities; they are not represented as implemented until their routes, schema, services, and tests are merged.
+
 ## Setup
 Use Node.js 20.9+ and PostgreSQL. Copy .env.example to .env and configure DATABASE_URL, AUTH_SECRET, and AUTH_URL. Run npm install, npm run db:generate, npm run db:migrate, then npm run dev.
 
