@@ -31,6 +31,26 @@ enum SocialProvider {
   REDDIT
   TELEGRAM
 }
+enum ContentType {
+  POST
+  ARTICLE
+  VIDEO
+  IMAGE
+  CAROUSEL
+  STORY
+  SHORT_FORM_VIDEO
+}
+
+enum ContentWorkflowStatus {
+  IDEA
+  DRAFT
+  REVIEW
+  APPROVED
+  SCHEDULED
+  PUBLISHED
+  FAILED
+}
+
 enum PostStatus {
   DRAFT
   APPROVED
@@ -78,6 +98,7 @@ model User {
   updatedAt    DateTime              @updatedAt
   memberships  WorkspaceMembership[]
   activityLogs ActivityLog[]
+  authoredContentPosts ContentPost[]
   sentWorkspaceInvitations WorkspaceInvitation[] @relation("WorkspaceInvitationInviter")
   assignedContentReviews ContentReviewAssignment[] @relation("ContentReviewAssignee")
   createdContentReviews ContentReviewAssignment[] @relation("ContentReviewAssigner")
@@ -105,6 +126,7 @@ model Workspace {
   automationAlertPolicy AutomationAlertPolicy?
   automationAlertEvents AutomationAlertEvent[]
   mediaAssets MediaAsset[]
+  mediaFolders MediaFolder[]
   contentReviewAssignments ContentReviewAssignment[]
   notifications WorkspaceNotification[]
   contentReviewEmailDeliveries ContentReviewEmailDelivery[]
@@ -158,6 +180,7 @@ model Brand {
   posts          ContentPost[]
   campaigns      Campaign[]
   mediaAssets    MediaAsset[]
+  mediaFolders   MediaFolder[]
   @@unique([workspaceId, id])
   @@index([workspaceId, status])
 }
@@ -181,6 +204,7 @@ model SocialAccount {
   updatedAt      DateTime       @updatedAt
   brand          Brand          @relation(fields: [workspaceId, brandId], references: [workspaceId, id], onDelete: Cascade)
   publishTargets SocialPostTarget[]
+  campaignLinks CampaignSocialAccount[]
   pinterestAnalyticsSnapshots PinterestAnalyticsSnapshot[]
   metaAnalyticsSnapshots MetaAnalyticsSnapshot[]
   linkedinAnalyticsSnapshots LinkedInAnalyticsSnapshot[]
@@ -201,17 +225,29 @@ model ContentPost {
   title       String?
   body        String
   status      PostStatus @default(DRAFT)
+  contentType ContentType @default(POST)
+  workflowStatus ContentWorkflowStatus @default(DRAFT)
+  category    String?
+  tags        String[] @default([])
+  campaignId  String?
+  authorId    String?
+  archivedAt  DateTime?
   scheduledAt DateTime?
   publishedAt DateTime?
   createdAt   DateTime   @default(now())
   updatedAt   DateTime   @updatedAt
   brand       Brand      @relation(fields: [workspaceId, brandId], references: [workspaceId, id], onDelete: Cascade)
+  campaign    Campaign?  @relation(fields: [workspaceId, campaignId], references: [workspaceId, id], onDelete: Restrict)
+  author      User?      @relation(fields: [authorId], references: [id], onDelete: SetNull)
   publishTargets SocialPostTarget[]
   mediaAssets ContentPostMedia[]
   revisions ContentPostRevision[]
   reviewAssignments ContentReviewAssignment[]
   @@unique([workspaceId, id])
   @@index([workspaceId, brandId, status, scheduledAt])
+  @@index([workspaceId, workflowStatus, createdAt])
+  @@index([workspaceId, campaignId])
+  @@index([workspaceId, archivedAt, updatedAt])
 }
 
 model ContentPostRevision {
@@ -327,6 +363,7 @@ model MediaAsset {
   storageProvider  String           @default("SUPABASE")
   bucket           String
   objectPath       String
+  url              String?          @db.Text
   originalFilename String
   mimeType         String
   sizeBytes        BigInt
@@ -334,6 +371,8 @@ model MediaAsset {
   width            Int?
   height           Int?
   durationMs       Int?
+  folderId         String?
+  tags             String[]          @default([])
   altText          String?
   status           MediaAssetStatus @default(PENDING)
   uploadedAt       DateTime?
@@ -341,11 +380,13 @@ model MediaAsset {
   updatedAt        DateTime         @updatedAt
   workspace        Workspace        @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
   brand            Brand?           @relation(fields: [workspaceId, brandId], references: [workspaceId, id], onDelete: Cascade)
+  folder           MediaFolder?     @relation(fields: [workspaceId, folderId], references: [workspaceId, id], onDelete: Restrict)
   postAttachments ContentPostMedia[]
   @@unique([workspaceId, id])
   @@unique([workspaceId, objectPath])
   @@index([workspaceId, status, createdAt])
   @@index([workspaceId, brandId, createdAt])
+  @@index([workspaceId, folderId, createdAt])
 }
 
 model ContentPostMedia {
@@ -368,6 +409,9 @@ model Campaign {
   brandId     String?
   name        String
   objective   String?
+  description String?        @db.Text
+  budget      Decimal?       @db.Decimal(12, 2)
+  targetAudience String?     @db.Text
   status      CampaignStatus @default(PLANNING)
   startsAt    DateTime?
   endsAt      DateTime?
@@ -375,7 +419,37 @@ model Campaign {
   updatedAt   DateTime       @updatedAt
   workspace   Workspace      @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
   brand       Brand?         @relation(fields: [workspaceId, brandId], references: [workspaceId, id], onDelete: Restrict)
+  contents    ContentPost[]
+  socialAccounts CampaignSocialAccount[]
+  @@unique([workspaceId, id])
   @@index([workspaceId, status])
+}
+
+model MediaFolder {
+  id          String       @id @default(cuid())
+  workspaceId String
+  brandId     String?
+  name        String
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+  workspace   Workspace   @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  brand       Brand?      @relation(fields: [workspaceId, brandId], references: [workspaceId, id], onDelete: Restrict)
+  assets      MediaAsset[]
+  @@unique([workspaceId, id])
+  @@unique([workspaceId, brandId, name])
+  @@index([workspaceId, createdAt])
+}
+
+model CampaignSocialAccount {
+  id              String        @id @default(cuid())
+  workspaceId     String
+  campaignId      String
+  socialAccountId String
+  createdAt       DateTime      @default(now())
+  campaign        Campaign      @relation(fields: [workspaceId, campaignId], references: [workspaceId, id], onDelete: Cascade)
+  socialAccount   SocialAccount @relation(fields: [workspaceId, socialAccountId], references: [workspaceId, id], onDelete: Cascade)
+  @@unique([workspaceId, campaignId, socialAccountId])
+  @@index([workspaceId, socialAccountId])
 }
 
 model Integration {

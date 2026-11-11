@@ -2,7 +2,7 @@ import {NextResponse} from "next/server";
 import {requireWorkspaceRole} from "@/lib/workspace";
 import {db} from "@/lib/db";
 import {consumeRateLimit} from "@/lib/rate-limit";
-import {getSupabaseStorageConfig, storageHeaders} from "@/lib/media-storage";
+import {getMediaStorageProvider} from "@/lib/media-storage";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -25,38 +25,16 @@ export async function GET(_request: Request, {params}: {params: Promise<{assetId
   if (!assetId || assetId.length > 128) return NextResponse.json({error: "Invalid asset."}, {status: 400});
   const asset = await db.mediaAsset.findFirst({
     where: {id: assetId, workspaceId: context.workspace.id, status: "READY"},
-    select: {bucket: true, objectPath: true},
+    select: {bucket: true, objectPath: true, storageProvider: true},
   });
   if (!asset) return NextResponse.json({error: "Ready media asset not found."}, {status: 404});
 
-  let storage;
   try {
-    storage = getSupabaseStorageConfig();
-  } catch {
-    return NextResponse.json({error: "Media storage is not configured."}, {status: 503});
-  }
-  if (asset.bucket !== storage.bucket) return NextResponse.json({error: "Storage configuration changed."}, {status: 409});
-  const path = asset.objectPath.split("/").map(encodeURIComponent).join("/");
-  const endpoint = storage.baseUrl + "/storage/v1/object/sign/" + encodeURIComponent(asset.bucket) + "/" + path;
-  try {
-    const response = await fetch(endpoint, {
-      method: "POST",
-      headers: {...storageHeaders(storage.serviceKey), "Content-Type": "application/json"},
-      body: JSON.stringify({expiresIn: 300}),
-      cache: "no-store",
-      redirect: "error",
-      signal: AbortSignal.timeout(10000),
-    });
-    const payload = await response.json().catch(() => null) as {signedURL?: string; signedUrl?: string} | null;
-    const signedPath = payload?.signedURL ?? payload?.signedUrl;
-    if (!response.ok || typeof signedPath !== "string") {
-      return NextResponse.json({error: "Could not create a temporary media URL."}, {status: 502});
+    const provider = getMediaStorageProvider();
+    if (asset.storageProvider !== provider.name || asset.bucket !== provider.getBucket()) {
+      return NextResponse.json({error: "Storage provider configuration changed."}, {status: 409});
     }
-    const normalized = signedPath.startsWith("/object/") ? "/storage/v1" + signedPath : signedPath;
-    const signedUrl = new URL(normalized, storage.baseUrl);
-    if (signedUrl.origin !== storage.baseUrl || !signedUrl.pathname.startsWith("/storage/v1/object/sign/")) {
-      return NextResponse.json({error: "Storage returned an unsafe media URL."}, {status: 502});
-    }
+    const signedUrl = await provider.createDownloadUrl({bucket: asset.bucket, objectPath: asset.objectPath, expiresInSeconds: 300});
     return NextResponse.redirect(signedUrl, {status: 302, headers: {"Cache-Control": "no-store"}});
   } catch {
     return NextResponse.json({error: "Media storage is temporarily unavailable."}, {status: 502});

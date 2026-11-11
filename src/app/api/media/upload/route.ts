@@ -3,7 +3,7 @@ import {NextResponse} from "next/server";
 import {requireWorkspaceRole} from "@/lib/workspace";
 import {db} from "@/lib/db";
 import {consumeRateLimit} from "@/lib/rate-limit";
-import {getSupabaseStorageConfig, storageHeaders, validateMediaUpload} from "@/lib/media-storage";
+import {getMediaStorageProvider, validateMediaUpload} from "@/lib/media-storage";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -43,9 +43,11 @@ export async function POST(request: Request) {
     if (!brand) return NextResponse.json({error: "Brand not found in this workspace."}, {status: 404});
   }
 
-  let storage;
+  let storageProvider: ReturnType<typeof getMediaStorageProvider>;
+  let bucket: string;
   try {
-    storage = getSupabaseStorageConfig();
+    storageProvider = getMediaStorageProvider();
+    bucket = storageProvider.getBucket();
   } catch {
     return NextResponse.json({error: "Media storage is not configured."}, {status: 503});
   }
@@ -58,9 +60,10 @@ export async function POST(request: Request) {
       workspaceId: context.workspace.id,
       brandId,
       createdById: context.userId,
-      storageProvider: "SUPABASE",
-      bucket: storage.bucket,
+      storageProvider: storageProvider.name,
+      bucket,
       objectPath,
+      url: "/api/media/" + id + "/download",
       originalFilename: validated.safeName,
       mimeType: String(body.mimeType),
       sizeBytes: BigInt(Number(body.sizeBytes)),
@@ -69,44 +72,8 @@ export async function POST(request: Request) {
     select: {id: true},
   });
 
-  const encodedPath = objectPath.split("/").map(encodeURIComponent).join("/");
-  const endpoint = storage.baseUrl + "/storage/v1/object/upload/sign/" +
-    encodeURIComponent(storage.bucket) + "/" + encodedPath;
-
   try {
-    const response = await fetch(endpoint, {
-      method: "POST",
-      headers: {...storageHeaders(storage.serviceKey), "Content-Type": "application/json"},
-      body: JSON.stringify({upsert: false}),
-      cache: "no-store",
-      redirect: "error",
-      signal: AbortSignal.timeout(10000),
-    });
-    const payload = await response.json().catch(() => null) as {
-      url?: string; signedURL?: string; signedUrl?: string; token?: string;
-    } | null;
-    if (!response.ok || !payload) throw new Error("Signed upload URL could not be created.");
-    const returnedUrl = payload.signedURL ?? payload.signedUrl ?? payload.url;
-    let uploadUrl: URL;
-    if (typeof payload.token === "string" && payload.token.length > 0) {
-      uploadUrl = new URL(
-        "/storage/v1/object/upload/sign/" + encodeURIComponent(storage.bucket) + "/" + encodedPath,
-        storage.baseUrl,
-      );
-      uploadUrl.searchParams.set("token", payload.token);
-    } else if (typeof returnedUrl === "string") {
-      const normalized = returnedUrl.startsWith("/object/")
-        ? "/storage/v1" + returnedUrl
-        : returnedUrl;
-      uploadUrl = new URL(normalized, storage.baseUrl);
-    } else {
-      throw new Error("Storage returned an invalid upload URL.");
-    }
-    if (uploadUrl.origin !== storage.baseUrl ||
-        !uploadUrl.pathname.startsWith("/storage/v1/object/upload/sign/") ||
-        !uploadUrl.searchParams.has("token")) {
-      throw new Error("Storage returned an unsafe upload URL.");
-    }
+    const signed = await storageProvider.createUploadUrl(objectPath, String(body.mimeType));
     await db.activityLog.create({
       data: {
         workspaceId: context.workspace.id,
@@ -117,12 +84,7 @@ export async function POST(request: Request) {
         metadata: {mimeType: String(body.mimeType), sizeBytes: Number(body.sizeBytes), brandId},
       },
     });
-    return NextResponse.json({
-      assetId: asset.id,
-      uploadUrl: uploadUrl.toString(),
-      method: "PUT",
-      headers: {"Content-Type": String(body.mimeType), "x-upsert": "false"},
-    }, {headers: {"Cache-Control": "no-store"}});
+    return NextResponse.json({assetId: asset.id, ...signed}, {headers: {"Cache-Control": "no-store"}});
   } catch {
     await db.mediaAsset.updateMany({where: {id: asset.id, workspaceId: context.workspace.id, status: "PENDING"}, data: {status: "FAILED"}});
     return NextResponse.json({error: "Could not initialize the storage upload. Retry the upload."}, {status: 502});

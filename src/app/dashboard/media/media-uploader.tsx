@@ -13,7 +13,7 @@ export function MediaUploader({brands}:{brands:BrandOption[]}) {
   const [message,setMessage]=useState("");
   const [error,setError]=useState("");
 
-  async function readMediaMetadata(file:File):Promise<{width:number;height:number;durationMs:number|null}> {
+  async function readMediaMetadata(file:File):Promise<{width:number|null;height:number|null;durationMs:number|null}> {
     const url=URL.createObjectURL(file);
     try {
       if(file.type.startsWith("video/")) {
@@ -32,6 +32,7 @@ export function MediaUploader({brands}:{brands:BrandOption[]}) {
         }
         return {width,height,durationMs};
       }
+      if(!file.type.startsWith("image/"))return {width:null,height:null,durationMs:null};
       const image=new Image();
       image.src=url;
       await image.decode();
@@ -77,7 +78,7 @@ export function MediaUploader({brands}:{brands:BrandOption[]}) {
   return (
     <section className="rounded-2xl border border-slate-200 bg-white p-5 sm:p-6">
       <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
-        <div><h2 className="font-semibold text-slate-900">Upload media</h2><p className="mt-1 text-sm text-slate-500">Images up to 20 MB and videos up to 100 MB. JPEG, PNG, WebP, MP4, and MOV.</p></div>
+        <div><h2 className="font-semibold text-slate-900">Upload media</h2><p className="mt-1 text-sm text-slate-500">Images and documents up to 20 MB; videos up to 100 MB. JPEG, PNG, WebP, MP4, MOV, PDF, TXT, CSV, DOCX, XLSX and PPTX.</p></div>
         <div className="flex flex-col gap-2 sm:min-w-64">
           <label htmlFor="media-brand" className="text-xs font-medium text-slate-600">Assign to brand (optional)</label>
           <select id="media-brand" value={brandId} onChange={(event)=>setBrandId(event.target.value)} className="rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm">
@@ -86,8 +87,8 @@ export function MediaUploader({brands}:{brands:BrandOption[]}) {
           </select>
         </div>
       </div>
-      <label htmlFor="media-file" className="mt-5 block text-xs font-medium text-slate-600">Choose an image or video</label>
-      <input id="media-file" ref={inputRef} type="file" accept="image/jpeg,image/png,image/webp,video/mp4,video/quicktime" className="mt-2 block w-full cursor-pointer rounded-xl border border-dashed border-slate-300 bg-slate-50 p-4 text-sm file:mr-4 file:rounded-lg file:border-0 file:bg-indigo-600 file:px-4 file:py-2 file:text-sm file:font-semibold file:text-white" disabled={busy} onChange={(event)=>void upload(event.target.files?.[0])}/>
+      <label htmlFor="media-file" className="mt-5 block text-xs font-medium text-slate-600">Choose an image, video or document</label>
+      <input id="media-file" ref={inputRef} type="file" accept="image/jpeg,image/png,image/webp,video/mp4,video/quicktime,application/pdf,text/plain,text/csv,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.openxmlformats-officedocument.presentationml.presentation" className="mt-2 block w-full cursor-pointer rounded-xl border border-dashed border-slate-300 bg-slate-50 p-4 text-sm file:mr-4 file:rounded-lg file:border-0 file:bg-indigo-600 file:px-4 file:py-2 file:text-sm file:font-semibold file:text-white" disabled={busy} onChange={(event)=>void upload(event.target.files?.[0])}/>
       {busy&&<p role="status" className="mt-3 text-sm text-indigo-700">Uploading and verifying media…</p>}
       {message&&<p role="status" className="mt-3 text-sm text-emerald-700">{message}</p>}
       {error&&<p role="alert" className="mt-3 text-sm text-rose-700">{error}</p>}

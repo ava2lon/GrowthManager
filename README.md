@@ -146,11 +146,11 @@ The media library at `/dashboard/media` stores workspace-scoped metadata in Post
 
 When configuring storage:
 1. Create a **private** Supabase Storage bucket named `growthmanager-media` (or set `SUPABASE_MEDIA_BUCKET` to another valid bucket name).
-2. Set the bucket's maximum file size to at least 100 MB and restrict allowed MIME types to `image/jpeg`, `image/png`, `image/webp`, `video/mp4`, and `video/quicktime`.
+2. Set the bucket's maximum file size to at least 100 MB and restrict allowed MIME types to `image/jpeg`, `image/png`, `image/webp`, `video/mp4`, `video/quicktime`, `application/pdf`, `text/plain`, `text/csv`, and the DOCX, XLSX, and PPTX OpenXML MIME types.
 3. Add `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, and optionally `SUPABASE_MEDIA_BUCKET` to the server-side Vercel environment. Never use a `NEXT_PUBLIC_` prefix for the service-role key.
 4. Apply the committed Prisma migration `20261107110000_media_assets` only after the GrowthManager database target and connection variables have been confirmed.
 
-Application limits are 20 MB per image and 100 MB per video. Supported formats are JPEG, PNG, WebP, MP4, and MOV. Files are organized under a workspace-specific object prefix, and downloads are issued as five-minute signed URLs after membership and workspace ownership checks. The bucket must remain private; do not enable public object access.
+Application limits are 20 MB per image and 100 MB per video. Supported formats are JPEG, PNG, WebP, MP4, MOV, PDF, TXT, CSV, DOCX, XLSX, and PPTX. Files are organized under a workspace-specific object prefix, and downloads are issued as five-minute signed URLs after membership and workspace ownership checks. The bucket must remain private; do not enable public object access.
 
 
 ### Media attachments on social drafts
@@ -235,3 +235,14 @@ Pinterest publishing supports one image Pin per target using the Pinterest API v
 Before publishing, GrowthManager verifies the workspace, account, brand, board discovery metadata, image readiness, image MIME type, and granted `pins:write` scope. It creates a one-hour Supabase signed object URL so Pinterest can fetch the image without exposing storage credentials. Publishing uses an atomic target claim and a durable attempt record. Definitive provider rejections are recorded as failed; transport uncertainty, provider 5xx, or a successful response without a Pin ID is recorded as `UNKNOWN` and is never blindly retried. Known definitive failures can be manually retried after the underlying issue is corrected. Check Pinterest directly before manually creating another Pin after an unknown result.
 
 **Current limits:** image Pins support one JPEG/PNG image per Pin. Video Pins require one MP4/MOV video plus a separate JPEG/PNG cover image; the application limit is 100 MB, 3 seconds to 15 minutes, and no dimension above 1920 pixels. The video is registered with `POST /v5/media`, uploaded using Pinterest's returned multipart form parameters, and checked through `GET /v5/media/{media_id}` until Pinterest reports `succeeded`; only then does GrowthManager create the Pin with `source_type=video_id`. The media upload is performed server-to-server from a one-hour private Supabase signed URL; the browser never receives Pinterest upload credentials or storage service credentials. A definitive media upload/processing failure is retryable after correction. Once the final Pin-create request begins, any transport ambiguity is recorded as `UNKNOWN` and is never blindly retried. Media duration and dimensions are currently based on Media Library metadata collected at upload completion; they are not independently inspected server-side. No multi-image Pins, scheduling, or Pinterest analytics are enabled. Pinterest Trial access makes API-created Pins visible only to the creator; Standard access is required for normal public distribution. See [Create boards and Pins](https://developers.pinterest.com/docs/work-with-organic-content-and-users/create-boards-and-pins/) and [Pinterest access tiers](https://developers.pinterest.com/docs/key-concepts/access-tiers/).
+
+
+## Phase 3: content and campaign management
+
+The content library at `/dashboard/content` supports workspace/brand-scoped content CRUD, duplication, archive/restore, safe deletion (published social history is retained), content types, workflow transitions, categories, tags, campaign association, author metadata, media attachments, search, filters, sorting, and pagination. The workflow is enforced server-side: Idea → Draft → Review → Approved → Scheduled → Published, with explicit review and failure recovery transitions.
+
+Campaigns at `/dashboard/campaigns` support objectives, descriptions, budgets, date ranges, audience definitions, brand/content associations, and connected social-account associations. The dashboard reports content delivery progress and tracked Meta engagement snapshots; unavailable analytics remain unreported rather than simulated.
+
+Media folders and tags are workspace-scoped. The reusable media picker attaches ready, same-workspace assets to content. Stable media URLs are authenticated application download routes; signed object-store URLs are short-lived and are never persisted. The storage adapter contract is provider-neutral, with Supabase Storage as the configured implementation. Configure `MEDIA_STORAGE_PROVIDER=SUPABASE` (or leave unset) and the private bucket's allowlist for the supported image, video, PDF, text, CSV, DOCX, XLSX, and PPTX MIME types.
+
+Apply the Phase 3 migration with `npm run db:deploy` after verifying the GrowthManager production database target. Do not use `prisma db push` for production changes.
