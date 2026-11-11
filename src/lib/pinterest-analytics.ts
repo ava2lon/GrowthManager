@@ -10,6 +10,9 @@ const ALIASES:Record<MetricName,string[]>={IMPRESSION:["IMPRESSION","impression"
 type PinterestDailyMetric={date?:string;data_status?:string;metrics?:Record<string,unknown>};
 type PinterestAnalyticsResponse=Record<string,{daily_metrics?:PinterestDailyMetric[];summary_metrics?:Record<string,unknown>}>;
 function dateOnly(date:Date){return date.toISOString().slice(0,10)}
+export function isPinterestAnalyticsDate(value:unknown):value is string {
+ return typeof value==="string" && /^\d{4}-\d{2}-\d{2}$/.test(value);
+}
 function finiteMetric(value:unknown){if(typeof value==="number"&&Number.isFinite(value))return value;if(typeof value==="string"&&value.trim()!==""&&Number.isFinite(Number(value)))return Number(value);return null}
 function normalizeMetrics(input:Record<string,unknown>|undefined):MetricValues{
  const result:MetricValues={};
@@ -32,7 +35,7 @@ export async function refreshPinterestAccountAnalytics(input:{workspaceId:string
  if(!group)throw new Error("PINTEREST_ANALYTICS_EMPTY_RESPONSE");
  const summary=normalizeMetrics(group.summary_metrics);
  const daily=(Array.isArray(group.daily_metrics)?group.daily_metrics:[]).flatMap(item=>{
-  if(!item||typeof item.date!=="string"||!/^\\d{4}-\\d{2}-\\d{2}$/.test(item.date))return [];
+  if(!item||!isPinterestAnalyticsDate(item.date))return [];
   return [{date:item.date,dataStatus:typeof item.data_status==="string"?item.data_status:null,metrics:normalizeMetrics(item.metrics)}];
  });
  const normalized={metricTypes:METRIC_TYPES,summary,daily};
