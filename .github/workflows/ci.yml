@@ -82,6 +82,16 @@ jobs:
           DATABASE_URL: postgresql://postgres:postgres@localhost:5432/growthmanager_test_ci
           DIRECT_URL: postgresql://postgres:postgres@localhost:5432/growthmanager_test_ci
 
+      - name: Install PostgreSQL client for migration recovery tests
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes postgresql-client
+
+      - name: Test idempotent migration recovery and populated-data preservation
+        run: bash scripts/test-migration-recovery.sh
+        env:
+          DIRECT_URL: postgresql://postgres:postgres@localhost:5432/growthmanager_test_ci
+
       - name: PostgreSQL tenant-isolation tests
         run: npm run test:integration
 
