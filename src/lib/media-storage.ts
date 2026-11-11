@@ -36,7 +36,7 @@ export function validateMediaUpload(input: {fileName: unknown; mimeType: unknown
   return {safeName, extension: MIME_EXTENSIONS[input.mimeType], isVideo, isImage};
 }
 
-function getSupabaseStorageConfig() {
+export function getSupabaseStorageConfig() {
   const rawUrl = process.env.SUPABASE_URL;
   const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
   if (!rawUrl || !serviceKey) throw new Error("Media storage is not configured.");
@@ -52,7 +52,7 @@ function getSupabaseStorageConfig() {
   return {baseUrl: url.origin, serviceKey, bucket};
 }
 
-function storageHeaders(serviceKey: string) {
+export function storageHeaders(serviceKey: string) {
   return {apikey: serviceKey, Authorization: `Bearer ${serviceKey}`};
 }
 
