@@ -23,9 +23,9 @@ export async function POST(request: Request) {
   }
 
   const body = await request.json().catch(() => null) as {assetId?: unknown;width?:unknown;height?:unknown;durationMs?:unknown} | null;
+  const validDimension=(value:unknown)=>value===null||value===undefined||(Number.isSafeInteger(value)&&Number(value)>=1&&Number(value)<=20000);
   if (!body || typeof body.assetId !== "string" || body.assetId.length > 128 ||
-      !Number.isSafeInteger(body.width) || Number(body.width)<1 || Number(body.width)>20000 ||
-      !Number.isSafeInteger(body.height) || Number(body.height)<1 || Number(body.height)>20000 ||
+      !validDimension(body.width) || !validDimension(body.height) ||
       (body.durationMs!==null && body.durationMs!==undefined && (!Number.isSafeInteger(body.durationMs)||Number(body.durationMs)<1))) {
     return NextResponse.json({error: "A valid asset ID is required."}, {status: 400});
   }
@@ -36,8 +36,11 @@ export async function POST(request: Request) {
   if (!asset) return NextResponse.json({error: "Pending media asset not found."}, {status: 404});
   const isVideo=asset.mimeType.startsWith("video/");
   const durationMs=body.durationMs===null||body.durationMs===undefined?null:Number(body.durationMs);
-  if ((isVideo && (durationMs===null||durationMs<3000||durationMs>900000||Number(body.width)>1920||Number(body.height)>1920)) ||
-      (!isVideo && durationMs!==null)) {
+  const isImage=asset.mimeType.startsWith("image/");
+  const hasDimensions=Number.isSafeInteger(body.width)&&Number(body.height)>=1&&Number(body.width)>=1;
+  if ((isVideo && (durationMs===null||durationMs<3000||durationMs>900000||!hasDimensions||Number(body.width)>1920||Number(body.height)>1920)) ||
+      (isImage && (!hasDimensions||durationMs!==null)) ||
+      (!isVideo&&!isImage&&(body.width!==null||body.height!==null||durationMs!==null))) {
     await db.mediaAsset.updateMany({where:{id:asset.id,workspaceId:context.workspace.id,status:"PENDING"},data:{status:"FAILED"}});
     return NextResponse.json({error:"Media dimensions or duration are outside the supported upload policy."},{status:422});
   }
@@ -73,7 +76,7 @@ export async function POST(request: Request) {
 
   const changed = await db.mediaAsset.updateMany({
     where: {id: asset.id, workspaceId: context.workspace.id, status: "PENDING"},
-    data: {status: "READY", uploadedAt: new Date(), width:Number(body.width), height:Number(body.height), durationMs},
+    data: {status: "READY", uploadedAt: new Date(), width:body.width===null||body.width===undefined?null:Number(body.width), height:body.height===null||body.height===undefined?null:Number(body.height), durationMs},
   });
   if (changed.count !== 1) return NextResponse.json({error: "Asset state changed. Refresh and retry."}, {status: 409});
   await db.activityLog.create({
