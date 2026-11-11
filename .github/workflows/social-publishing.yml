@@ -31,8 +31,18 @@ jobs:
         run: |
           test -n "$CRON_SECRET"
           curl --fail-with-body --silent --show-error --max-time 55 \
-            -H "Authorization: Bearer $CRON_SECRET" \\
+            -H "Authorization: Bearer $CRON_SECRET" \
             "https://growthmanager.vercel.app/api/cron/social-media-processing"
+
+      - name: Process one due social analytics retry
+        if: ${{ !cancelled() }}
+        env:
+          CRON_SECRET: ${{ secrets.GROWTHMANAGER_CRON_SECRET }}
+        run: |
+          test -n "$CRON_SECRET"
+          curl --fail-with-body --silent --show-error --max-time 55 \
+            -H "Authorization: Bearer $CRON_SECRET" \
+            "https://growthmanager.vercel.app/api/cron/social-analytics-retries"
 
       - name: Refresh one bounded batch of social analytics snapshots
         if: ${{ !cancelled() }}
@@ -41,7 +51,7 @@ jobs:
         run: |
           test -n "$CRON_SECRET"
           curl --fail-with-body --silent --show-error --max-time 55 \
-            -H "Authorization: Bearer $CRON_SECRET" \\
+            -H "Authorization: Bearer $CRON_SECRET" \
             "https://growthmanager.vercel.app/api/cron/social-analytics"
 
       - name: Sync one connected n8n integration execution history

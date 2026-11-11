@@ -8,7 +8,7 @@ import {refreshLinkedInAnalytics} from "@/lib/linkedin-analytics";
 import {refreshTikTokAccountAnalytics,refreshTikTokVideoAnalytics,failedTikTokAnalyticsMetrics} from "@/lib/tiktok-analytics";
 import {refreshYouTubeChannelAnalytics,refreshYouTubeVideoAnalytics,failedYouTubeAnalyticsMetrics} from "@/lib/youtube-analytics";
 import {refreshXAnalytics} from "@/lib/x-analytics";
-import {processOneDueSocialAnalyticsRetry,runWithSocialAnalyticsRetryLedger} from "@/lib/social-analytics-retry-worker";
+import {runWithSocialAnalyticsRetryLedger} from "@/lib/social-analytics-retry-worker";
 
 export const runtime="nodejs";
 export const dynamic="force-dynamic";
@@ -26,7 +26,6 @@ export async function GET(request:Request){
  const now=new Date();
  const analyticsSlot=Math.floor(now.getTime()/300000)%6;
  const analyticsDay=new Date(now.toISOString().slice(0,10)+"T00:00:00.000Z");
- const retryProcessed=await processOneDueSocialAnalyticsRetry(now);
  if(analyticsSlot===0){
   // Collect at most one account-level Pinterest analytics report per worker run.
   // A failed report is also snapshotted for the UTC day to prevent a tight retry loop.
@@ -148,5 +147,5 @@ export async function GET(request:Request){
 
 
  }
- return NextResponse.json({processed:true,retryProcessed,asOf:now.toISOString(),slot:analyticsSlot},{headers:{"Cache-Control":"no-store"}});
+ return NextResponse.json({processed:true,asOf:now.toISOString(),slot:analyticsSlot},{headers:{"Cache-Control":"no-store"}});
 }
