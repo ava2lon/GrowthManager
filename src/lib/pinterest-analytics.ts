@@ -11,7 +11,7 @@ type PinterestDailyMetric={date?:string;data_status?:string;metrics?:Record<stri
 type PinterestAnalyticsResponse=Record<string,{daily_metrics?:PinterestDailyMetric[];summary_metrics?:Record<string,unknown>}>;
 function dateOnly(date:Date){return date.toISOString().slice(0,10)}
 export function isPinterestAnalyticsDate(value:unknown):value is string {
- return typeof value==="string" && /^\\d{4}-\\d{2}-\\d{2}$/.test(value);
+ return typeof value==="string" && /^\d{4}-\d{2}-\d{2}$/.test(value);
 }
 function finiteMetric(value:unknown){if(typeof value==="number"&&Number.isFinite(value))return value;if(typeof value==="string"&&value.trim()!==""&&Number.isFinite(Number(value)))return Number(value);return null}
 function normalizeMetrics(input:Record<string,unknown>|undefined):MetricValues{
