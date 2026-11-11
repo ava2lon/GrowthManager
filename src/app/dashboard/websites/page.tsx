@@ -1,0 +1,14 @@
+import Link from "next/link";
+import {Globe2,Plus,ArrowUpRight} from "lucide-react";
+import {requireWorkspaceContext} from "@/lib/workspace";
+import {hasMinimumWorkspaceRole} from "@/lib/workspace-access";
+import {db} from "@/lib/db";
+import {WebsiteCreateForm} from "@/components/websites/website-create-form";
+export const dynamic="force-dynamic";
+export default async function WebsitesPage(){
+ const {workspace,membership}=await requireWorkspaceContext();const websites=await db.website.findMany({where:{workspaceId:workspace.id},include:{_count:{select:{events:true}}},orderBy:{createdAt:"desc"}});const canCreate=hasMinimumWorkspaceRole(membership.role,"ADMIN");
+ return <div className="space-y-7"><div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-end"><div><p className="text-xs font-bold tracking-widest text-indigo-600">WEBSITE TRACKING</p><h1 className="mt-2 text-3xl font-bold tracking-tight">Websites</h1><p className="mt-2 text-sm text-slate-500">Connect websites and collect first-party activity.</p></div><span className="text-sm text-slate-500">{websites.length} {websites.length===1?"website":"websites"}</span></div>
+ {canCreate&&<section className="max-w-2xl"><div className="mb-3 flex items-center gap-2"><Plus size={17}/><h2 className="font-semibold">Add a website</h2></div><WebsiteCreateForm/></section>}
+ {websites.length?<section className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">{websites.map(site=><Link key={site.id} href={"/dashboard/websites/"+site.id} className="rounded-2xl border border-slate-200 bg-white p-5 transition hover:border-indigo-300 hover:shadow-sm"><div className="flex items-start justify-between"><span className="grid size-10 place-items-center rounded-xl bg-indigo-50 text-indigo-600"><Globe2 size={19}/></span><ArrowUpRight size={16} className="text-slate-400"/></div><h2 className="mt-4 font-semibold">{site.name}</h2><p className="mt-1 truncate text-sm text-slate-500">{site.domain}</p><div className="mt-5 flex items-center justify-between border-t border-slate-100 pt-4 text-xs"><span className={site.status==="ACTIVE"&&site.trackingEnabled?"text-emerald-700":"text-amber-700"}>{site.status==="ACTIVE"&&site.trackingEnabled?"Tracking enabled":"Paused"}</span><span className="text-slate-500">{site._count.events.toLocaleString()} events</span></div><p className="mt-2 text-xs text-slate-400">Added {site.createdAt.toLocaleDateString()}</p></Link>)}</section>:<div className="rounded-2xl border border-dashed border-slate-300 bg-white px-6 py-14 text-center"><Globe2 size={26} className="mx-auto text-indigo-600"/><h2 className="mt-4 font-semibold">No websites connected</h2><p className="mt-2 text-sm text-slate-500">Create a website to generate its tracking snippet and start receiving events.</p>{!canCreate&&<p className="mt-2 text-xs text-slate-400">Ask a workspace administrator to add a website.</p>}</div>}
+ </div>;
+}
