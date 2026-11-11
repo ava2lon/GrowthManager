@@ -14,12 +14,25 @@ function errorResponse(code:"VALIDATION_ERROR"|"UNAUTHENTICATED"|"FORBIDDEN"|"NO
 }
 function eventType(name:string){const names=new Set(["page_view","session_start","session_end","button_click","form_submit","signup","lead_created","purchase","conversion"]);return name==="page_view"?"page_view":names.has(name)?name:"custom";}
 function newSessionId(){return "sess_"+randomBytes(24).toString("base64url");}
+async function readBoundedBody(request:Request){
+ if(!request.body)return "";
+ const reader=request.body.getReader(),chunks:Uint8Array[]=[];let total=0;
+ while(true){const {done,value}=await reader.read();if(done)break;total+=value.byteLength;if(total>WEBSITE_EVENT_MAX_BODY_BYTES){await reader.cancel();throw new Error("PAYLOAD_TOO_LARGE");}chunks.push(value);}
+ const joined=new Uint8Array(total);let offset=0;for(const chunk of chunks){joined.set(chunk,offset);offset+=chunk.byteLength;}
+ return new TextDecoder().decode(joined);
+}
+function safeUrl(value:string|undefined|null){
+ if(!value)return null;try{const parsed=new URL(value);if(!["http:","https:"].includes(parsed.protocol))return null;return (parsed.origin+parsed.pathname).slice(0,2048);}catch{return null;}
+}
+function safePath(value:string|undefined|null){
+ if(!value)return null;try{if(value.startsWith("/"))return value.split(/[?#]/,1)[0].slice(0,1024);const parsed=new URL(value);return parsed.pathname.slice(0,1024);}catch{return null;}
+}
 function deviceType(ua:string){if(/tablet|ipad/i.test(ua))return "tablet";if(/mobile|iphone|android/i.test(ua))return "mobile";return "desktop";}
 export async function POST(request:Request){
  const requestId=createRequestId(),origin=request.headers.get("origin");
  try{
   const declared=Number(request.headers.get("content-length")||0);if(Number.isFinite(declared)&&declared>WEBSITE_EVENT_MAX_BODY_BYTES)return errorResponse("VALIDATION_ERROR","Tracking payload is too large.",413,requestId);
-  const raw=await request.text();if(Buffer.byteLength(raw,"utf8")>WEBSITE_EVENT_MAX_BODY_BYTES)return errorResponse("VALIDATION_ERROR","Tracking payload is too large.",413,requestId);
+  let raw:string;try{raw=await readBoundedBody(request);}catch(e){if(e instanceof Error&&e.message==="PAYLOAD_TOO_LARGE")return errorResponse("VALIDATION_ERROR","Tracking payload is too large.",413,requestId);throw e;}
   let body:unknown;try{body=JSON.parse(raw);}catch{return errorResponse("VALIDATION_ERROR","Invalid tracking payload.",400,requestId);}
   const parsed=trackingEventSchema.safeParse(body);if(!parsed.success)return errorResponse("VALIDATION_ERROR","Invalid tracking event payload.",400,requestId);
   const event=parsed.data,trackingId=event.site_id||request.headers.get("x-gm-site-id")||"";
@@ -34,11 +47,11 @@ export async function POST(request:Request){
   const limit=await consumeRateLimit("website-track:"+trackingId+":"+ipHash,WEBSITE_TRACKING_RATE_LIMIT,WEBSITE_TRACKING_RATE_WINDOW_SECONDS);
   if(limit.unavailable||(!limit.configured&&process.env.NODE_ENV==="production"))return errorResponse("PROVIDER_ERROR","Tracking is temporarily unavailable.",503,requestId,origin,{"Retry-After":"60"});
   if(!limit.allowed)return errorResponse("RATE_LIMITED","Tracking rate limit exceeded.",429,requestId,origin,{"Retry-After":String(limit.retryAfter)});
-  const ua=(request.headers.get("user-agent")||"").slice(0,500);
+  const ua=(request.headers.get("user-agent")||"").slice(0,500),pageUrl=safeUrl(event.page?.url),pagePath=safePath(event.page?.path),referrer=safeUrl(event.referrer);
   const result=await db.$transaction(async tx=>{
    const visitor=await tx.websiteVisitor.upsert({
     where:{websiteId_anonymousId:{websiteId:website.id,anonymousId:event.anonymous_id}},
-    create:{websiteId:website.id,anonymousId:event.anonymous_id,firstReferrer:event.referrer||null,firstLandingPage:event.page?.url||null,userAgent:ua||null,deviceType:deviceType(ua)},
+    create:{websiteId:website.id,anonymousId:event.anonymous_id,firstReferrer:referrer,firstLandingPage:pageUrl,userAgent:ua||null,deviceType:deviceType(ua)},
     update:{lastSeenAt:now,userAgent:ua||undefined,deviceType:deviceType(ua)},
     select:{id:true}
    });
@@ -47,7 +60,7 @@ export async function POST(request:Request){
    let isNew=!session||session.visitorId!==visitor.id||now.getTime()-session.lastActivityAt.getTime()>WEBSITE_SESSION_TIMEOUT_SECONDS*1000;
    if(isNew){if(session)sessionId=newSessionId();await tx.websiteSession.create({data:{
     websiteId:website.id,visitorId:visitor.id,sessionId,startedAt:now,lastActivityAt:now,
-    landingPage:event.page?.url||null,referrer:event.referrer||null,
+    landingPage:pageUrl,referrer,
     utmSource:event.utm?.source||null,utmMedium:event.utm?.medium||null,utmCampaign:event.utm?.campaign||null,
     utmTerm:event.utm?.term||null,utmContent:event.utm?.content||null,userAgent:ua||null,deviceType:deviceType(ua)
    }});}else{await tx.websiteSession.update({where:{id:session.id},data:{lastActivityAt:now,exitPage:event.page?.url||undefined}});}
@@ -56,7 +69,7 @@ export async function POST(request:Request){
     create:{websiteId:website.id,visitorId:visitor.id,email:event.identity.email?.toLowerCase().trim()||null,externalId:event.identity.external_id||null},
     update:{email:event.identity.email?.toLowerCase().trim()||undefined,externalId:event.identity.external_id||undefined,identifiedAt:now}
    });
-   if(isNew)await tx.websiteEvent.create({data:{websiteId:website.id,visitorId:visitor.id,sessionId,eventName:"session_start",eventType:"session_start",pageUrl:event.page?.url||null,pagePath:event.page?.path||null,pageTitle:event.page?.title||null,referrer:event.referrer||null,timestamp:now,userAgent:ua||null}});
+   if(isNew)await tx.websiteEvent.create({data:{websiteId:website.id,visitorId:visitor.id,sessionId,eventName:"session_start",eventType:"session_start",pageUrl,pagePath,pageTitle:event.page?.title||null,referrer,timestamp:now,userAgent:ua||null}});
    await tx.websiteEvent.create({data:{
     websiteId:website.id,visitorId:visitor.id,sessionId,eventName:event.event,eventType:eventType(event.event),
     pageUrl:event.page?.url||null,pagePath:event.page?.path||null,pageTitle:event.page?.title||null,
