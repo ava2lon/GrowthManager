@@ -63,7 +63,7 @@ export async function POST(request:Request){
     landingPage:pageUrl,referrer,
     utmSource:event.utm?.source||null,utmMedium:event.utm?.medium||null,utmCampaign:event.utm?.campaign||null,
     utmTerm:event.utm?.term||null,utmContent:event.utm?.content||null,userAgent:ua||null,deviceType:deviceType(ua)
-   }});}else{await tx.websiteSession.update({where:{id:session.id},data:{lastActivityAt:now,exitPage:event.page?.url||undefined}});}
+   }});}else{await tx.websiteSession.update({where:{id:session.id},data:{lastActivityAt:now,exitPage:pageUrl||undefined}});}
    if(event.identity)await tx.websiteIdentity.upsert({
     where:{websiteId_visitorId:{websiteId:website.id,visitorId:visitor.id}},
     create:{websiteId:website.id,visitorId:visitor.id,email:event.identity.email?.toLowerCase().trim()||null,externalId:event.identity.external_id||null},
