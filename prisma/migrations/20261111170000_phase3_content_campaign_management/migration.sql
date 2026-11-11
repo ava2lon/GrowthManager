@@ -48,6 +48,9 @@ CREATE INDEX "MediaFolder_workspaceId_createdAt_idx" ON "MediaFolder"("workspace
 ALTER TABLE "MediaAsset"
   ADD COLUMN "folderId" TEXT,
   ADD COLUMN "tags" TEXT[] NOT NULL DEFAULT ARRAY[]::TEXT[],
+  ADD COLUMN "url" TEXT;
+UPDATE "MediaAsset" SET "url" = '/api/media/' || "id" || '/download' WHERE "url" IS NULL;
+ALTER TABLE "MediaAsset"
   ADD CONSTRAINT "MediaAsset_workspaceId_folderId_fkey"
   FOREIGN KEY ("workspaceId", "folderId") REFERENCES "MediaFolder"("workspaceId", "id")
   ON DELETE RESTRICT ON UPDATE CASCADE;
