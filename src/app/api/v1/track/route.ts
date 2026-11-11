@@ -58,12 +58,23 @@ export async function POST(request:Request){
    let sessionId=event.session_id;
    let session=await tx.websiteSession.findUnique({where:{websiteId_sessionId:{websiteId:website.id,sessionId}},select:{id:true,visitorId:true,lastActivityAt:true}});
    let isNew=!session||session.visitorId!==visitor.id||now.getTime()-session.lastActivityAt.getTime()>WEBSITE_SESSION_TIMEOUT_SECONDS*1000;
-   if(isNew){if(session)sessionId=newSessionId();await tx.websiteSession.create({data:{
-    websiteId:website.id,visitorId:visitor.id,sessionId,startedAt:now,lastActivityAt:now,
-    landingPage:pageUrl,referrer,
-    utmSource:event.utm?.source||null,utmMedium:event.utm?.medium||null,utmCampaign:event.utm?.campaign||null,
-    utmTerm:event.utm?.term||null,utmContent:event.utm?.content||null,userAgent:ua||null,deviceType:deviceType(ua)
-   }});}else{await tx.websiteSession.update({where:{id:session.id},data:{lastActivityAt:now,exitPage:pageUrl||undefined}});}
+   if(session && !isNew){
+    await tx.websiteSession.update({where:{id:session.id},data:{lastActivityAt:now,exitPage:pageUrl||undefined}});
+   }else{
+    if(session)sessionId=newSessionId();
+    const sessionData={
+     websiteId:website.id,visitorId:visitor.id,sessionId,startedAt:now,lastActivityAt:now,
+     landingPage:pageUrl,referrer,
+     utmSource:event.utm?.source||null,utmMedium:event.utm?.medium||null,utmCampaign:event.utm?.campaign||null,
+     utmTerm:event.utm?.term||null,utmContent:event.utm?.content||null,userAgent:ua||null,deviceType:deviceType(ua)
+    };
+    await tx.websiteSession.upsert({
+     where:{websiteId_sessionId:{websiteId:website.id,sessionId}},
+     create:sessionData,
+     update:{lastActivityAt:now,exitPage:pageUrl||undefined}
+    });
+    isNew=!session;
+   }
    if(event.identity)await tx.websiteIdentity.upsert({
     where:{websiteId_visitorId:{websiteId:website.id,visitorId:visitor.id}},
     create:{websiteId:website.id,visitorId:visitor.id,email:event.identity.email?.toLowerCase().trim()||null,externalId:event.identity.external_id||null},
@@ -77,6 +88,7 @@ export async function POST(request:Request){
    }});
    return {sessionId};
   });
-  return NextResponse.json({success:true,session_id:result.sessionId,request_id:requestId},{headers:{"Cache-Control":"no-store","X-Request-Id":requestId,...cors(origin)}});
+  const responseHeaders=new Headers(cors(origin));responseHeaders.set("Cache-Control","no-store");responseHeaders.set("X-Request-Id",requestId);
+  return NextResponse.json({success:true,session_id:result.sessionId,request_id:requestId},{headers:responseHeaders});
  }catch{return errorResponse("INTERNAL_ERROR","An unexpected error occurred.",500,requestId,origin);}
 }
