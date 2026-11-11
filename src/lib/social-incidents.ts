@@ -193,7 +193,7 @@ export async function synchronizeSocialIncidents():Promise<{created:number;reope
       });
       if(!hasMoreRecipients)await tx.activityLog.create({data:{
         workspaceId:incident.workspaceId,action:"social.incident_escalated",entityType:"workspace_incident",entityId:incident.id,
-        metadata:{category:incident.category,severity:incident.severity,recipientCount:recipientPage.length},
+        metadata:{category:incident.category,severity:incident.severity,recipientPageSize:recipientPage.length},
       }});
       return recipientPage.length;
     });
