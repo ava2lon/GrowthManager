@@ -15,7 +15,10 @@ export default async function WebsiteDetailPage({params}:{params:Promise<{websit
   db.websiteEvent.count({where:{websiteId:website.id,eventType:"page_view",timestamp:{gte:periodSince}}}),
   db.websiteEvent.groupBy({by:["visitorId"],where:{websiteId:website.id,timestamp:{gte:periodSince},visitorId:{not:null}}}),
   db.websiteEvent.groupBy({by:["sessionId"],where:{websiteId:website.id,timestamp:{gte:periodSince},sessionId:{not:null}}}),
-  db.websiteEvent.groupBy({by:["pagePath"],where:{websiteId:website.id,eventType:"page_view",timestamp:{gte:periodSince},pagePath:{not:null}},_count:{pagePath:true},orderBy:{_count:{pagePath:"desc"}},take:5})
+  db.websiteEvent.groupBy({by:["pagePath"],where:{websiteId:website.id,eventType:"page_view",timestamp:{gte:periodSince},pagePath:{not:null}},_count:{pagePath:true},orderBy:{_count:{pagePath:"desc"}},take:5}),
+  db.websiteEvent.groupBy({by:["referrer"],where:{websiteId:website.id,timestamp:{gte:periodSince},referrer:{not:null}},_count:{referrer:true},orderBy:{_count:{referrer:"desc"}},take:5}),
+  db.websiteSession.groupBy({by:["utmSource"],where:{websiteId:website.id,startedAt:{gte:periodSince},utmSource:{not:null}},_count:{utmSource:true},orderBy:{_count:{utmSource:"desc"}},take:5}),
+  db.websiteSession.groupBy({by:["utmCampaign"],where:{websiteId:website.id,startedAt:{gte:periodSince},utmCampaign:{not:null}},_count:{utmCampaign:true},orderBy:{_count:{utmCampaign:"desc"}},take:5})
  ]);
  const appUrl=(process.env.NEXT_PUBLIC_APP_URL||process.env.APP_URL||process.env.AUTH_URL||"").replace(/\/$/,""),status=website.status!=="ACTIVE"||!website.trackingEnabled?"Paused":recent?"Receiving events":"Not detected";
  return <div className="space-y-7"><Link href="/dashboard/websites" className="inline-flex items-center gap-2 text-sm text-slate-500 hover:text-slate-900"><ArrowLeft size={15}/> Websites</Link>
