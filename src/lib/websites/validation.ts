@@ -30,7 +30,7 @@ const metadataSchema=z.record(z.string().max(80),z.unknown()).refine(value=>{
   return visit(value,0);
 },"Event properties are too large, too deeply nested, or contain prohibited sensitive fields.");
 export const trackingEventSchema=z.object({
-  site_id:z.string().optional(),
+  site_id:z.string().regex(/^site_[A-Za-z0-9_-]{16,100}$/).optional(),
   event:z.string().trim().min(1).max(100).regex(/^[a-zA-Z][a-zA-Z0-9_.:-]*$/),
   anonymous_id:z.string().regex(/^anon_[A-Za-z0-9_-]{16,100}$/),
   session_id:z.string().regex(/^sess_[A-Za-z0-9_-]{16,100}$/),
