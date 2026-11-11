@@ -82,11 +82,17 @@ BEGIN
   IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name='Integration' AND column_name='lastExecutionSyncCursor') THEN
     RAISE EXCEPTION 'Integration.lastExecutionSyncCursor missing';
   END IF;
-  IF NOT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='MediaFolder') OR
+  IF NOT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='SocialAnalyticsRetry') OR
+     NOT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='MediaFolder') OR
+     NOT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='CampaignSocialAccount') OR
      NOT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='WorkspaceAISettings') OR
+     NOT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='WorkspaceAIUsage') OR
      NOT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='AIGeneration') OR
      NOT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='Website') OR
-     NOT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='WebsiteEvent') THEN
+     NOT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='WebsiteVisitor') OR
+     NOT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='WebsiteSession') OR
+     NOT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='WebsiteEvent') OR
+     NOT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='WebsiteIdentity') THEN
     RAISE EXCEPTION 'One or more required feature tables are missing';
   END IF;
   IF EXISTS (
