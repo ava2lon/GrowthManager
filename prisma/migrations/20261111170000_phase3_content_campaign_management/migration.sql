@@ -10,13 +10,6 @@ ALTER TABLE "ContentPost"
   ADD COLUMN "authorId" TEXT,
   ADD COLUMN "archivedAt" TIMESTAMP(3);
 
-ALTER TABLE "ContentPost"
-  ADD CONSTRAINT "ContentPost_workspaceId_campaignId_fkey"
-  FOREIGN KEY ("workspaceId", "campaignId") REFERENCES "Campaign"("workspaceId", "id")
-  ON DELETE RESTRICT ON UPDATE CASCADE,
-  ADD CONSTRAINT "ContentPost_authorId_fkey"
-  FOREIGN KEY ("authorId") REFERENCES "User"("id") ON DELETE SET NULL ON UPDATE CASCADE;
-
 CREATE INDEX "ContentPost_workspaceId_workflowStatus_createdAt_idx" ON "ContentPost"("workspaceId", "workflowStatus", "createdAt");
 CREATE INDEX "ContentPost_workspaceId_campaignId_idx" ON "ContentPost"("workspaceId", "campaignId");
 CREATE INDEX "ContentPost_workspaceId_archivedAt_updatedAt_idx" ON "ContentPost"("workspaceId", "archivedAt", "updatedAt");
@@ -27,6 +20,14 @@ ALTER TABLE "Campaign"
   ADD COLUMN "targetAudience" TEXT;
 
 CREATE UNIQUE INDEX "Campaign_workspaceId_id_key" ON "Campaign"("workspaceId", "id");
+
+ALTER TABLE "ContentPost"
+  ADD CONSTRAINT "ContentPost_workspaceId_campaignId_fkey"
+  FOREIGN KEY ("workspaceId", "campaignId") REFERENCES "Campaign"("workspaceId", "id")
+  ON DELETE RESTRICT ON UPDATE CASCADE,
+  ADD CONSTRAINT "ContentPost_authorId_fkey"
+  FOREIGN KEY ("authorId") REFERENCES "User"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+
 
 
 CREATE TABLE "MediaFolder" (
