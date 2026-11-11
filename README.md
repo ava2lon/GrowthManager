@@ -250,7 +250,7 @@ Apply the Phase 3 migration with `npm run db:deploy` after verifying the GrowthM
 
 ## Phase 4: AI Content & Growth Assistant
 
-The AI assistant is available at `/dashboard/ai`. It uses active-workspace brand context (industry, description, target audience), campaign details, recent content, and connected social platforms. Brand context can be maintained from **Brands → Edit brand context for AI**.
+The AI assistant is available at `/dashboard/ai`. It uses active-workspace brand context (industry, description, target audience), campaign details, recent content, and connected social platforms. Brand context can be maintained from **Brands → Edit brand context for AI**. The Phase 3 Add Brand workflow remains available.
 
 Supported providers are OpenAI, Anthropic, and Groq. Configure credentials only as server-side environment variables:
 - `OPENAI_API_KEY`, optional `OPENAI_MODEL`, and optional `OPENAI_BASE_URL`
