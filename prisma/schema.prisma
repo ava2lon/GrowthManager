@@ -107,6 +107,7 @@ model User {
   contentReviewEmailDeliveries ContentReviewEmailDelivery[]
   contentReviewEmailDigests ContentReviewEmailDigest[]
   socialIncidentEmailDeliveries WorkspaceIncidentEmailDelivery[]
+  aiGenerations AIGeneration[]
 }
 
 model Workspace {
@@ -135,6 +136,9 @@ model Workspace {
   incidents WorkspaceIncident[]
   socialIncidentEmailDeliveries WorkspaceIncidentEmailDelivery[]
   socialAnalyticsRetries SocialAnalyticsRetry[]
+  aiSettings WorkspaceAISettings?
+  aiUsage WorkspaceAIUsage[]
+  aiGenerations AIGeneration[]
 }
 
 model WorkspaceInvitation {
@@ -181,6 +185,9 @@ model Brand {
   campaigns      Campaign[]
   mediaAssets    MediaAsset[]
   mediaFolders   MediaFolder[]
+  aiGenerations AIGeneration[]
+  industry       String?
+  targetAudience String? @db.Text
   @@unique([workspaceId, id])
   @@index([workspaceId, status])
 }
@@ -421,6 +428,7 @@ model Campaign {
   brand       Brand?         @relation(fields: [workspaceId, brandId], references: [workspaceId, id], onDelete: Restrict)
   contents    ContentPost[]
   socialAccounts CampaignSocialAccount[]
+  aiGenerations AIGeneration[]
   @@unique([workspaceId, id])
   @@index([workspaceId, status])
 }
@@ -975,4 +983,58 @@ model SocialAnalyticsRetry {
   @@unique([workspaceId, provider, subjectType, subjectId, reportDate])
   @@index([status, nextAttemptAt])
   @@index([workspaceId, status, nextAttemptAt])
+}
+
+
+model WorkspaceAISettings {
+  id                    String   @id @default(cuid())
+  workspaceId           String   @unique
+  provider              String   @default("OPENAI")
+  model                 String   @default("gpt-4o-mini")
+  monthlyRequestLimit   Int      @default(100)
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
+  workspace             Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+}
+
+model WorkspaceAIUsage {
+  id              String   @id @default(cuid())
+  workspaceId     String
+  periodStart     DateTime @db.Date
+  requestsUsed    Int      @default(0)
+  promptTokens    Int      @default(0)
+  completionTokens Int     @default(0)
+  costUsd         Decimal? @db.Decimal(12, 6)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  workspace       Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  @@unique([workspaceId, periodStart])
+  @@index([workspaceId, periodStart])
+}
+
+model AIGeneration {
+  id               String   @id @default(cuid())
+  workspaceId      String
+  brandId          String
+  campaignId       String?
+  userId           String
+  provider         String
+  model            String
+  status           String   @default("SUCCEEDED")
+  request          Json
+  result           Json?
+  promptTokens     Int?
+  completionTokens Int?
+  totalTokens      Int?
+  costUsd          Decimal? @db.Decimal(12, 6)
+  errorCode        String?
+  createdAt        DateTime @default(now())
+  workspace        Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  brand            Brand @relation(fields: [workspaceId, brandId], references: [workspaceId, id], onDelete: Cascade)
+  campaign         Campaign? @relation(fields: [workspaceId, campaignId], references: [workspaceId, id], onDelete: Restrict)
+  user             User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  @@unique([workspaceId, id])
+  @@index([workspaceId, brandId, createdAt])
+  @@index([workspaceId, userId, createdAt])
+  @@index([workspaceId, campaignId, createdAt])
 }

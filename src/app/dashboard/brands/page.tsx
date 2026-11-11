@@ -3,6 +3,7 @@ import {Plus,Users2} from "lucide-react";
 import {requireWorkspaceContext} from "@/lib/workspace";
 import {hasMinimumWorkspaceRole} from "@/lib/workspace-access";
 import {db} from "@/lib/db";
+import {updateBrandContext} from "./actions";
 
 export default async function BrandsPage({
   searchParams,
@@ -54,6 +55,16 @@ export default async function BrandsPage({
               </div>
               {brand.description && <p className="mt-4 line-clamp-3 text-sm leading-6 text-slate-500">{brand.description}</p>}
               {brand.websiteUrl && <a href={brand.websiteUrl} target="_blank" rel="noopener noreferrer" className="mt-3 block truncate text-xs font-medium text-indigo-600 hover:text-indigo-700">{brand.websiteUrl}</a>}
+              <details className="mt-4 border-t border-slate-100 pt-3">
+                <summary className="cursor-pointer text-xs font-semibold text-indigo-700">Edit brand context for AI</summary>
+                <form action={updateBrandContext} className="mt-3 grid gap-2">
+                  <input type="hidden" name="brandId" value={brand.id}/>
+                  <input name="industry" defaultValue={brand.industry||""} maxLength={120} placeholder="Industry" className="rounded-lg border px-3 py-2 text-sm"/>
+                  <textarea name="description" defaultValue={brand.description||""} maxLength={5000} rows={2} placeholder="Brand description" className="rounded-lg border px-3 py-2 text-sm"/>
+                  <textarea name="targetAudience" defaultValue={brand.targetAudience||""} maxLength={5000} rows={2} placeholder="Target audience" className="rounded-lg border px-3 py-2 text-sm"/>
+                  <button className="w-fit rounded-lg bg-slate-900 px-3 py-2 text-xs font-semibold text-white">Save brand context</button>
+                </form>
+              </details>
               <div className="mt-5 flex flex-wrap gap-x-4 gap-y-2 border-t border-slate-100 pt-4 text-xs text-slate-500">
                 <span>{brand._count.socialAccounts} accounts</span><span>{brand._count.posts} posts</span><span>{brand._count.campaigns} campaigns</span>
               </div>
