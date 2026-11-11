@@ -36,7 +36,7 @@ integration("PostgreSQL tenant isolation constraints", () => {
   let userA: {id: string};
   let userB: {id: string};
   let brandA: {id: string};
-  let brandB: {id: string};
+  let brandB: {id: string};\n  let websiteA: {id: string};\n  let websiteB: {id: string};
 
   beforeAll(async () => {
     const [a, b] = await Promise.all([
@@ -83,7 +83,7 @@ integration("PostgreSQL tenant isolation constraints", () => {
       }),
     ]);
     brandA = ba;
-    brandB = bb;
+    brandB = bb;\n\n    const [wa, wb] = await Promise.all([\n      prisma.website.create({data: {workspaceId: workspaceA.id, name: "Tenant A site", domain: "tenant-a.example.test", trackingId: "site_" + suffix.replace(/-/g, "").slice(0, 24)}, select: {id: true}}),\n      prisma.website.create({data: {workspaceId: workspaceB.id, name: "Tenant B site", domain: "tenant-b.example.test", trackingId: "site_" + randomUUID().replace(/-/g, "").slice(0, 24)}, select: {id: true}}),\n    ]);\n    websiteA = wa;\n    websiteB = wb;
   }, 30_000);
 
   afterAll(async () => {
