@@ -1,5 +1,5 @@
 import {describe,expect,it} from "vitest";
-import {getSocialIncidentEscalationPage} from "./social-incidents";
+import {getSocialIncidentEscalationPage} from "./social-incident-escalation";
 
 describe("getSocialIncidentEscalationPage",()=>{
   it("returns a bounded page and cursor when more recipients remain",()=>{
