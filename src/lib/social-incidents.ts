@@ -1,18 +1,13 @@
 import "server-only";
 import {db} from "@/lib/db";
 import type {Prisma} from "@prisma/client";
+import {getSocialIncidentEscalationPage} from "@/lib/social-incident-escalation";
 
 type Signal = {
   workspaceId:string; sourceType:"SOCIAL_ACCOUNT"|"SOCIAL_PUBLISH_TARGET"; sourceId:string;
   socialAccountId?:string; socialPostTargetId?:string; category:string; severity:"CRITICAL"|"WARNING";
   dedupeKey:string; message:string; errorCode?:string|null; metadata:Prisma.InputJsonObject;
 };
-export function getSocialIncidentEscalationPage<T extends {id:string}>(memberships:T[],pageSize:number):{recipients:T[];hasMore:boolean;nextCursor:string|null}{
-  if(!Number.isInteger(pageSize)||pageSize<1)throw new Error("INVALID_ESCALATION_PAGE_SIZE");
-  const hasMore=memberships.length>pageSize;
-  const recipients=memberships.slice(0,pageSize);
-  return {recipients,hasMore,nextCursor:hasMore?recipients[recipients.length-1]?.id??null:null};
-}
 function safeCode(value:string|null|undefined,fallback:string):string {
   return value&&/^[A-Z0-9_]{1,100}$/.test(value)?value:fallback;
 }
