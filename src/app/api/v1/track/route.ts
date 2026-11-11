@@ -8,7 +8,7 @@ import {WEBSITE_EVENT_MAX_BODY_BYTES,WEBSITE_SESSION_TIMEOUT_SECONDS,WEBSITE_TRA
 import {isSafeTrackingId,trackingEventSchema,validateMetadataDepth} from "@/lib/websites/validation";
 export const runtime="nodejs";export const dynamic="force-dynamic";
 function originHost(value:string){try{return new URL(value).hostname.toLowerCase().replace(/\.$/,"").replace(/^www\./,"");}catch{return null;}}
-function cors(origin:string|null){return origin?{"Access-Control-Allow-Origin":origin,"Vary":"Origin"}:{};}
+function cors(origin:string|null):Record<string,string>{return origin?{"Access-Control-Allow-Origin":origin,"Vary":"Origin"}:{};}
 function errorResponse(code:"VALIDATION_ERROR"|"UNAUTHENTICATED"|"FORBIDDEN"|"NOT_FOUND"|"RATE_LIMITED"|"PROVIDER_ERROR"|"INTERNAL_ERROR",message:string,status:number,id:string,origin:string|null=null,extra:Record<string,string>={}){
  const response=apiErrorResponse(code,message,status,id),headers=new Headers(response.headers);for(const [key,value] of Object.entries({...cors(origin),...extra}))headers.set(key,value);return new Response(response.body,{status:response.status,headers});
 }
