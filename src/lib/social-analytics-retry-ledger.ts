@@ -1,3 +1,4 @@
+import {Prisma} from "@prisma/client";
 import {db} from "@/lib/db";
 import {
   ANALYTICS_RETRY_MAX_ATTEMPTS,
@@ -39,49 +40,65 @@ export async function recordSocialAnalyticsRetryFailure(
     ? input.errorCode
     : "ANALYTICS_COLLECTION_FAILED";
 
-  return db.$transaction(async (tx) => {
-    const existing = await tx.socialAnalyticsRetry.findUnique({
-      where: uniqueWhere(input),
-      select: { id: true, attemptCount: true },
-    });
-    const attemptCount = (existing?.attemptCount ?? 0) + 1;
-    const retryAt =
-      classifyAnalyticsFailure(errorCode) === "RETRY"
-        ? getAnalyticsRetryAt({
-            attempt: attemptCount,
-            now,
-            dedupeKey: [
-              input.workspaceId,
-              input.provider,
-              input.subjectType,
-              input.subjectId,
-              input.reportDate.toISOString().slice(0, 10),
-            ].join(":"),
-          })
-        : null;
-    const exhausted = retryAt === null;
-    const data = {
-      status: exhausted ? "FAILED" : "RETRY",
-      attemptCount,
-      nextAttemptAt: retryAt ?? now,
-      lockedAt: null,
-      lastErrorCode: errorCode,
-      completedAt: exhausted ? now : null,
-    };
+  // Concurrent first failures can race on the unique retry identity. Serializable
+  // isolation plus bounded conflict retries prevents lost attempt increments.
+  for (let transactionAttempt = 0; transactionAttempt < 4; transactionAttempt += 1) {
+    try {
+      return await db.$transaction(async (tx) => {
+        const existing = await tx.socialAnalyticsRetry.findUnique({
+          where: uniqueWhere(input),
+          select: { id: true, attemptCount: true },
+        });
+        const attemptCount = (existing?.attemptCount ?? 0) + 1;
+        const retryAt =
+          classifyAnalyticsFailure(errorCode) === "RETRY"
+            ? getAnalyticsRetryAt({
+                attempt: attemptCount,
+                now,
+                dedupeKey: [
+                  input.workspaceId,
+                  input.provider,
+                  input.subjectType,
+                  input.subjectId,
+                  input.reportDate.toISOString().slice(0, 10),
+                ].join(":"),
+              })
+            : null;
+        const exhausted = retryAt === null;
+        const data = {
+          status: exhausted ? "FAILED" : "RETRY",
+          attemptCount,
+          nextAttemptAt: retryAt ?? now,
+          lockedAt: null,
+          lastErrorCode: errorCode,
+          completedAt: exhausted ? now : null,
+        };
 
-    return tx.socialAnalyticsRetry.upsert({
-      where: uniqueWhere(input),
-      create: {
-        workspaceId: input.workspaceId,
-        provider: input.provider,
-        subjectType: input.subjectType,
-        subjectId: input.subjectId,
-        reportDate: input.reportDate,
-        ...data,
-      },
-      update: data,
-    });
-  });
+        return tx.socialAnalyticsRetry.upsert({
+          where: uniqueWhere(input),
+          create: {
+            workspaceId: input.workspaceId,
+            provider: input.provider,
+            subjectType: input.subjectType,
+            subjectId: input.subjectId,
+            reportDate: input.reportDate,
+            ...data,
+          },
+          update: data,
+        });
+      }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
+    } catch (error) {
+      const code =
+        typeof error === "object" && error !== null && "code" in error
+          ? String(error.code)
+          : "";
+      const retryableConflict = code === "P2034" || code === "P2002";
+      if (!retryableConflict || transactionAttempt === 3) throw error;
+      await new Promise((resolve) => setTimeout(resolve, 25 * (transactionAttempt + 1)));
+    }
+  }
+  throw new Error("SOCIAL_ANALYTICS_RETRY_RECORDING_CONFLICT");
+
 }
 
 /**
