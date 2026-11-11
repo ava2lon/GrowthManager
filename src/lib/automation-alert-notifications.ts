@@ -90,63 +90,130 @@ function isRetryable(status: number): boolean {
  * event/recipient even when the cron runs repeatedly.
  */
 export async function enqueueAutomationAlertEscalations(): Promise<{eventsChecked: number; deliveriesQueued: number}> {
+  const POLICY_BATCH_SIZE = 5;
+  const EVENT_BATCH_SIZE = 10;
+  const RECIPIENT_BATCH_SIZE = 50;
+  const cutoff = new Date(Date.now() - 30 * 60_000);
   const policies = await db.automationAlertPolicy.findMany({
     where: {enabled: true, emailNotificationsEnabled: true},
     select: {workspaceId: true},
-    take: 50,
+    orderBy: [
+      {lastEscalationAt: {sort: "asc", nulls: "first"}},
+      {createdAt: "asc"},
+      {workspaceId: "asc"},
+    ],
+    take: POLICY_BATCH_SIZE,
   });
+
   let eventsChecked = 0;
   let deliveriesQueued = 0;
-  const cutoff = new Date(Date.now() - 30 * 60_000);
 
   for (const policy of policies) {
+    // Advance the independent escalation scheduler cursor so busy workspaces
+    // cannot permanently occupy the first page of policies.
+    await db.automationAlertPolicy.updateMany({
+      where: {workspaceId: policy.workspaceId, enabled: true, emailNotificationsEnabled: true},
+      data: {lastEscalationAt: new Date()},
+    });
+
     const events = await db.automationAlertEvent.findMany({
-      where: {workspaceId: policy.workspaceId, status: "OPEN", lastNotifiedAt: {lte: cutoff}},
-      select: {id: true},
-      take: 25,
+      where: {
+        workspaceId: policy.workspaceId,
+        status: "OPEN",
+        lastNotifiedAt: {lte: cutoff},
+        escalatedAt: null,
+      },
+      select: {id: true, escalationRecipientCursor: true},
+      orderBy: [{createdAt: "asc"}, {id: "asc"}],
+      take: EVENT_BATCH_SIZE,
     });
     if (!events.length) continue;
     eventsChecked += events.length;
 
-    const [resend, recipients] = await Promise.all([
-      db.integration.findFirst({
-        where: {workspaceId: policy.workspaceId, provider: "resend", status: "CONNECTED", credentialsEncrypted: {not: null}},
-        select: {id: true},
-      }),
-      db.workspaceMembership.findMany({
-        where: {workspaceId: policy.workspaceId, role: {in: ["OWNER", "ADMIN"]}},
-        select: {user: {select: {email: true}}},
-      }),
-    ]);
+    const resend = await db.integration.findFirst({
+      where: {
+        workspaceId: policy.workspaceId,
+        provider: "resend",
+        status: "CONNECTED",
+        credentialsEncrypted: {not: null},
+      },
+      select: {id: true},
+    });
     if (!resend) continue;
-    const uniqueRecipients = [...new Set(recipients.map((item) => item.user.email.trim().toLowerCase()).filter(Boolean))];
-    if (!uniqueRecipients.length) continue;
 
     for (const event of events) {
-      const inserted = await db.automationAlertDelivery.createMany({
-        data: uniqueRecipients.map((recipient) => ({
+      const memberships = await db.workspaceMembership.findMany({
+        where: {
           workspaceId: policy.workspaceId,
-          alertEventId: event.id,
-          integrationId: resend.id,
-          channel: "EMAIL",
-          recipient,
-        })),
-        skipDuplicates: true,
+          role: {in: ["OWNER", "ADMIN"]},
+          ...(event.escalationRecipientCursor ? {id: {gt: event.escalationRecipientCursor}} : {}),
+        },
+        select: {id: true, user: {select: {email: true}}},
+        orderBy: {id: "asc"},
+        take: RECIPIENT_BATCH_SIZE + 1,
       });
-      deliveriesQueued += inserted.count;
-      if (inserted.count) {
-        await db.activityLog.create({
-          data: {
+      const hasMoreRecipients = memberships.length > RECIPIENT_BATCH_SIZE;
+      const recipientPage = memberships.slice(0, RECIPIENT_BATCH_SIZE);
+      const nextCursor = hasMoreRecipients ? recipientPage[recipientPage.length - 1]?.id ?? event.escalationRecipientCursor : null;
+      const uniqueRecipients = [...new Set(
+        recipientPage
+          .map((membership) => membership.user.email.trim().toLowerCase())
+          .filter(Boolean),
+      )];
+
+      const result = await db.$transaction(async (tx) => {
+        // Compare-and-set the page cursor before inserting. This prevents
+        // overlapping cron invocations from advancing the same event twice.
+        const advanced = await tx.automationAlertEvent.updateMany({
+          where: {
             workspaceId: policy.workspaceId,
-            action: "automation.alert_escalated",
-            entityType: "automation_alert",
-            entityId: event.id,
-            metadata: {recipientCount: inserted.count, escalationAfterMinutes: 30},
+            id: event.id,
+            status: "OPEN",
+            escalatedAt: null,
+            escalationRecipientCursor: event.escalationRecipientCursor,
+          },
+          data: {
+            escalationRecipientCursor: nextCursor,
+            escalatedAt: hasMoreRecipients ? null : new Date(),
           },
         });
-      }
+        if (advanced.count !== 1) return 0;
+
+        const inserted = uniqueRecipients.length
+          ? await tx.automationAlertDelivery.createMany({
+            data: uniqueRecipients.map((recipient) => ({
+              workspaceId: policy.workspaceId,
+              alertEventId: event.id,
+              integrationId: resend.id,
+              channel: "EMAIL",
+              recipient,
+            })),
+            skipDuplicates: true,
+          })
+          : {count: 0};
+
+        if (inserted.count) {
+          await tx.activityLog.create({
+            data: {
+              workspaceId: policy.workspaceId,
+              action: "automation.alert_escalated",
+              entityType: "automation_alert",
+              entityId: event.id,
+              metadata: {
+                recipientCount: inserted.count,
+                escalationAfterMinutes: 30,
+                recipientBatchSize: recipientPage.length,
+                moreRecipientsPending: hasMoreRecipients,
+              },
+            },
+          });
+        }
+        return inserted.count;
+      });
+      deliveriesQueued += result;
     }
   }
+
   return {eventsChecked, deliveriesQueued};
 }
 
