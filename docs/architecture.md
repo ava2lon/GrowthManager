@@ -12,7 +12,7 @@ GrowthManager is a multi-tenant growth operating system. Its product lifecycle i
 - Vercel-compatible Route Handlers and server-rendered application routes.
 - Tailwind CSS for the application UI.
 - Vitest for unit/policy tests and PostgreSQL integration tests.
-- Upstash Redis REST for distributed authentication/registration rate limiting.
+- Upstash Redis REST for distributed authentication/registration rate limiting and public website event ingestion.
 - Supabase Storage for private media objects.
 - External provider credentials are encrypted server-side using AES-256-GCM.
 
@@ -52,3 +52,4 @@ Website tracking, unified leads, a versioned public API, generic outbound webhoo
 ## Runtime constraints
 
 Vercel Route Handlers are request/response workloads, not durable workers. Use short bounded operations and scheduled/queued processing for publishing, retries and webhook delivery. Long-running work should be moved to a durable queue/worker design before request timeouts become a reliability risk.
+\n\n## Website tracking (Phase 2)\n\nWebsite tracking extends the existing workspace model. Authenticated website APIs derive workspace membership server-side; public event ingestion resolves the website from its tracking ID and enforces website status, payload limits, origin checks, and distributed rate limiting. Visitor/session/event records are scoped to a Website and cascade on website deletion. See [website tracking](website-tracking.md) for installation, event, privacy, and operational details.\n
