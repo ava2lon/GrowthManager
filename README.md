@@ -146,11 +146,11 @@ The media library at `/dashboard/media` stores workspace-scoped metadata in Post
 
 When configuring storage:
 1. Create a **private** Supabase Storage bucket named `growthmanager-media` (or set `SUPABASE_MEDIA_BUCKET` to another valid bucket name).
-2. Set the bucket's maximum file size to at least 100 MB and restrict allowed MIME types to `image/jpeg`, `image/png`, `image/webp`, `video/mp4`, and `video/quicktime`.
+2. Set the bucket's maximum file size to at least 100 MB and restrict allowed MIME types to `image/jpeg`, `image/png`, `image/webp`, `video/mp4`, `video/quicktime`, `application/pdf`, `text/plain`, `text/csv`, and the DOCX, XLSX, and PPTX OpenXML MIME types.
 3. Add `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, and optionally `SUPABASE_MEDIA_BUCKET` to the server-side Vercel environment. Never use a `NEXT_PUBLIC_` prefix for the service-role key.
 4. Apply the committed Prisma migration `20261107110000_media_assets` only after the GrowthManager database target and connection variables have been confirmed.
 
-Application limits are 20 MB per image and 100 MB per video. Supported formats are JPEG, PNG, WebP, MP4, and MOV. Files are organized under a workspace-specific object prefix, and downloads are issued as five-minute signed URLs after membership and workspace ownership checks. The bucket must remain private; do not enable public object access.
+Application limits are 20 MB per image and 100 MB per video. Supported formats are JPEG, PNG, WebP, MP4, MOV, PDF, TXT, CSV, DOCX, XLSX, and PPTX. Files are organized under a workspace-specific object prefix, and downloads are issued as five-minute signed URLs after membership and workspace ownership checks. The bucket must remain private; do not enable public object access.
 
 
 ### Media attachments on social drafts
