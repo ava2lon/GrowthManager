@@ -72,6 +72,13 @@ jobs:
           DATABASE_URL: ${{ secrets.PRODUCTION_DIRECT_URL }}
         run: npx prisma migrate status
 
+      - name: Verify live database matches Prisma schema
+        if: success()
+        env:
+          DIRECT_URL: ${{ secrets.PRODUCTION_DIRECT_URL }}
+          DATABASE_URL: ${{ secrets.PRODUCTION_DIRECT_URL }}
+        run: npx prisma migrate diff --from-url "$DIRECT_URL" --to-schema-datamodel prisma/schema.prisma --exit-code
+
   backup-not-confirmed:
     name: Require verified backup
     if: inputs.backup_verified != 'true'
