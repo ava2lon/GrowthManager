@@ -25,7 +25,7 @@ async function activate(signal:Signal,now:Date):Promise<"created"|"reopened"|"up
     }else if(existing){
       const reopened=await tx.workspaceIncident.update({
         where:{id:existing.id},
-        data:{status:"OPEN",severity:signal.severity,message:signal.message,errorCode:signal.errorCode??null,occurrenceCount:{increment:1},firstSeenAt:now,lastSeenAt:now,resolvedAt:null,acknowledgedAt:null,acknowledgedById:null,escalatedAt:null,resolutionMessage:null,metadata:signal.metadata},
+        data:{status:"OPEN",severity:signal.severity,message:signal.message,errorCode:signal.errorCode??null,occurrenceCount:{increment:1},firstSeenAt:now,lastSeenAt:now,resolvedAt:null,acknowledgedAt:null,acknowledgedById:null,escalatedAt:null,escalationRecipientCursor:null,resolutionMessage:null,metadata:signal.metadata},
         select:{id:true,occurrenceCount:true},
       });
       incidentId=reopened.id;occurrence=reopened.occurrenceCount;result="reopened";
