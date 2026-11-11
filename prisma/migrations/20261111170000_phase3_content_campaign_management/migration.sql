@@ -21,9 +21,9 @@ ALTER TABLE "Campaign"
 
 CREATE UNIQUE INDEX IF NOT EXISTS "Campaign_workspaceId_id_key" ON "Campaign"("workspaceId", "id");
 
-DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conrelid = '"ContentPost"'::regclass AND conname = "ContentPost_workspaceId_campaignId_fkey") THEN ALTER TABLE "ContentPost" ADD CONSTRAINT "ContentPost_workspaceId_campaignId_fkey" FOREIGN KEY ("workspaceId", "campaignId") REFERENCES "Campaign"("workspaceId", "id")
+DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conrelid = '"ContentPost"'::regclass AND conname = 'ContentPost_workspaceId_campaignId_fkey') THEN ALTER TABLE "ContentPost" ADD CONSTRAINT "ContentPost_workspaceId_campaignId_fkey" FOREIGN KEY ("workspaceId", "campaignId") REFERENCES "Campaign"("workspaceId", "id")
   ON DELETE RESTRICT ON UPDATE CASCADE; END IF; END $$;
-DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conrelid = '"ContentPost"'::regclass AND conname = "ContentPost_authorId_fkey") THEN ALTER TABLE "ContentPost" ADD CONSTRAINT "ContentPost_authorId_fkey" FOREIGN KEY ("authorId") REFERENCES "User"("id") ON DELETE SET NULL ON UPDATE CASCADE; END IF; END $$;
+DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conrelid = '"ContentPost"'::regclass AND conname = 'ContentPost_authorId_fkey') THEN ALTER TABLE "ContentPost" ADD CONSTRAINT "ContentPost_authorId_fkey" FOREIGN KEY ("authorId") REFERENCES "User"("id") ON DELETE SET NULL ON UPDATE CASCADE; END IF; END $$;
 
 
 
@@ -47,7 +47,7 @@ ALTER TABLE "MediaAsset"
   ADD COLUMN IF NOT EXISTS "tags" TEXT[] NOT NULL DEFAULT ARRAY[]::TEXT[],
   ADD COLUMN IF NOT EXISTS "url" TEXT;
 UPDATE "MediaAsset" SET "url" = '/api/media/' || "id" || '/download' WHERE "url" IS NULL;
-DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conrelid = '"MediaAsset"'::regclass AND conname = "MediaAsset_workspaceId_folderId_fkey") THEN ALTER TABLE "MediaAsset" ADD CONSTRAINT "MediaAsset_workspaceId_folderId_fkey" FOREIGN KEY ("workspaceId", "folderId") REFERENCES "MediaFolder"("workspaceId", "id")
+DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conrelid = '"MediaAsset"'::regclass AND conname = 'MediaAsset_workspaceId_folderId_fkey') THEN ALTER TABLE "MediaAsset" ADD CONSTRAINT "MediaAsset_workspaceId_folderId_fkey" FOREIGN KEY ("workspaceId", "folderId") REFERENCES "MediaFolder"("workspaceId", "id")
   ON DELETE RESTRICT ON UPDATE CASCADE; END IF; END $$;
 CREATE INDEX IF NOT EXISTS "MediaAsset_workspaceId_folderId_createdAt_idx" ON "MediaAsset"("workspaceId", "folderId", "createdAt");
 
