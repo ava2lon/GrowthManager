@@ -2,7 +2,7 @@ import {NextResponse} from "next/server";
 import {requireWorkspaceRole} from "@/lib/workspace";
 import {db} from "@/lib/db";
 import {consumeRateLimit} from "@/lib/rate-limit";
-import {getMediaStorageProvider, storageHeaders} from "@/lib/media-storage";
+import {getMediaStorageProvider} from "@/lib/media-storage";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -31,7 +31,7 @@ export async function POST(request: Request) {
   }
   const asset = await db.mediaAsset.findFirst({
     where: {id: body.assetId, workspaceId: context.workspace.id, status: "PENDING"},
-    select: {id: true, bucket: true, objectPath: true, mimeType: true, sizeBytes: true, brandId: true},
+    select: {id: true, bucket: true, objectPath: true, storageProvider: true, mimeType: true, sizeBytes: true, brandId: true},
   });
   if (!asset) return NextResponse.json({error: "Pending media asset not found."}, {status: 404});
   const isVideo=asset.mimeType.startsWith("video/");
@@ -45,28 +45,13 @@ export async function POST(request: Request) {
     return NextResponse.json({error:"Media dimensions or duration are outside the supported upload policy."},{status:422});
   }
 
-  let storage;
   try {
-    storage = getMediaStorageProvider().getConfig();
-  } catch {
-    return NextResponse.json({error: "Media storage is not configured."}, {status: 503});
-  }
-  if (asset.bucket !== storage.bucket) return NextResponse.json({error: "Storage configuration changed. Contact an administrator."}, {status: 409});
-
-  const objectPath = asset.objectPath.split("/").map(encodeURIComponent).join("/");
-  const objectUrl = storage.baseUrl + "/storage/v1/object/" + encodeURIComponent(asset.bucket) + "/" + objectPath;
-  try {
-    const response = await fetch(objectUrl, {
-      method: "HEAD",
-      headers: storageHeaders(storage.serviceKey),
-      cache: "no-store",
-      redirect: "error",
-      signal: AbortSignal.timeout(10000),
-    });
-    if (!response.ok) return NextResponse.json({error: "The uploaded object could not be verified."}, {status: 409});
-    const actualSize = Number(response.headers.get("content-length"));
-    const actualType = response.headers.get("content-type")?.split(";")[0]?.trim().toLowerCase();
-    if (!Number.isSafeInteger(actualSize) || actualSize !== Number(asset.sizeBytes) || actualType !== asset.mimeType) {
+    const provider = getMediaStorageProvider();
+    if (asset.storageProvider !== provider.name || asset.bucket !== provider.getBucket()) {
+      return NextResponse.json({error: "Storage provider configuration changed. Contact an administrator."}, {status: 409});
+    }
+    const stored = await provider.verifyObject({bucket: asset.bucket, objectPath: asset.objectPath});
+    if (stored.sizeBytes !== Number(asset.sizeBytes) || stored.mimeType !== asset.mimeType) {
       await db.mediaAsset.updateMany({where: {id: asset.id, workspaceId: context.workspace.id, status: "PENDING"}, data: {status: "FAILED"}});
       return NextResponse.json({error: "Uploaded file metadata does not match the authorized upload."}, {status: 422});
     }
