@@ -1,8 +1,8 @@
 ALTER TABLE "Brand"
-  ADD COLUMN "industry" TEXT,
-  ADD COLUMN "targetAudience" TEXT;
+  ADD COLUMN IF NOT EXISTS "industry" TEXT,
+  ADD COLUMN IF NOT EXISTS "targetAudience" TEXT;
 
-CREATE TABLE "WorkspaceAISettings" (
+CREATE TABLE IF NOT EXISTS "WorkspaceAISettings" (
   "id" TEXT NOT NULL,
   "workspaceId" TEXT NOT NULL,
   "provider" TEXT NOT NULL DEFAULT 'OPENAI',
@@ -13,9 +13,9 @@ CREATE TABLE "WorkspaceAISettings" (
   CONSTRAINT "WorkspaceAISettings_pkey" PRIMARY KEY ("id"),
   CONSTRAINT "WorkspaceAISettings_workspaceId_fkey" FOREIGN KEY ("workspaceId") REFERENCES "Workspace"("id") ON DELETE CASCADE ON UPDATE CASCADE
 );
-CREATE UNIQUE INDEX "WorkspaceAISettings_workspaceId_key" ON "WorkspaceAISettings"("workspaceId");
+CREATE UNIQUE INDEX IF NOT EXISTS "WorkspaceAISettings_workspaceId_key" ON "WorkspaceAISettings"("workspaceId");
 
-CREATE TABLE "WorkspaceAIUsage" (
+CREATE TABLE IF NOT EXISTS "WorkspaceAIUsage" (
   "id" TEXT NOT NULL,
   "workspaceId" TEXT NOT NULL,
   "periodStart" DATE NOT NULL,
@@ -28,10 +28,10 @@ CREATE TABLE "WorkspaceAIUsage" (
   CONSTRAINT "WorkspaceAIUsage_pkey" PRIMARY KEY ("id"),
   CONSTRAINT "WorkspaceAIUsage_workspaceId_fkey" FOREIGN KEY ("workspaceId") REFERENCES "Workspace"("id") ON DELETE CASCADE ON UPDATE CASCADE
 );
-CREATE UNIQUE INDEX "WorkspaceAIUsage_workspaceId_periodStart_key" ON "WorkspaceAIUsage"("workspaceId","periodStart");
-CREATE INDEX "WorkspaceAIUsage_workspaceId_periodStart_idx" ON "WorkspaceAIUsage"("workspaceId","periodStart");
+CREATE UNIQUE INDEX IF NOT EXISTS "WorkspaceAIUsage_workspaceId_periodStart_key" ON "WorkspaceAIUsage"("workspaceId","periodStart");
+CREATE INDEX IF NOT EXISTS "WorkspaceAIUsage_workspaceId_periodStart_idx" ON "WorkspaceAIUsage"("workspaceId","periodStart");
 
-CREATE TABLE "AIGeneration" (
+CREATE TABLE IF NOT EXISTS "AIGeneration" (
   "id" TEXT NOT NULL,
   "workspaceId" TEXT NOT NULL,
   "brandId" TEXT NOT NULL,
@@ -54,7 +54,7 @@ CREATE TABLE "AIGeneration" (
   CONSTRAINT "AIGeneration_workspaceId_campaignId_fkey" FOREIGN KEY ("workspaceId","campaignId") REFERENCES "Campaign"("workspaceId","id") ON DELETE RESTRICT ON UPDATE CASCADE,
   CONSTRAINT "AIGeneration_userId_fkey" FOREIGN KEY ("userId") REFERENCES "User"("id") ON DELETE CASCADE ON UPDATE CASCADE
 );
-CREATE UNIQUE INDEX "AIGeneration_workspaceId_id_key" ON "AIGeneration"("workspaceId","id");
-CREATE INDEX "AIGeneration_workspaceId_brandId_createdAt_idx" ON "AIGeneration"("workspaceId","brandId","createdAt");
-CREATE INDEX "AIGeneration_workspaceId_userId_createdAt_idx" ON "AIGeneration"("workspaceId","userId","createdAt");
-CREATE INDEX "AIGeneration_workspaceId_campaignId_createdAt_idx" ON "AIGeneration"("workspaceId","campaignId","createdAt");
+CREATE UNIQUE INDEX IF NOT EXISTS "AIGeneration_workspaceId_id_key" ON "AIGeneration"("workspaceId","id");
+CREATE INDEX IF NOT EXISTS "AIGeneration_workspaceId_brandId_createdAt_idx" ON "AIGeneration"("workspaceId","brandId","createdAt");
+CREATE INDEX IF NOT EXISTS "AIGeneration_workspaceId_userId_createdAt_idx" ON "AIGeneration"("workspaceId","userId","createdAt");
+CREATE INDEX IF NOT EXISTS "AIGeneration_workspaceId_campaignId_createdAt_idx" ON "AIGeneration"("workspaceId","campaignId","createdAt");
