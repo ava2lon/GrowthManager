@@ -288,9 +288,9 @@ model ContentReviewAssignment {
   contentPost    ContentPost         @relation(fields: [workspaceId, contentPostId], references: [workspaceId, id], onDelete: Cascade)
   reviewer       User                @relation("ContentReviewAssignee", fields: [reviewerUserId], references: [id], onDelete: Cascade)
   assignedBy     User                @relation("ContentReviewAssigner", fields: [assignedById], references: [id], onDelete: Cascade)
-  @@unique([workspaceId, contentPostId, reviewerUserId])
+  @@unique([workspaceId, contentPostId, reviewerUserId], map: "ContentReviewAssignment_workspaceId_contentPostId_reviewerUserI")
   @@unique([workspaceId, id])
-  @@index([workspaceId, reviewerUserId, status, updatedAt])
+  @@index([workspaceId, reviewerUserId, status, updatedAt], map: "ContentReviewAssignment_workspaceId_reviewerUserId_status_updat")
   @@index([workspaceId, contentPostId, status])
   emailDeliveries ContentReviewEmailDelivery[]
 }
@@ -343,6 +343,8 @@ model SocialPostTarget {
   @@unique([contentPostId, socialAccountId])
   @@index([workspaceId, status, createdAt])
   @@index([workspaceId, socialAccountId, status])
+  @@index([provider, status, nextCheckAt])
+  @@index([workspaceId, provider, status, nextCheckAt])
 }
 
 model SocialPublishAttempt {
@@ -457,7 +459,7 @@ model CampaignSocialAccount {
   createdAt       DateTime      @default(now())
   campaign        Campaign      @relation(fields: [workspaceId, campaignId], references: [workspaceId, id], onDelete: Cascade)
   socialAccount   SocialAccount @relation(fields: [workspaceId, socialAccountId], references: [workspaceId, id], onDelete: Cascade)
-  @@unique([workspaceId, campaignId, socialAccountId])
+  @@unique([workspaceId, campaignId, socialAccountId], map: "CampaignSocialAccount_workspaceId_campaignId_socialAccountId_ke")
   @@index([workspaceId, socialAccountId])
 }
 
@@ -505,7 +507,7 @@ model N8nExecutionSnapshot {
   integration   Integration @relation(fields: [workspaceId, integrationId], references: [workspaceId, id], onDelete: Cascade)
   @@unique([workspaceId, integrationId, executionId])
   @@index([workspaceId, startedAt])
-  @@index([workspaceId, integrationId, status, startedAt])
+  @@index([workspaceId, integrationId, status, startedAt], map: "N8nExecutionSnapshot_workspaceId_integrationId_status_startedAt")
   @@index([workspaceId, workflowId, startedAt])
 }
 
@@ -598,6 +600,7 @@ model AutomationAlertEvent {
   @@index([workspaceId, status, createdAt])
   @@index([workspaceId, status, lastNotifiedAt, escalatedAt, createdAt], map: "automation_alert_escalation_due_idx")
   @@index([workspaceId, integrationId, createdAt])
+  @@index([workspaceId, integrationId, status])
 }
 
 
@@ -622,7 +625,7 @@ model AutomationAlertDelivery {
   attemptRecords    AutomationAlertDeliveryAttempt[]
   integration       Integration @relation(fields: [workspaceId, integrationId], references: [workspaceId, id], onDelete: Cascade)
   @@unique([workspaceId, id])
-  @@unique([workspaceId, alertEventId, channel, recipient])
+  @@unique([workspaceId, alertEventId, channel, recipient], map: "AutomationAlertDelivery_workspaceId_alertEventId_channel_recipi")
   @@index([status, nextAttemptAt])
   @@index([workspaceId, createdAt])
   @@index([providerMessageId])
@@ -656,7 +659,7 @@ model AutomationAlertDeliveryAttempt {
   delivery          AutomationAlertDelivery @relation(fields: [workspaceId, deliveryId], references: [workspaceId, id], onDelete: Cascade)
   @@unique([deliveryId, attemptNumber])
   @@index([workspaceId, startedAt])
-  @@index([workspaceId, deliveryId, attemptNumber])
+  @@index([workspaceId, deliveryId, attemptNumber], map: "AutomationAlertDeliveryAttempt_workspaceId_deliveryId_attemptNu")
 }
 
 
@@ -671,9 +674,9 @@ model PinterestAnalyticsSnapshot {
   rawResponse     Json
   fetchedAt       DateTime      @default(now())
   socialAccount   SocialAccount @relation(fields: [workspaceId, socialAccountId], references: [workspaceId, id], onDelete: Cascade)
-  @@unique([workspaceId, socialAccountId, reportDate])
+  @@unique([workspaceId, socialAccountId, reportDate], map: "PinterestAnalyticsSnapshot_workspaceId_socialAccountId_reportDa")
   @@index([workspaceId, reportDate])
-  @@index([workspaceId, socialAccountId, fetchedAt])
+  @@index([workspaceId, socialAccountId, fetchedAt], map: "PinterestAnalyticsSnapshot_workspaceId_socialAccountId_fetchedA")
 }
 
 
@@ -689,9 +692,9 @@ model PinterestPinAnalyticsSnapshot {
   rawResponse     Json
   fetchedAt       DateTime        @default(now())
   target          SocialPostTarget @relation(fields: [workspaceId, targetId], references: [workspaceId, id], onDelete: Cascade)
-  @@unique([workspaceId, targetId, reportDate])
+  @@unique([workspaceId, targetId, reportDate], map: "PinterestPinAnalyticsSnapshot_workspaceId_targetId_reportDate_k")
   @@index([workspaceId, reportDate])
-  @@index([workspaceId, targetId, fetchedAt])
+  @@index([workspaceId, targetId, fetchedAt], map: "PinterestPinAnalyticsSnapshot_workspaceId_targetId_fetchedAt_id")
 }
 
 
@@ -709,7 +712,7 @@ model MetaAnalyticsSnapshot {
   rawResponse Json
   fetchedAt DateTime @default(now())
   socialAccount SocialAccount @relation(fields: [workspaceId, socialAccountId], references: [workspaceId, id], onDelete: Cascade)
-  target SocialPostTarget? @relation(fields: [workspaceId, targetId], references: [workspaceId, id], onDelete: Cascade)
+  target SocialPostTarget? @relation(fields: [targetId], references: [id], onDelete: Cascade)
   @@unique([workspaceId, socialAccountId, subjectType, subjectId, reportDate], map: "meta_analytics_subject_report_uq")
   @@index([workspaceId, reportDate], map: "meta_analytics_workspace_date_idx")
   @@index([workspaceId, socialAccountId, subjectType, fetchedAt], map: "meta_analytics_account_type_fetched_idx")
@@ -731,7 +734,7 @@ model LinkedInAnalyticsSnapshot {
   rawResponse Json
   fetchedAt DateTime @default(now())
   socialAccount SocialAccount @relation(fields: [workspaceId, socialAccountId], references: [workspaceId, id], onDelete: Cascade)
-  target SocialPostTarget? @relation(fields: [targetId], references: [id], onDelete: Cascade)
+  target SocialPostTarget? @relation(fields: [workspaceId, targetId], references: [workspaceId, id], onDelete: Cascade)
   @@unique([workspaceId, socialAccountId, subjectType, subjectId, reportDate], map: "linkedin_analytics_subject_report_uq")
   @@index([workspaceId, reportDate], map: "linkedin_analytics_workspace_date_idx")
   @@index([workspaceId, socialAccountId, subjectType, fetchedAt], map: "linkedin_analytics_account_type_fetched_idx")
@@ -797,8 +800,8 @@ model XAnalyticsSnapshot {
   metrics Json
   rawResponse Json
   fetchedAt DateTime @default(now())
-  socialAccount SocialAccount @relation(fields: [workspaceId, socialAccountId], references: [workspaceId, id], onDelete: Cascade)
-  target SocialPostTarget? @relation(fields: [workspaceId, targetId], references: [workspaceId, id], onDelete: Cascade)
+  socialAccount SocialAccount @relation(fields: [workspaceId, socialAccountId], references: [workspaceId, id], onDelete: Cascade, map: "x_analytics_account_fk")
+  target SocialPostTarget? @relation(fields: [workspaceId, targetId], references: [workspaceId, id], onDelete: Cascade, map: "x_analytics_target_fk")
   @@unique([workspaceId, socialAccountId, subjectType, subjectId, reportDate], map: "x_analytics_subject_report_uq")
   @@index([workspaceId, reportDate], map: "x_analytics_workspace_date_idx")
   @@index([workspaceId, socialAccountId, subjectType, fetchedAt], map: "x_analytics_account_type_fetched_idx")
@@ -833,6 +836,7 @@ model ContentReviewEmailDelivery {
   @@index([status, nextAttemptAt])
   @@index([workspaceId, createdAt])
   @@index([providerMessageId])
+  @@index([recipientUserId])
 }
 
 
@@ -896,7 +900,7 @@ model ContentReviewEmailDigest {
   workspace         Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
   recipient         User @relation(fields: [recipientUserId], references: [id], onDelete: Cascade)
   @@index([status, nextAttemptAt])
-  @@index([workspaceId, recipientUserId, createdAt])
+  @@index([workspaceId, recipientUserId, createdAt], map: "ContentReviewEmailDigest_workspaceId_recipientUserId_createdAt_")
 }
 
 
@@ -958,7 +962,7 @@ model WorkspaceIncidentEmailDelivery {
   workspace           Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
   incident            WorkspaceIncident @relation(fields: [workspaceId, incidentId], references: [workspaceId, id], onDelete: Cascade)
   recipient           User @relation(fields: [recipientUserId], references: [id], onDelete: Cascade)
-  @@unique([workspaceId, incidentId, recipientUserId, incidentOccurrence, eventType])
+  @@unique([workspaceId, incidentId, recipientUserId, incidentOccurrence, eventType], map: "WorkspaceIncidentEmailDelivery_workspaceId_incidentId_recipient")
   @@index([status, nextAttemptAt])
   @@index([workspaceId, createdAt])
   @@index([providerMessageId])
@@ -981,7 +985,7 @@ model SocialAnalyticsRetry {
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
   workspace      Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
-  @@unique([workspaceId, provider, subjectType, subjectId, reportDate])
+  @@unique([workspaceId, provider, subjectType, subjectId, reportDate], map: "SocialAnalyticsRetry_workspaceId_provider_subjectType_subjectId")
   @@index([status, nextAttemptAt])
   @@index([workspaceId, status, nextAttemptAt])
 }
