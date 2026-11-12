@@ -142,7 +142,7 @@ BEGIN
       'WebsiteIdentity_websiteId_visitorId_key',
       'WebsiteIdentity_websiteId_email_idx'
     ]) AS expected(index_name)
-    WHERE NOT EXISTS (SELECT 1 FROM pg_indexes WHERE schemaname='public' AND indexname=expected.index_name)
+    WHERE NOT EXISTS (SELECT 1 FROM pg_indexes WHERE schemaname='public' AND indexname=left(expected.index_name, 63))
   ) THEN
     RAISE EXCEPTION 'Missing recovery indexes: %', (
       SELECT string_agg(expected.index_name, ', ')
