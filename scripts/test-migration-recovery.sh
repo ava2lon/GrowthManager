@@ -144,7 +144,58 @@ BEGIN
     ]) AS expected(index_name)
     WHERE NOT EXISTS (SELECT 1 FROM pg_indexes WHERE schemaname='public' AND indexname=expected.index_name)
   ) THEN
-    RAISE EXCEPTION 'One or more expected recovery indexes are missing';
+    RAISE EXCEPTION 'Missing recovery indexes: %', (
+      SELECT string_agg(expected.index_name, ', ')
+      FROM unnest(ARRAY[
+        'AutomationAlertPolicy_enabled_lastEvaluatedAt_idx',
+        'automation_alert_policy_escalation_idx',
+        'automation_alert_escalation_due_idx',
+        'workspace_incident_escalation_due_idx',
+        'SocialAnalyticsRetry_workspaceId_provider_subjectType_subjectId_reportDate_key',
+        'SocialAnalyticsRetry_status_nextAttemptAt_idx',
+        'SocialAnalyticsRetry_workspaceId_status_nextAttemptAt_idx',
+        'ContentPost_workspaceId_workflowStatus_createdAt_idx',
+        'ContentPost_workspaceId_campaignId_idx',
+        'ContentPost_workspaceId_archivedAt_updatedAt_idx',
+        'Campaign_workspaceId_id_key',
+        'MediaFolder_workspaceId_id_key',
+        'MediaFolder_workspaceId_brandId_name_key',
+        'MediaFolder_workspaceId_createdAt_idx',
+        'MediaAsset_workspaceId_folderId_createdAt_idx',
+        'CampaignSocialAccount_workspaceId_campaignId_socialAccountId_key',
+        'CampaignSocialAccount_workspaceId_socialAccountId_idx',
+        'WorkspaceAISettings_workspaceId_key',
+        'WorkspaceAIUsage_workspaceId_periodStart_key',
+        'WorkspaceAIUsage_workspaceId_periodStart_idx',
+        'AIGeneration_workspaceId_id_key',
+        'AIGeneration_workspaceId_brandId_createdAt_idx',
+        'AIGeneration_workspaceId_userId_createdAt_idx',
+        'AIGeneration_workspaceId_campaignId_createdAt_idx',
+        'Website_trackingId_key',
+        'Website_workspaceId_domain_key',
+        'Website_workspaceId_id_key',
+        'Website_workspaceId_status_createdAt_idx',
+        'Website_workspaceId_updatedAt_idx',
+        'WebsiteVisitor_websiteId_anonymousId_key',
+        'WebsiteVisitor_websiteId_id_key',
+        'WebsiteVisitor_websiteId_lastSeenAt_idx',
+        'WebsiteSession_websiteId_sessionId_key',
+        'WebsiteSession_websiteId_id_key',
+        'WebsiteSession_websiteId_startedAt_idx',
+        'WebsiteSession_websiteId_visitorId_startedAt_idx',
+        'WebsiteEvent_websiteId_timestamp_idx',
+        'WebsiteEvent_websiteId_eventName_timestamp_idx',
+        'WebsiteEvent_websiteId_visitorId_timestamp_idx',
+        'WebsiteEvent_websiteId_sessionId_timestamp_idx',
+        'WebsiteEvent_websiteId_eventType_timestamp_idx',
+        'WebsiteIdentity_websiteId_visitorId_key',
+        'WebsiteIdentity_websiteId_email_idx'
+      ]) AS expected(index_name)
+      WHERE NOT EXISTS (
+        SELECT 1 FROM pg_indexes
+        WHERE schemaname='public' AND indexname=left(expected.index_name, 63)
+      )
+    );
   END IF;
   IF EXISTS (
     SELECT expected.constraint_name
