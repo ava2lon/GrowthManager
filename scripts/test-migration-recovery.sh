@@ -47,7 +47,7 @@ for pass in 1 2; do
 done
 
 psql "$DIRECT_URL" -v ON_ERROR_STOP=1 <<'SQL'
-DO $$
+DO $recovery$
 BEGIN
   IF (SELECT COUNT(*) FROM "User" WHERE "id" = 'migration-recovery-user') <> 1 THEN
     RAISE EXCEPTION 'User fixture was not preserved';
