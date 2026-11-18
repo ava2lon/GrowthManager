@@ -4,7 +4,7 @@ import {apiErrorResponse,createRequestId,internalApiErrorResponse} from "@/lib/a
 import {getWebsiteWorkspaceContext,websiteRoleCanManage} from "@/lib/websites/access";
 import {normalizeWebsiteDomain,websitePatchSchema} from "@/lib/websites/validation";
 import {authenticateApiKey} from "@/lib/api-key-auth";
-import {claimApiIdempotency} from "@/lib/api-idempotency";
+import {claimApiIdempotency,releaseApiIdempotencyClaim} from "@/lib/api-idempotency";
 
 export const runtime="nodejs";
 export const dynamic="force-dynamic";
@@ -98,7 +98,7 @@ export async function PATCH(request:Request,{params}:Context){
    return result;
    });
   }catch(error){
-   await releaseMutationClaim({recordId:idempotency.recordId,leaseToken:idempotency.leaseToken,workspaceId});
+   await releaseApiIdempotencyClaim({recordId:idempotency.recordId,leaseToken:idempotency.leaseToken,workspaceId});
    throw error;
   }
   return NextResponse.json(responseBody,{headers:{"Cache-Control":"no-store","X-Request-Id":requestId}});
@@ -133,7 +133,7 @@ export async function DELETE(request:Request,{params}:Context){
    return result;
    });
   }catch(error){
-   await releaseMutationClaim({recordId:idempotency.recordId,leaseToken:idempotency.leaseToken,workspaceId});
+   await releaseApiIdempotencyClaim({recordId:idempotency.recordId,leaseToken:idempotency.leaseToken,workspaceId});
    throw error;
   }
   return NextResponse.json(responseBody,{headers:{"Cache-Control":"no-store","X-Request-Id":requestId}});
