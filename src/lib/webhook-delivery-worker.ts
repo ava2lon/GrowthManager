@@ -1,8 +1,8 @@
 import "server-only";
-import {createHmac} from "node:crypto";
 import {request as httpsRequest} from "node:https";
 import {db} from "@/lib/db";
 import {decryptWebhookSigningSecret} from "@/lib/webhook-secret-crypto";
+import {createWebhookSignature} from "@/lib/webhook-signature";
 import {resolveSafeWebhookEndpoint} from "@/lib/webhook-endpoint-security";
 import {
   WEBHOOK_DELIVERY_LOCK_TTL_MS,
@@ -148,7 +148,7 @@ export async function dispatchWorkspaceWebhookDeliveries(batchSize = MAX_BATCH_S
       );
       const body = JSON.stringify(candidate.payload);
       const timestamp = String(Math.floor(Date.now() / 1000));
-      const signature = createHmac("sha256", secret).update(timestamp + "." + body, "utf8").digest("hex");
+      const signature = createWebhookSignature(secret, timestamp, body);
       httpStatus = await postPinned({
         url: destination.url,
         ipv4: destination.ipv4,
@@ -160,7 +160,7 @@ export async function dispatchWorkspaceWebhookDeliveries(batchSize = MAX_BATCH_S
           "X-GrowthManager-Event": candidate.eventType,
           "X-GrowthManager-Delivery": candidate.id,
           "X-GrowthManager-Timestamp": timestamp,
-          "X-GrowthManager-Signature": "v1=" + signature,
+          "X-GrowthManager-Signature": signature,
           "Idempotency-Key": candidate.id,
         },
       });
