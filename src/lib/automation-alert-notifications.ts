@@ -1,4 +1,5 @@
 import {db} from "@/lib/db";
+import {enqueueWorkspaceWebhookEvent} from "@/lib/workspace-webhooks";
 import {decryptIntegrationCredentials} from "@/lib/integration-crypto";
 
 type AlertInput = {
@@ -47,6 +48,15 @@ export async function recordAutomationAlert(input: AlertInput): Promise<{created
       select: {id: true},
     });
     if (!event || inserted.count !== 1) return {created: false, queued: false};
+    await enqueueWorkspaceWebhookEvent(tx, {
+      workspaceId: input.workspaceId,
+      eventType: "automation.alert.created",
+      data: {
+        alertId: event.id, provider: input.provider, alertType: input.alertType,
+        severity: input.severity, message: input.message, observedCount: input.observedCount,
+        observedRate: input.observedRate, sampleSize: input.sampleSize,
+      },
+    });
 
     const policy = await tx.automationAlertPolicy.findUnique({
       where: {workspaceId: input.workspaceId},
@@ -234,30 +244,43 @@ export async function resolveAutomationAlerts(input: {
         status: {in: ["OPEN", "ACKNOWLEDGED"]},
         ...(input.activeAlertTypes.length ? {alertType: {notIn: input.activeAlertTypes}} : {}),
       },
-      select: {id: true},
+      select: {id: true, provider: true, alertType: true, severity: true, message: true, observedCount: true, observedRate: true, sampleSize: true},
     });
     if (!candidates.length) return {resolved: 0, cancelledDeliveries: 0};
-    const ids = candidates.map((event) => event.id);
     const now = new Date();
-    const updated = await tx.automationAlertEvent.updateMany({
-      where: {workspaceId: input.workspaceId, id: {in: ids}, status: {in: ["OPEN", "ACKNOWLEDGED"]}},
-      data: {status: "RESOLVED", resolvedAt: now, resolutionMessage: "The latest successful n8n evaluation no longer meets this alert threshold."},
-    });
-    const cancelled = await tx.automationAlertDelivery.updateMany({
-      where: {workspaceId: input.workspaceId, alertEventId: {in: ids}, status: {in: ["PENDING", "RETRY"]}},
+    const resolvedIds: string[] = [];
+    for (const candidate of candidates) {
+      const changed = await tx.automationAlertEvent.updateMany({
+        where: {workspaceId: input.workspaceId, id: candidate.id, status: {in: ["OPEN", "ACKNOWLEDGED"]}},
+        data: {status: "RESOLVED", resolvedAt: now, resolutionMessage: "The latest successful n8n evaluation no longer meets this alert threshold."},
+      });
+      if (changed.count !== 1) continue;
+      resolvedIds.push(candidate.id);
+      await enqueueWorkspaceWebhookEvent(tx, {
+        workspaceId: input.workspaceId,
+        eventType: "automation.alert.resolved",
+        data: {
+          alertId: candidate.id, provider: candidate.provider, alertType: candidate.alertType,
+          severity: candidate.severity, message: candidate.message, observedCount: candidate.observedCount,
+          observedRate: candidate.observedRate, sampleSize: candidate.sampleSize, status: "RESOLVED",
+        },
+      });
+    }
+    const cancelled = resolvedIds.length ? await tx.automationAlertDelivery.updateMany({
+      where: {workspaceId: input.workspaceId, alertEventId: {in: resolvedIds}, status: {in: ["PENDING", "RETRY"]}},
       data: {status: "CANCELLED", lockedAt: null, lastErrorCode: "INCIDENT_RESOLVED"},
-    });
-    if (updated.count) {
+    }) : {count: 0};
+    if (resolvedIds.length) {
       await tx.activityLog.create({
         data: {
           workspaceId: input.workspaceId,
           action: "automation.alerts_auto_resolved",
           entityType: "automation_alert",
-          metadata: {resolvedCount: updated.count, cancelledDeliveries: cancelled.count},
+          metadata: {resolvedCount: resolvedIds.length, cancelledDeliveries: cancelled.count},
         },
       });
     }
-    return {resolved: updated.count, cancelledDeliveries: cancelled.count};
+    return {resolved: resolvedIds.length, cancelledDeliveries: cancelled.count};
   });
 }
 

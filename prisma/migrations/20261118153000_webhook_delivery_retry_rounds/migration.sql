@@ -1,0 +1,2 @@
+ALTER TABLE "WebhookDelivery"
+  ADD COLUMN IF NOT EXISTS "retryAttempts" INTEGER NOT NULL DEFAULT 0;

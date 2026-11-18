@@ -140,6 +140,8 @@ model Workspace {
   aiUsage WorkspaceAIUsage[]
   aiGenerations AIGeneration[]
   websites Website[]
+  webhookSubscriptions WebhookSubscription[]
+  webhookDeliveries WebhookDelivery[]
 }
 
 model WorkspaceInvitation {
@@ -1163,4 +1165,68 @@ model WebsiteIdentity {
   visitor      WebsiteVisitor @relation(fields: [websiteId, visitorId], references: [websiteId, id], onDelete: Cascade)
   @@unique([websiteId, visitorId])
   @@index([websiteId, email])
+}
+
+
+model WebhookSubscription {
+  id                     String   @id @default(cuid())
+  workspaceId            String
+  name                   String
+  endpointUrl            String   @db.Text
+  eventTypes             String[] @default([])
+  signingSecretEncrypted String   @db.Text
+  status                 String   @default("ACTIVE")
+  consecutiveFailures    Int      @default(0)
+  lastDeliveryAt         DateTime?
+  disabledAt             DateTime?
+  createdAt              DateTime @default(now())
+  updatedAt              DateTime @updatedAt
+  workspace              Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  deliveries             WebhookDelivery[]
+  @@unique([workspaceId, id])
+  @@index([workspaceId, status, createdAt])
+}
+
+model WebhookDelivery {
+  id              String   @id @default(cuid())
+  workspaceId     String
+  subscriptionId  String
+  eventId         String
+  eventType       String
+  payload         Json
+  status          String   @default("PENDING")
+  attemptCount    Int      @default(0)
+  retryAttempts   Int      @default(0)
+  nextAttemptAt   DateTime @default(now())
+  lockedAt        DateTime?
+  deliveredAt     DateTime?
+  lastHttpStatus  Int?
+  lastErrorCode   String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  workspace       Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  subscription    WebhookSubscription @relation(fields: [workspaceId, subscriptionId], references: [workspaceId, id], onDelete: Cascade)
+  attempts        WebhookDeliveryAttempt[]
+  @@unique([workspaceId, id])
+  @@unique([workspaceId, subscriptionId, eventId], map: "WebhookDelivery_workspace_subscription_event_key")
+  @@index([status, nextAttemptAt])
+  @@index([workspaceId, status, nextAttemptAt])
+  @@index([workspaceId, createdAt])
+}
+
+model WebhookDeliveryAttempt {
+  id             String   @id @default(cuid())
+  workspaceId    String
+  deliveryId     String
+  attemptNumber  Int
+  status         String
+  httpStatus     Int?
+  errorCode      String?
+  durationMs     Int?
+  startedAt      DateTime @default(now())
+  finishedAt     DateTime?
+  delivery       WebhookDelivery @relation(fields: [workspaceId, deliveryId], references: [workspaceId, id], onDelete: Cascade)
+  @@unique([deliveryId, attemptNumber])
+  @@index([workspaceId, startedAt])
+  @@index([workspaceId, deliveryId, attemptNumber])
 }

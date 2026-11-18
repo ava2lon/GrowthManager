@@ -1,5 +1,6 @@
 import "server-only";
 import {db} from "@/lib/db";
+import {enqueueWorkspaceWebhookEvent} from "@/lib/workspace-webhooks";
 import type {Prisma} from "@prisma/client";
 import {getSocialIncidentEscalationPage} from "@/lib/social-incident-escalation";
 
@@ -38,6 +39,11 @@ async function activate(signal:Signal,now:Date):Promise<"created"|"reopened"|"up
     }
     if(result!=="updated"){
       await tx.activityLog.create({data:{workspaceId:signal.workspaceId,action:result==="reopened"?"social.incident_reopened":"social.incident_created",entityType:"workspace_incident",entityId:incidentId,metadata:{category:signal.category,severity:signal.severity,sourceType:signal.sourceType,occurrence}}});
+      await enqueueWorkspaceWebhookEvent(tx, {
+        workspaceId: signal.workspaceId,
+        eventType: result === "reopened" ? "social.incident.reopened" : "social.incident.created",
+        data: {incidentId, category: signal.category, severity: signal.severity, message: signal.message, occurrence, status: "OPEN"},
+      });
       const admins=await tx.workspaceMembership.findMany({
         where:{workspaceId:signal.workspaceId,role:{in:["OWNER","ADMIN"]}},
         select:{userId:true,user:{select:{email:true}}},
@@ -122,6 +128,11 @@ export async function synchronizeSocialIncidents():Promise<{created:number;reope
       resolved++;
       await db.$transaction(async tx=>{
         await tx.activityLog.create({data:{workspaceId:incident.workspaceId,action:"social.incident_auto_resolved",entityType:"workspace_incident",entityId:incident.id,metadata:{category:incident.category,severity:incident.severity}}});
+        await enqueueWorkspaceWebhookEvent(tx, {
+          workspaceId: incident.workspaceId,
+          eventType: "social.incident.resolved",
+          data: {incidentId: incident.id, category: incident.category, severity: incident.severity, message: incident.message, status: "RESOLVED"},
+        });
         const admins=await tx.workspaceMembership.findMany({where:{workspaceId:incident.workspaceId,role:{in:["OWNER","ADMIN"]}},select:{userId:true,user:{select:{email:true}}}});
       const prefs=await tx.workspaceNotificationPreference.findMany({where:{workspaceId:incident.workspaceId,userId:{in:admins.map(member=>member.userId)}},select:{userId:true,inAppSocialIncidents:true,emailSocialIncidents:true}});
         const byUser=new Map(prefs.map(item=>[item.userId,item]));
