@@ -7,7 +7,7 @@ const RECORD_TTL_MS=24*60*60*1000;
 const PROCESSING_LEASE_MS=2*60*1000;
 type ClaimInput={workspaceId:string;idempotencyKey:string;method:string;route:string;requestBody:string};
 export type IdempotencyClaim=
- | {kind:"ACQUIRED";recordId:string}
+ | {kind:"ACQUIRED";recordId:string;leaseToken:string}
  | {kind:"REPLAY";statusCode:number;body:Prisma.JsonValue}
  | {kind:"CONFLICT"}
  | {kind:"IN_PROGRESS"};
@@ -25,12 +25,13 @@ export async function claimApiIdempotency(input:ClaimInput):Promise<IdempotencyC
     workspaceId:input.workspaceId,idempotencyKey:input.idempotencyKey,method,route,
   }};
   await db.apiIdempotencyRecord.deleteMany({where:{workspaceId:input.workspaceId,idempotencyKey:input.idempotencyKey,method,route,expiresAt:{lte:now}}});
+  const leaseToken=randomUUID();
   try{
     const record=await db.apiIdempotencyRecord.create({data:{
       id:randomUUID(),workspaceId:input.workspaceId,idempotencyKey:input.idempotencyKey,
-      method,route,requestHash,status:"PROCESSING",expiresAt:new Date(now.getTime()+RECORD_TTL_MS),
+      method,route,requestHash,leaseToken,status:"PROCESSING",expiresAt:new Date(now.getTime()+RECORD_TTL_MS),
     },select:{id:true}});
-    return {kind:"ACQUIRED",recordId:record.id};
+    return {kind:"ACQUIRED",recordId:record.id,leaseToken};
   }catch(error){
     if(!isUniqueViolation(error))throw error;
   }
@@ -44,18 +45,19 @@ export async function claimApiIdempotency(input:ClaimInput):Promise<IdempotencyC
   }
   if(existing.status!=="PROCESSING")return {kind:"IN_PROGRESS"};
   const staleBefore=new Date(now.getTime()-PROCESSING_LEASE_MS);
+  const reclaimedLease=randomUUID();
   const reclaimed=await db.apiIdempotencyRecord.updateMany({
     where:{id:existing.id,status:"PROCESSING",updatedAt:{lte:staleBefore}},
-    data:{updatedAt:now},
+    data:{updatedAt:now,leaseToken:reclaimedLease},
   });
-  return reclaimed.count===1?{kind:"ACQUIRED",recordId:existing.id}:{kind:"IN_PROGRESS"};
+  return reclaimed.count===1?{kind:"ACQUIRED",recordId:existing.id,leaseToken:reclaimedLease}:{kind:"IN_PROGRESS"};
 }
 
 export async function completeApiIdempotency(input:{
-  recordId:string;workspaceId:string;statusCode:number;body:Prisma.InputJsonValue;
+  recordId:string;workspaceId:string;leaseToken:string;statusCode:number;body:Prisma.InputJsonValue;
 }):Promise<void>{
   const result=await db.apiIdempotencyRecord.updateMany({
-    where:{id:input.recordId,workspaceId:input.workspaceId,status:"PROCESSING"},
+    where:{id:input.recordId,workspaceId:input.workspaceId,status:"PROCESSING",leaseToken:input.leaseToken},
     data:{status:"COMPLETED",responseStatus:input.statusCode,responseBody:input.body},
   });
   if(result.count!==1)throw new Error("Idempotency claim is no longer owned by this request.");
