@@ -194,6 +194,12 @@ export default async function IntegrationsPage({searchParams}: {searchParams: Pr
         </div>
       </div>
 
+      <div className="flex justify-end">
+        <Link href="/dashboard/integrations/webhooks" className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50">
+          <Plug size={16}/> Manage outbound webhooks
+        </Link>
+      </div>
+
       <section className="rounded-2xl border border-slate-200 bg-white p-5 sm:p-6">
         <div className="flex items-center justify-between gap-3">
           <div><h2 className="font-semibold text-slate-900">Connected services</h2><p className="mt-1 text-sm text-slate-500">Current setup state for this workspace.</p></div>
