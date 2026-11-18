@@ -145,3 +145,18 @@ Content-Type: application/json
 ```
 
 These endpoints expose read and create operations only. Update/delete and campaign social-account assignment remain session-only until their API mutation semantics and integration tests are implemented.
+## Social API
+
+- `GET /api/v1/social/accounts` — requires `social:read`; lists at most 100 workspace-owned social accounts, with optional `brandId`, `provider`, and `status` filters. Credential ciphertext and provider metadata are never returned.
+- `GET /api/v1/social/posts` — requires `social:read`; lists workspace-owned publishing targets with bounded pagination and optional `status`, `provider`, and `brandId` filters. Content and account fields are limited to safe display fields.
+
+## Analytics API
+
+- `GET /api/v1/analytics` — requires `analytics:read`; returns stored provider analytics snapshots for the previous 1–90 UTC calendar days (default 30), optionally filtered by `socialAccountId`. The response is capped at 500 records and exposes normalized metrics, not raw provider responses or credentials. `truncated` indicates the cap was reached.
+
+## Outbound webhook read API
+
+- `GET /api/v1/webhooks` — requires `webhooks:read`; lists at most 100 workspace subscriptions and delivery counts. Signing-secret ciphertext and endpoint URL are not returned.
+- `GET /api/v1/webhooks/{subscriptionId}/deliveries` — requires `webhooks:read`; lists deliveries belonging to that workspace subscription, with bounded pagination and an optional persisted delivery `status` filter. Attempt response bodies and signing secrets are not returned.
+
+These are read-only API surfaces. Subscription creation, pause/resume, secret rotation, and manual redelivery remain available through the existing administrator dashboard actions; API-key mutation routes are not exposed until their security and idempotency contracts are implemented and tested.
