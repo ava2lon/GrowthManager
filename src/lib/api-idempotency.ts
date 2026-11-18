@@ -62,3 +62,8 @@ export async function completeApiIdempotency(input:{
   });
   if(result.count!==1)throw new Error("Idempotency claim is no longer owned by this request.");
 }
+
+export async function releaseApiIdempotencyClaim(input:{recordId:string|null;workspaceId:string;leaseToken:string|null}):Promise<void>{
+  if(!input.recordId||!input.leaseToken)return;
+  await db.apiIdempotencyRecord.deleteMany({where:{id:input.recordId,workspaceId:input.workspaceId,status:"PROCESSING",leaseToken:input.leaseToken}});
+}
