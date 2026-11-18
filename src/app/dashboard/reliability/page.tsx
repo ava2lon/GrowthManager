@@ -7,7 +7,7 @@ function count(rows:Array<{status:string;_count:{_all:number}}>,status:string){r
 export default async function ReliabilityPage(){
  const {workspace}=await requireWorkspaceContext();
  const since=new Date(Date.now()-7*86400000);
- const [accounts,targets,executions,integration,latestSync,incidents]=await Promise.all([
+ const [accounts,targets,executions,integration,latestSync,incidents,automationIncidents]=await Promise.all([
   db.socialAccount.groupBy({by:["status"],where:{workspaceId:workspace.id},_count:{_all:true}}),
   db.socialPostTarget.groupBy({by:["status"],where:{workspaceId:workspace.id,updatedAt:{gte:since}},_count:{_all:true}}),
   db.n8nExecutionSnapshot.groupBy({by:["status"],where:{workspaceId:workspace.id,startedAt:{gte:since}},_count:{_all:true}}),
