@@ -26,6 +26,7 @@ type Delivery = {
 };
 
 const eventOptions = [
+  ["*", "All supported events"],
   ["social.incident.created", "Social incident created"],
   ["social.incident.reopened", "Social incident reopened"],
   ["social.incident.resolved", "Social incident resolved"],
