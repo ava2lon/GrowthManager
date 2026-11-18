@@ -29,7 +29,7 @@ export async function authenticateApiKey(request:Request,requiredScope:ApiKeySco
   }
   const limit=await consumeRateLimit(`api-key:${record.workspaceId}:${record.id}`,300,60);
   if(!limit.allowed){
-    return {context:null,response:new Response(JSON.stringify({error:{code:"RATE_LIMITED",message:"API rate limit exceeded.",request_id:requestId}}),{
+    return {context:null,response:new Response(JSON.stringify({error:{code:limit.unavailable||!limit.configured?"INTERNAL_ERROR":"RATE_LIMITED",message:limit.unavailable||!limit.configured?"API rate limiting is temporarily unavailable.":"API rate limit exceeded.",request_id:requestId}}),{
       status:limit.unavailable||!limit.configured?503:429,headers:{"Content-Type":"application/json","Cache-Control":"no-store","Retry-After":String(Math.max(1,limit.retryAfter)),"X-Request-Id":requestId},
     })};
   }
