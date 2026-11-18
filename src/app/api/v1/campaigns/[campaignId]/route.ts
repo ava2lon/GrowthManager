@@ -108,8 +108,8 @@ export async function DELETE(request:Request,{params}:CampaignContext){
   const responseBody=await db.$transaction(async tx=>{
    const campaign=await tx.campaign.findFirst({where:{id:campaignId,workspaceId},select:{id:true}});
    if(!campaign)throw Object.assign(new Error("CAMPAIGN_NOT_FOUND"),{code:"CAMPAIGN_NOT_FOUND"});
-   const linkedContent=await tx.contentPost.count({where:{workspaceId,campaignId}});
-   if(linkedContent>0)throw Object.assign(new Error("CAMPAIGN_HAS_CONTENT"),{code:"CAMPAIGN_HAS_CONTENT"});
+   const [linkedContent,linkedGenerations]=await Promise.all([tx.contentPost.count({where:{workspaceId,campaignId}}),tx.aIGeneration.count({where:{workspaceId,campaignId}})]);
+   if(linkedContent>0||linkedGenerations>0)throw Object.assign(new Error("CAMPAIGN_HAS_DEPENDENCIES"),{code:"CAMPAIGN_HAS_DEPENDENCIES"});
    const deleted=await tx.campaign.deleteMany({where:{id:campaignId,workspaceId}});
    if(deleted.count!==1)throw Object.assign(new Error("CAMPAIGN_NOT_FOUND"),{code:"CAMPAIGN_NOT_FOUND"});
    await tx.activityLog.create({data:{workspaceId,action:"campaign.deleted",entityType:"Campaign",entityId:campaignId,metadata:{source:"api_key"}}});
@@ -123,7 +123,7 @@ export async function DELETE(request:Request,{params}:CampaignContext){
  }catch(error){
   if(claim)await releaseApiIdempotencyClaim({recordId:claim!.recordId,workspaceId:claim!.workspaceId,leaseToken:claim!.leaseToken}).catch(()=>undefined);
   if(error instanceof Error&&error.message==="CAMPAIGN_NOT_FOUND")return apiErrorResponse("NOT_FOUND","Campaign not found.",404,requestId);
-  if(error instanceof Error&&error.message==="CAMPAIGN_HAS_CONTENT")return apiErrorResponse("CONFLICT","Campaign cannot be deleted while content posts are linked to it. Reassign or remove those posts first.",409,requestId);
+  if(error instanceof Error&&error.message==="CAMPAIGN_HAS_DEPENDENCIES")return apiErrorResponse("CONFLICT","Campaign cannot be deleted while content posts or AI generation records are linked to it. Reassign or remove those dependencies first.",409,requestId);
   return internalApiErrorResponse(requestId);
  }
 }
