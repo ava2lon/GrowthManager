@@ -1,5 +1,5 @@
 import "server-only";
-import {timingSafeEqual} from "node:crypto";
+import {randomUUID,timingSafeEqual} from "node:crypto";
 import {db} from "@/lib/db";
 import {consumeRateLimit} from "@/lib/rate-limit";
 import {apiErrorResponse} from "@/lib/api-response";
@@ -13,7 +13,7 @@ function constantTimeHexEqual(left:string,right:string){
   return timingSafeEqual(Buffer.from(left,"hex"),Buffer.from(right,"hex"));
 }
 export async function authenticateApiKey(request:Request,requiredScope:ApiKeyScope):Promise<ApiKeyAuthResult>{
-  const requestId=request.headers.get("x-request-id")||crypto.randomUUID();
+  const requestId=request.headers.get("x-request-id")||randomUUID();
   const authorization=request.headers.get("authorization")||"";
   const match=/^Bearer (gm_live_([a-f0-9]{12})_[A-Za-z0-9_-]{43})$/.exec(authorization);
   if(!match)return {context:null,response:apiErrorResponse("UNAUTHENTICATED","A valid API key is required.",401,requestId)};
@@ -30,7 +30,7 @@ export async function authenticateApiKey(request:Request,requiredScope:ApiKeySco
   const limit=await consumeRateLimit(`api-key:${record.workspaceId}:${record.id}`,300,60);
   if(!limit.allowed){
     return {context:null,response:new Response(JSON.stringify({error:{code:"RATE_LIMITED",message:"API rate limit exceeded.",request_id:requestId}}),{
-      status:limit.unavailable?503:429,headers:{"Content-Type":"application/json","Cache-Control":"no-store","Retry-After":String(Math.max(1,limit.retryAfter)),"X-Request-Id":requestId},
+      status:limit.unavailable||!limit.configured?503:429,headers:{"Content-Type":"application/json","Cache-Control":"no-store","Retry-After":String(Math.max(1,limit.retryAfter)),"X-Request-Id":requestId},
     })};
   }
   await db.workspaceApiKey.updateMany({where:{id:record.id,workspaceId:record.workspaceId,revokedAt:null},data:{lastUsedAt:new Date()}});
