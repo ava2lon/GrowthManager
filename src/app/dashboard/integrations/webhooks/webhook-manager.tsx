@@ -7,7 +7,7 @@ import {
   resumeWorkspaceWebhookSubscription,
   rotateWorkspaceWebhookSigningSecret,
   redeliverWorkspaceWebhookDelivery,
-} from "./webhook-actions";
+} from "../webhook-actions";
 
 type Subscription = {
   id: string; name: string; endpointUrl: string; eventTypes: string[]; status: string;
