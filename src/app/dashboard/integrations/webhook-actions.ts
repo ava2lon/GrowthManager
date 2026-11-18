@@ -7,6 +7,7 @@ import {db} from "@/lib/db";
 import {consumeRateLimit} from "@/lib/rate-limit";
 import {createWebhookSigningSecret, encryptWebhookSigningSecret} from "@/lib/webhook-secret-crypto";
 import {resolveSafeWebhookEndpoint} from "@/lib/webhook-endpoint-security";
+import {WORKSPACE_WEBHOOK_EVENT_TYPES} from "@/lib/workspace-webhooks";
 
 const WEBHOOK_PATH = "/dashboard/integrations/webhooks";
 
@@ -32,7 +33,7 @@ export async function createWorkspaceWebhookSubscription(formData: FormData) {
 
   if (!name || name.length > 80 || !endpointUrl || endpointUrl.length > 2048 ||
       eventTypes.length < 1 || eventTypes.length > 30 ||
-      eventTypes.some((eventType) => !/^[a-z][a-z0-9_.-]{1,99}$/.test(eventType))) {
+      eventTypes.some((eventType) => !(WORKSPACE_WEBHOOK_EVENT_TYPES as readonly string[]).includes(eventType))) {
     throw new Error("Enter a valid name, HTTPS endpoint, and between 1 and 30 event types.");
   }
 
