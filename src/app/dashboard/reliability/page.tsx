@@ -7,13 +7,14 @@ function count(rows:Array<{status:string;_count:{_all:number}}>,status:string){r
 export default async function ReliabilityPage(){
  const {workspace}=await requireWorkspaceContext();
  const since=new Date(Date.now()-7*86400000);
- const [accounts,targets,executions,integration,latestSync,incidents]=await Promise.all([
+ const [accounts,targets,executions,integration,latestSync,incidents,automationIncidents]=await Promise.all([
   db.socialAccount.groupBy({by:["status"],where:{workspaceId:workspace.id},_count:{_all:true}}),
   db.socialPostTarget.groupBy({by:["status"],where:{workspaceId:workspace.id,updatedAt:{gte:since}},_count:{_all:true}}),
   db.n8nExecutionSnapshot.groupBy({by:["status"],where:{workspaceId:workspace.id,startedAt:{gte:since}},_count:{_all:true}}),
   db.integration.findFirst({where:{workspaceId:workspace.id,provider:"n8n"},select:{status:true,updatedAt:true}}),
   db.n8nExecutionSnapshot.findFirst({where:{workspaceId:workspace.id},orderBy:{syncedAt:"desc"},select:{syncedAt:true}}),
   db.workspaceIncident.groupBy({by:["severity","status"],where:{workspaceId:workspace.id},_count:{_all:true}}),
+  db.automationAlertEvent.groupBy({by:["severity","status"],where:{workspaceId:workspace.id},_count:{_all:true}}),
  ]);
  const totalRuns=executions.reduce((n,row)=>n+row._count._all,0);
  const failedRuns=count(executions,"error")+count(executions,"crashed")+count(executions,"ERROR")+count(executions,"CRASHED");
@@ -21,7 +22,7 @@ export default async function ReliabilityPage(){
  const connected=count(accounts,"CONNECTED");
  const publishingTotal=targets.reduce((n,row)=>n+row._count._all,0);
  const publishingFailed=count(targets,"FAILED")+count(targets,"UNKNOWN");
- const criticalOpen=incidents.filter(row=>row.severity==="CRITICAL"&&row.status!=="RESOLVED").reduce((n,row)=>n+row._count._all,0);
+ const criticalOpen=[...incidents,...automationIncidents].filter(row=>row.severity==="CRITICAL"&&row.status!=="RESOLVED").reduce((n,row)=>n+row._count._all,0);
  const failureRate=totalRuns?Math.round(failedRuns/totalRuns*1000)/10:0;
  const syncAge=latestSync?Date.now()-latestSync.syncedAt.getTime():null;
  const syncLabel=syncAge===null?"No execution sync recorded":syncAge<3600000?Math.round(syncAge/60000)+" min ago":Math.round(syncAge/3600000)+" hr ago";
