@@ -33,6 +33,7 @@ export async function authenticateApiKey(request:Request,requiredScope:ApiKeySco
       status:limit.unavailable||!limit.configured?503:429,headers:{"Content-Type":"application/json","Cache-Control":"no-store","Retry-After":String(Math.max(1,limit.retryAfter)),"X-Request-Id":requestId},
     })};
   }
-  await db.workspaceApiKey.updateMany({where:{id:record.id,workspaceId:record.workspaceId,revokedAt:null},data:{lastUsedAt:new Date()}});
+  const usage=await db.workspaceApiKey.updateMany({where:{id:record.id,workspaceId:record.workspaceId,revokedAt:null,OR:[{expiresAt:null},{expiresAt:{gt:new Date()}}]},data:{lastUsedAt:new Date()}});
+  if(usage.count!==1)return {context:null,response:apiErrorResponse("UNAUTHENTICATED","A valid API key is required.",401,requestId)};
   return {context:{workspaceId:record.workspaceId,apiKeyId:record.id,scopes:record.scopes},response:null};
 }
