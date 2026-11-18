@@ -82,7 +82,7 @@ export async function PATCH(request:Request,{params}:Context){
   }
   const idempotency=await claimMutation(request,{workspaceId,method:"PATCH",route:`/api/v1/websites/${websiteId}`,body:rawBody,apiKey:auth.apiKey},requestId);
   if(idempotency.response)return idempotency.response;
-  let responseBody;
+  let responseBody:unknown;
   try{
    responseBody=await db.$transaction(async tx=>{
    const updated=await tx.website.updateMany({where:{id:websiteId,workspaceId},data});
@@ -119,7 +119,7 @@ export async function DELETE(request:Request,{params}:Context){
   const rawBody="";
   const idempotency=await claimMutation(request,{workspaceId,method:"DELETE",route:`/api/v1/websites/${websiteId}`,body:rawBody,apiKey:auth.apiKey},requestId);
   if(idempotency.response)return idempotency.response;
-  let responseBody;
+  let responseBody:unknown;
   try{
    responseBody=await db.$transaction(async tx=>{
    const deleted=await tx.website.deleteMany({where:{id:websiteId,workspaceId}});
