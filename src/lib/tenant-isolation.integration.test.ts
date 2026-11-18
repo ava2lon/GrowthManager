@@ -155,6 +155,76 @@ integration("PostgreSQL tenant isolation constraints", () => {
     expect(await prisma.websiteIdentity.count({where: {websiteId: websiteA.id}})).toBe(0);
   });
 
+  it("enforces workspace isolation for webhook subscriptions, deliveries, and attempts", async () => {
+    const [subscriptionA, subscriptionB] = await Promise.all([
+      prisma.webhookSubscription.create({
+        data: {
+          workspaceId: workspaceA.id,
+          name: "Tenant A webhook",
+          endpointUrl: "https://tenant-a.example.test/webhook",
+          eventTypes: ["social.incident.created"],
+          signingSecretEncrypted: "encrypted-test-secret-a",
+        },
+        select: {id: true},
+      }),
+      prisma.webhookSubscription.create({
+        data: {
+          workspaceId: workspaceB.id,
+          name: "Tenant B webhook",
+          endpointUrl: "https://tenant-b.example.test/webhook",
+          eventTypes: ["social.incident.created"],
+          signingSecretEncrypted: "encrypted-test-secret-b",
+        },
+        select: {id: true},
+      }),
+    ]);
+    const deliveryB = await prisma.webhookDelivery.create({
+      data: {
+        workspaceId: workspaceB.id,
+        subscriptionId: subscriptionB.id,
+        eventId: randomUUID(),
+        eventType: "social.incident.created",
+        payload: {id: "tenant-b-event"},
+      },
+      select: {id: true},
+    });
+
+    await expect(prisma.webhookDelivery.create({
+      data: {
+        workspaceId: workspaceA.id,
+        subscriptionId: subscriptionB.id,
+        eventId: randomUUID(),
+        eventType: "social.incident.created",
+        payload: {id: "cross-tenant-event"},
+      },
+    })).rejects.toMatchObject({code: "P2003"});
+
+    await expect(prisma.webhookDeliveryAttempt.create({
+      data: {
+        workspaceId: workspaceA.id,
+        deliveryId: deliveryB.id,
+        attemptNumber: 1,
+        status: "PROCESSING",
+      },
+    })).rejects.toMatchObject({code: "P2003"});
+
+    const validDelivery = await prisma.webhookDelivery.create({
+      data: {
+        workspaceId: workspaceA.id,
+        subscriptionId: subscriptionA.id,
+        eventId: randomUUID(),
+        eventType: "social.incident.created",
+        payload: {id: "tenant-a-event"},
+      },
+      select: {id: true},
+    });
+    await prisma.webhookDeliveryAttempt.create({
+      data: {workspaceId: workspaceA.id, deliveryId: validDelivery.id, attemptNumber: 1, status: "DELIVERED"},
+    });
+    expect(await prisma.webhookDelivery.count({where: {workspaceId: workspaceA.id}})).toBe(1);
+    expect(await prisma.webhookDelivery.count({where: {workspaceId: workspaceB.id}})).toBe(1);
+  });
+
   it("rejects a social account whose brand belongs to another workspace", async () => {
     await expect(
       prisma.socialAccount.create({
