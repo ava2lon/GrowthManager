@@ -82,7 +82,9 @@ export async function PATCH(request:Request,{params}:Context){
   }
   const idempotency=await claimMutation(request,{workspaceId,method:"PATCH",route:`/api/v1/websites/${websiteId}`,body:rawBody,apiKey:auth.apiKey},requestId);
   if(idempotency.response)return idempotency.response;
-  const responseBody=await db.$transaction(async tx=>{
+  let responseBody;
+  try{
+   responseBody=await db.$transaction(async tx=>{
    const updated=await tx.website.updateMany({where:{id:websiteId,workspaceId},data});
    if(updated.count!==1)throw Object.assign(new Error("WEBSITE_NOT_FOUND"),{code:"WEBSITE_NOT_FOUND"});
    const website=await tx.website.findFirst({where:{id:websiteId,workspaceId},select:{id:true,name:true,domain:true,description:true,status:true,trackingEnabled:true,trackingId:true,updatedAt:true}});
@@ -94,7 +96,11 @@ export async function PATCH(request:Request,{params}:Context){
     if(completed.count!==1)throw new Error("Idempotency claim was lost before commit.");
    }
    return result;
-  });
+   });
+  }catch(error){
+   await releaseMutationClaim({recordId:idempotency.recordId,leaseToken:idempotency.leaseToken,workspaceId});
+   throw error;
+  }
   return NextResponse.json(responseBody,{headers:{"Cache-Control":"no-store","X-Request-Id":requestId}});
  }catch(error){
   if(error instanceof Error&&error.message==="WEBSITE_NOT_FOUND")return apiErrorResponse("NOT_FOUND","Website not found.",404,requestId);
@@ -113,7 +119,9 @@ export async function DELETE(request:Request,{params}:Context){
   const rawBody="";
   const idempotency=await claimMutation(request,{workspaceId,method:"DELETE",route:`/api/v1/websites/${websiteId}`,body:rawBody,apiKey:auth.apiKey},requestId);
   if(idempotency.response)return idempotency.response;
-  const responseBody=await db.$transaction(async tx=>{
+  let responseBody;
+  try{
+   responseBody=await db.$transaction(async tx=>{
    const deleted=await tx.website.deleteMany({where:{id:websiteId,workspaceId}});
    if(deleted.count!==1)throw Object.assign(new Error("WEBSITE_NOT_FOUND"),{code:"WEBSITE_NOT_FOUND"});
    await tx.activityLog.create({data:{workspaceId,userId:auth.userId,action:"website.deleted",entityType:"Website",entityId:websiteId,metadata:{source:auth.apiKey?"api_key":"session"}}});
@@ -123,7 +131,11 @@ export async function DELETE(request:Request,{params}:Context){
     if(completed.count!==1)throw new Error("Idempotency claim was lost before commit.");
    }
    return result;
-  });
+   });
+  }catch(error){
+   await releaseMutationClaim({recordId:idempotency.recordId,leaseToken:idempotency.leaseToken,workspaceId});
+   throw error;
+  }
   return NextResponse.json(responseBody,{headers:{"Cache-Control":"no-store","X-Request-Id":requestId}});
  }catch(error){
   if(error instanceof Error&&error.message==="WEBSITE_NOT_FOUND")return apiErrorResponse("NOT_FOUND","Website not found.",404,requestId);
