@@ -26,15 +26,11 @@ type Delivery = {
 };
 
 const eventOptions = [
-  ["content.post.created", "Content post created"],
-  ["content.post.updated", "Content post updated"],
-  ["content.post.published", "Content post published"],
-  ["content.post.failed", "Content post failed"],
   ["social.incident.created", "Social incident created"],
+  ["social.incident.reopened", "Social incident reopened"],
   ["social.incident.resolved", "Social incident resolved"],
   ["automation.alert.created", "Automation alert created"],
   ["automation.alert.resolved", "Automation alert resolved"],
-  ["website.event.received", "Website event received"],
 ] as const;
 
 export function WebhookManager({canManage, subscriptions, deliveries}: {
