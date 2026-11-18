@@ -33,7 +33,7 @@ export async function createWorkspaceWebhookSubscription(formData: FormData) {
 
   if (!name || name.length > 80 || !endpointUrl || endpointUrl.length > 2048 ||
       eventTypes.length < 1 || eventTypes.length > 30 ||
-      eventTypes.some((eventType) => !(WORKSPACE_WEBHOOK_EVENT_TYPES as readonly string[]).includes(eventType))) {
+      eventTypes.some((eventType) => eventType !== "*" && !(WORKSPACE_WEBHOOK_EVENT_TYPES as readonly string[]).includes(eventType))) {
     throw new Error("Enter a valid name, HTTPS endpoint, and between 1 and 30 event types.");
   }
 
