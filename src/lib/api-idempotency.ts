@@ -24,7 +24,7 @@ export async function claimApiIdempotency(input:ClaimInput):Promise<IdempotencyC
   const where={workspaceId_idempotencyKey_method_route:{
     workspaceId:input.workspaceId,idempotencyKey:input.idempotencyKey,method,route,
   }};
-  await db.apiIdempotencyRecord.deleteMany({where:{...where,expiresAt:{lte:now}}});
+  await db.apiIdempotencyRecord.deleteMany({where:{workspaceId:input.workspaceId,idempotencyKey:input.idempotencyKey,method,route,expiresAt:{lte:now}}});
   try{
     const record=await db.apiIdempotencyRecord.create({data:{
       id:randomUUID(),workspaceId:input.workspaceId,idempotencyKey:input.idempotencyKey,
@@ -40,7 +40,7 @@ export async function claimApiIdempotency(input:ClaimInput):Promise<IdempotencyC
   if(!existing)return {kind:"IN_PROGRESS"};
   if(existing.requestHash!==requestHash)return {kind:"CONFLICT"};
   if(existing.status==="COMPLETED"&&existing.responseStatus!==null){
-    return {kind:"REPLAY",statusCode:existing.responseStatus,body:existing.responseBody??Prisma.JsonNull};
+    return {kind:"REPLAY",statusCode:existing.responseStatus,body:existing.responseBody??null};
   }
   if(existing.status!=="PROCESSING")return {kind:"IN_PROGRESS"};
   const staleBefore=new Date(now.getTime()-PROCESSING_LEASE_MS);
