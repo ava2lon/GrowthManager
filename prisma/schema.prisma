@@ -1272,3 +1272,12 @@ model WebhookDeliveryAttempt {
   @@index([workspaceId, startedAt])
   @@index([workspaceId, deliveryId, attemptNumber])
 }
+
+model SocialIncidentSyncState {
+  phase      String   @id
+  cursor     String?
+  leaseToken String?
+  leaseUntil DateTime?
+  updatedAt  DateTime @updatedAt
+  @@index([leaseUntil])
+}
