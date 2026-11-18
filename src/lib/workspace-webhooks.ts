@@ -3,6 +3,14 @@ import {randomUUID} from "node:crypto";
 import {Prisma} from "@prisma/client";
 import {db} from "@/lib/db";
 
+export const WORKSPACE_WEBHOOK_EVENT_TYPES = [
+  "social.incident.created",
+  "social.incident.reopened",
+  "social.incident.resolved",
+  "automation.alert.created",
+  "automation.alert.resolved",
+] as const;
+
 export type WorkspaceWebhookEventInput = {
   workspaceId: string;
   eventType: string;
@@ -13,7 +21,7 @@ export type WorkspaceWebhookEventInput = {
 
 function validateInput(input: WorkspaceWebhookEventInput) {
   if (!input.workspaceId || input.workspaceId.length > 128) throw new Error("Invalid webhook workspace.");
-  if (!/^[a-z][a-z0-9_.-]{1,99}$/.test(input.eventType)) throw new Error("Invalid webhook event type.");
+  if (!(WORKSPACE_WEBHOOK_EVENT_TYPES as readonly string[]).includes(input.eventType)) throw new Error("Unsupported webhook event type.");
   if (input.eventId !== undefined && (!/^[A-Za-z0-9_-]{8,128}$/.test(input.eventId))) {
     throw new Error("Invalid webhook event identifier.");
   }
