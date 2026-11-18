@@ -31,6 +31,8 @@ export async function POST(request:Request){
  const requestId=createRequestId();
  try{
   const bearer=request.headers.get("authorization")?.startsWith("Bearer ")??false;
+  const rawBody=await request.text();
+  const parsedBody=(()=>{try{return JSON.parse(rawBody) as unknown;}catch{return null;}})();
   let workspaceId:string;
   let userId:string|null=null;
   if(bearer){
@@ -62,7 +64,7 @@ export async function POST(request:Request){
    const created=await tx.website.create({data:{workspaceId,name:parsed.data.name,domain,description:parsed.data.description||null,trackingId},select:{id:true,name:true,domain:true,description:true,status:true,trackingEnabled:true,trackingId:true,createdAt:true}});
    await tx.activityLog.create({data:{workspaceId,userId,action:"website.created",entityType:"Website",entityId:created.id,metadata:{domain,source:bearer?"api_key":"session"}}});
    if(idempotencyRecordId){
-    const responseBody={data:created,request_id:requestId};
+    const responseBody={data:{...created,createdAt:created.createdAt.toISOString()},request_id:requestId};
     const completed=await tx.apiIdempotencyRecord.updateMany({where:{id:idempotencyRecordId,workspaceId,status:"PROCESSING"},data:{status:"COMPLETED",responseStatus:201,responseBody}});
     if(completed.count!==1)throw new Error("Idempotency claim was lost before commit.");
    }
