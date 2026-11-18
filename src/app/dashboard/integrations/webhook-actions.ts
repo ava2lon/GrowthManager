@@ -123,7 +123,7 @@ export async function redeliverWorkspaceWebhookDelivery(formData: FormData) {
   if (!/^[A-Za-z0-9_-]{8,128}$/.test(deliveryId)) throw new Error("Invalid webhook delivery.");
   await enforceWebhookAdminLimit(context.workspace.id, context.userId, "redeliver");
   const changed = await db.webhookDelivery.updateMany({
-    where: {id: deliveryId, workspaceId: context.workspace.id, status: "FAILED"},
+    where: {id: deliveryId, workspaceId: context.workspace.id, status: "FAILED", subscription: {status: "ACTIVE", disabledAt: null}},
     data: {
       status: "PENDING",
       retryAttempts: 0,
