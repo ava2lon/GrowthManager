@@ -47,7 +47,7 @@ async function readBoundedBody(request:Request,maxBytes:number):Promise<BoundedB
   body.set(chunk,offset);
   offset+=chunk.byteLength;
  }
- return {kind:"OK",text:new TextDecoder("utf-8",{fatal:true}).decode(body)};
+ return {kind:"OK",text:new TextDecoder("utf-8").decode(body)};
 }
 
 export async function GET(request:Request){
