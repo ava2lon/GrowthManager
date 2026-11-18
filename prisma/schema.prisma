@@ -1196,6 +1196,7 @@ model WebhookDelivery {
   payload         Json
   status          String   @default("PENDING")
   attemptCount    Int      @default(0)
+  retryAttempts   Int      @default(0)
   nextAttemptAt   DateTime @default(now())
   lockedAt        DateTime?
   deliveredAt     DateTime?
