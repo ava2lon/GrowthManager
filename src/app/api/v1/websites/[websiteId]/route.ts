@@ -3,11 +3,17 @@ import {db} from "@/lib/db";
 import {apiErrorResponse,createRequestId,internalApiErrorResponse} from "@/lib/api-response";
 import {getWebsiteWorkspaceContext,websiteRoleCanManage} from "@/lib/websites/access";
 import {normalizeWebsiteDomain,websitePatchSchema} from "@/lib/websites/validation";
+import {authenticateApiKey} from "@/lib/api-key-auth";
 export const runtime="nodejs";export const dynamic="force-dynamic";
 type Context={params:Promise<{websiteId:string}>};
-export async function GET(_request:Request,{params}:Context){
- const requestId=createRequestId();try{const c=await getWebsiteWorkspaceContext();if(!c)return apiErrorResponse("UNAUTHENTICATED","Authentication required.",401,requestId);const {websiteId}=await params;
- const w=await db.website.findFirst({where:{id:websiteId,workspaceId:c.workspace.id},include:{_count:{select:{events:true,visitors:true,sessions:true}}}});if(!w)return apiErrorResponse("NOT_FOUND","Website not found.",404,requestId);
+export async function GET(request:Request,{params}:Context){
+ const requestId=createRequestId();try{
+ const bearer=request.headers.get("authorization")?.startsWith("Bearer ")??false;
+ let workspaceId:string;
+ if(bearer){const auth=await authenticateApiKey(request,"websites:read");if(!auth.context)return auth.response;workspaceId=auth.context.workspaceId;}
+ else{const c=await getWebsiteWorkspaceContext();if(!c)return apiErrorResponse("UNAUTHENTICATED","Authentication required.",401,requestId);workspaceId=c.workspace.id;}
+ const {websiteId}=await params;
+ const w=await db.website.findFirst({where:{id:websiteId,workspaceId},include:{_count:{select:{events:true,visitors:true,sessions:true}}}});if(!w)return apiErrorResponse("NOT_FOUND","Website not found.",404,requestId);
  const recent=await db.websiteEvent.findFirst({where:{websiteId,timestamp:{gte:new Date(Date.now()-15*60*1000)}},select:{timestamp:true},orderBy:{timestamp:"desc"}});
  return NextResponse.json({data:{id:w.id,name:w.name,domain:w.domain,description:w.description,status:w.status,trackingEnabled:w.trackingEnabled,trackingId:w.trackingId,eventCount:w._count.events,visitorCount:w._count.visitors,sessionCount:w._count.sessions,lastEventAt:recent?.timestamp??null,verificationStatus:w.status!=="ACTIVE"||!w.trackingEnabled?"PAUSED":recent?"RECEIVING":"NOT_DETECTED"},request_id:requestId},{headers:{"Cache-Control":"no-store","X-Request-Id":requestId}});
  }catch{return internalApiErrorResponse(requestId);}
