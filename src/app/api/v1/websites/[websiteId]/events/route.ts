@@ -3,11 +3,17 @@ import {db} from "@/lib/db";
 import {apiErrorResponse,createRequestId,internalApiErrorResponse} from "@/lib/api-response";
 import {getWebsiteWorkspaceContext} from "@/lib/websites/access";
 import {WEBSITE_EVENTS_DEFAULT_PAGE_SIZE,WEBSITE_EVENTS_MAX_PAGE_SIZE} from "@/lib/websites/config";
+import {authenticateApiKey} from "@/lib/api-key-auth";
 export const dynamic="force-dynamic";
 type Context={params:Promise<{websiteId:string}>};
 export async function GET(request:Request,{params}:Context){
- const requestId=createRequestId();try{const c=await getWebsiteWorkspaceContext();if(!c)return apiErrorResponse("UNAUTHENTICATED","Authentication required.",401,requestId);const {websiteId}=await params;
- const exists=await db.website.findFirst({where:{id:websiteId,workspaceId:c.workspace.id},select:{id:true}});if(!exists)return apiErrorResponse("NOT_FOUND","Website not found.",404,requestId);
+ const requestId=createRequestId();try{
+ const bearer=request.headers.get("authorization")?.startsWith("Bearer ")??false;
+ let workspaceId:string;
+ if(bearer){const auth=await authenticateApiKey(request,"websites:read");if(!auth.context)return auth.response;workspaceId=auth.context.workspaceId;}
+ else{const c=await getWebsiteWorkspaceContext();if(!c)return apiErrorResponse("UNAUTHENTICATED","Authentication required.",401,requestId);workspaceId=c.workspace.id;}
+ const {websiteId}=await params;
+ const exists=await db.website.findFirst({where:{id:websiteId,workspaceId},select:{id:true}});if(!exists)return apiErrorResponse("NOT_FOUND","Website not found.",404,requestId);
  const url=new URL(request.url),page=Math.max(1,Math.min(100000,Number(url.searchParams.get("page"))||1)),limit=Math.max(1,Math.min(WEBSITE_EVENTS_MAX_PAGE_SIZE,Number(url.searchParams.get("limit"))||WEBSITE_EVENTS_DEFAULT_PAGE_SIZE));
  const sort=url.searchParams.get("sort")==="asc"?"asc":"desc",event=url.searchParams.get("event")?.slice(0,100),type=url.searchParams.get("type")?.slice(0,32),from=url.searchParams.get("from"),to=url.searchParams.get("to"),q=url.searchParams.get("q")?.trim().slice(0,100);
  const where={websiteId,...(event?{eventName:event}:{}),...(type?{eventType:type}:{}),...(from&&Number.isFinite(Date.parse(from))?{timestamp:{gte:new Date(from)}}:{}),...(to&&Number.isFinite(Date.parse(to))?{timestamp:{...(from&&Number.isFinite(Date.parse(from))?{gte:new Date(from)}:{}),lte:new Date(to)}}:{}),...(q?{OR:[{eventName:{contains:q,mode:"insensitive" as const}},{pagePath:{contains:q,mode:"insensitive" as const}}]}:{})};
