@@ -39,6 +39,10 @@ export async function enqueueWorkspaceWebhookEvent(
   input: WorkspaceWebhookEventInput,
 ): Promise<{eventId: string; queued: number}> {
   const {eventId, occurredAt} = validateInput(input);
+  const serializedData = JSON.stringify(input.data);
+  if (typeof serializedData !== "string" || Buffer.byteLength(serializedData, "utf8") > 256 * 1024) {
+    throw new Error("Webhook event data exceeds the 256 KB payload limit.");
+  }
   const subscriptions = await tx.webhookSubscription.findMany({
     where: {
       workspaceId: input.workspaceId,
