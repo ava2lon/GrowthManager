@@ -1,50 +1,93 @@
-# API standards and implementation status
+# GrowthManager API
 
-## Current status
+## Implementation status
 
-The repository has internal Route Handlers for authentication, registration, integrations, media, AI, cron jobs and provider webhooks. Phase 2 implements authenticated website management and public website event ingestion under `/api/v1`. Workspace API-key authentication and the broader public resource API remain unimplemented.
+The API supports authenticated website management through browser sessions and workspace API keys. API keys are workspace-scoped, stored as SHA-256 hashes, explicitly scoped, revocable, optionally expiring, and rate-limited through the shared Redis rate-limit service. Website creation through an API key requires an idempotency key.
 
-## Planned base path
+The API key management endpoints are session-authenticated and restricted to workspace OWNER/ADMIN members:
+- `GET /api/v1/keys` — list metadata for workspace keys (never returns secrets).
+- `POST /api/v1/keys` — create a key; the raw secret is returned once.
+- `DELETE /api/v1/keys/:keyId` — revoke an active key.
 
-Implemented Phase 2 routes: `GET/POST /api/v1/websites`, `GET/PATCH/DELETE /api/v1/websites/:websiteId`, `GET /api/v1/websites/:websiteId/events`, `GET /api/v1/websites/:websiteId/stats`, and public `POST /api/v1/track`. Website dashboard routes use the authenticated workspace context. Other resource groups and API-key authentication remain planned.
+Supported scopes:
+- `websites:read` — read workspace website records and related read endpoints where implemented.
+- `websites:write` — create and modify website resources where implemented.
+- `content:read`, `content:write`, `campaigns:read`, `campaigns:write`, `social:read`, `social:write`, `analytics:read`, `webhooks:read`, `webhooks:write` — reserved scope identifiers for the corresponding API resource groups; routes must enforce the matching scope before use.
+
 
 ## Authentication
 
-Public API requests will use revocable, workspace-scoped API keys. Store only a cryptographic hash of each key; show the raw secret once at creation. Derive workspace identity from the validated key record, never from a caller-supplied workspace_id. Scope keys by permissions and support rotation/revocation.
+Send the API key in the Authorization header:
+
+```http
+Authorization: Bearer gm_live_<prefix>_<secret>
+```
+
+The prefix is used only to locate the key record. The complete key is hashed with SHA-256 and compared in constant time. Workspace identity is derived from the key record; callers cannot select a workspace by supplying a workspace ID. Revoked and expired keys are rejected. Keys are shown only once at creation and must be stored securely by the client.
+
+Example key creation request (browser session, workspace OWNER/ADMIN required):
+
+```http
+POST /api/v1/keys
+Content-Type: application/json
+
+{
+  "name": "Production website sync",
+  "scopes": ["websites:read", "websites:write"],
+  "expiresAt": "2027-11-18T00:00:00.000Z"
+}
+```
+
+Omit `expiresAt` for a non-expiring key. Prefer an expiry and rotate keys periodically. Never put API keys in browser JavaScript, source control, query parameters, logs, or n8n workflow exports. Store them in n8n credentials.
+
+## Website API
+
+### List websites
+
+```http
+GET /api/v1/websites
+Authorization: Bearer gm_live_<prefix>_<secret>
+```
+
+Requires `websites:read`.
+
+### Create a website
+
+```http
+POST /api/v1/websites
+Authorization: Bearer gm_live_<prefix>_<secret>
+Idempotency-Key: <unique-client-generated-key>
+Content-Type: application/json
+
+{
+  "name": "Marketing site",
+  "domain": "example.com",
+  "description": "Primary marketing website"
+}
+```
+
+Requires `websites:write` and an `Idempotency-Key` header containing 8–128 characters from `A-Z a-z 0-9 . _ : -`. The same key and identical request body replay the original successful response for 24 hours. Reusing a key with a different request body returns 409. Concurrent duplicate requests return 409 while the first request is processing. The resource creation, audit event and stored idempotent response are committed in one database transaction.
+
+## Rate limits and failures
+
+API-key requests are limited to 300 requests per key per 60-second window using the shared Redis-backed limiter. Production fails closed with 503 if the limiter is not configured or unavailable; callers should retry with bounded exponential backoff and respect `Retry-After`. Rate limits are enforced per API key and therefore cannot be bypassed by rotating client IP addresses.
 
 ## Request and response conventions
 
 - JSON request and response bodies.
 - Zod validation at every input boundary.
-- Consistent error envelope: { "error": { "code": "VALIDATION_ERROR", "message": "Invalid request", "request_id": "..." } }.
-- Include X-Request-Id and Cache-Control: no-store on error responses.
+- Consistent error envelope: `{ "error": { "code": "VALIDATION_ERROR", "message": "Invalid request", "request_id": "..." } }`.
+- Include `X-Request-Id` and `Cache-Control: no-store` on responses.
 - Do not return stack traces, SQL errors, provider response bodies or secrets.
-- Use cursor pagination for large collections; enforce bounded page sizes.
-- Allowlist filter and sort fields; never interpolate arbitrary client-provided SQL/order expressions.
-- Use idempotency keys for externally retried create/publish operations.
-- Apply distributed rate limits per API key and workspace.
+- Use bounded pagination and allowlisted filters/sorts.
+- Never trust a caller-supplied workspace identifier.
 
 ## Error codes
 
-VALIDATION_ERROR (400), UNAUTHENTICATED (401), FORBIDDEN (403), NOT_FOUND (404), CONFLICT (409), RATE_LIMITED (429), PROVIDER_ERROR (502), INTERNAL_ERROR (500).
+`VALIDATION_ERROR` (400), `UNAUTHENTICATED` (401), `FORBIDDEN` (403), `NOT_FOUND` (404), `CONFLICT` (409), `RATE_LIMITED` (429), `PROVIDER_ERROR` (502), `INTERNAL_ERROR` (500).
 
-## Service boundary
+## Service boundary and remaining rollout
 
-Route handlers should authenticate, validate, call a workspace-scoped service, and serialize a safe response. Business rules and database access must not be duplicated across route handlers. API keys must never grant access beyond their workspace and explicit scopes.
+Route handlers authenticate, validate, call workspace-scoped data access, and serialize safe responses. API-key support is currently wired to website list and create routes. Other website detail, event and stats routes remain session-authenticated until their scope enforcement is added. Content, campaign, social, analytics and webhook resource APIs are not yet exposed through API keys; the scope names above define the controlled future permissions, not implemented route availability.
 
-## Initial planned routes
-
-| Method | Route | Purpose |
-| --- | --- | --- |
-| GET/POST | /api/v1/workspaces | List accessible workspaces / create workspace |
-| GET/POST | /api/v1/leads | List / create leads |
-| GET/POST | /api/v1/content | List / create content |
-| GET/POST | /api/v1/campaigns | List / create campaigns |
-| GET/POST | /api/v1/websites | List / register websites |
-| POST | /api/v1/events | Ingest validated events |
-| GET | /api/v1/social/accounts | List connected accounts |
-| POST | /api/v1/social/posts | Create a publication request |
-| GET | /api/v1/analytics | Query available metrics |
-| GET/POST | /api/v1/webhooks | List / configure outbound subscriptions |
-
-The route list is a target contract, not a claim of current availability.
+Idempotency primitives currently back API-key website creation. Every additional mutation endpoint must adopt the same claim/complete transaction pattern before it is exposed to external clients.
