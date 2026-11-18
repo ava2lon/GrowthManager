@@ -12,7 +12,7 @@ The API key management endpoints are session-authenticated and restricted to wor
 Supported scopes:
 - `websites:read` — read workspace website records and related read endpoints where implemented.
 - `websites:write` — create and modify website resources where implemented.
-- `content:read`, `content:write`, `campaigns:read`, `campaigns:write`, `social:read`, `social:write`, `analytics:read`, `webhooks:read`, `webhooks:write` — reserved scope identifiers for the corresponding API resource groups; routes must enforce the matching scope before use.
+- `content:read`, `content:write`, `campaigns:read`, `campaigns:write`, `social:read`, `social:write`, `analytics:read`, `webhooks:read`, `webhooks:write` — resource scopes enforced by the corresponding implemented routes; see each resource section for the current route inventory.
 
 
 ## Authentication
@@ -150,9 +150,9 @@ Campaign social-account assignment remains session-only; the campaign CRUD endpo
 ## Social API
 
 - `GET /api/v1/social/accounts` — requires `social:read`; lists at most 100 workspace-owned social accounts, with optional `brandId`, `provider`, and `status` filters. Credential ciphertext and provider metadata are never returned.
-- `GET /api/v1/social/posts` — requires `social:read`; lists workspace-owned publishing targets with bounded pagination and optional `status`, `provider`, and `brandId` filters. Content and account fields are limited to safe display fields.
+- `GET /api/v1/social/posts` — requires `social:read`; lists workspace-owned publishing targets with bounded pagination and optional `status`, `provider`, and `brandId` filters. Content and account fields are limited to safe display fields.\n- `PATCH /api/v1/social/posts` — requires `social:write` and an `Idempotency-Key`; updates the body of an existing content draft across all its targets. The content post and every target must still be in `DRAFT`; X targets are excluded because X has a separate provider-specific editor. Provider character limits are enforced, including Pinterest description metadata synchronization. The request body is limited to 16 KiB. The content update, target metadata updates, audit record and idempotency completion are committed in one transaction.
 
-## Analytics API
+Example social draft update:\n\n```http\nPATCH /api/v1/social/posts\nAuthorization: Bearer gm_live_<prefix>_<secret>\nIdempotency-Key: social-draft-edit-0001\nContent-Type: application/json\n\n{\n  "contentPostId": "content_post_id",\n  "body": "Revised draft copy"\n}\n```\n\nThe endpoint does not publish or schedule posts. Provider-specific publishing remains on the existing publishing services and state transitions.\n\n## Analytics API
 
 - `GET /api/v1/analytics` — requires `analytics:read`; returns stored provider analytics snapshots for the previous 1–90 UTC calendar days (default 30), optionally filtered by `socialAccountId`. The response is capped at 500 records and exposes normalized metrics, not raw provider responses or credentials. `truncated` indicates the cap was reached.
 
