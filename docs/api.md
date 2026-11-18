@@ -51,7 +51,7 @@ Authorization: Bearer gm_live_<prefix>_<secret>
 
 Requires `websites:read`.
 
-### Create a website
+### Read a website\n\n`GET /api/v1/websites/:websiteId` requires `websites:read` and returns website metadata and event/visitor/session counts.\n\n`GET /api/v1/websites/:websiteId/events` requires `websites:read`; supports bounded pagination (`page`, `limit`), sorting (`sort=asc|desc`), event/type filters, date bounds (`from`, `to`) and text search (`q`).\n\n`GET /api/v1/websites/:websiteId/stats` requires `websites:read`; accepts `days` from 1 to 90 (default 30).\n\nThese endpoints preserve browser-session authentication when no Bearer authorization is supplied. API-key workspace identity is taken exclusively from the validated key record.\n\n### Create a website
 
 ```http
 POST /api/v1/websites
@@ -88,6 +88,6 @@ API-key requests are limited to 300 requests per key per 60-second window using 
 
 ## Service boundary and remaining rollout
 
-Route handlers authenticate, validate, call workspace-scoped data access, and serialize safe responses. API-key support is currently wired to website list and create routes. Other website detail, event and stats routes remain session-authenticated until their scope enforcement is added. Content, campaign, social, analytics and webhook resource APIs are not yet exposed through API keys; the scope names above define the controlled future permissions, not implemented route availability.
+Route handlers authenticate, validate, call workspace-scoped data access, and serialize safe responses. API-key support is wired to website list, detail, events and stats reads, plus website creation. Website PATCH and DELETE remain session-authenticated until scoped mutation and idempotency support are implemented. Content, campaign, social, analytics and webhook resource APIs are not yet exposed through API keys; the scope names above define the controlled future permissions, not implemented route availability.
 
 Idempotency primitives currently back API-key website creation. Every additional mutation endpoint must adopt the same claim/complete transaction pattern before it is exposed to external clients.
