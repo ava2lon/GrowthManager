@@ -97,6 +97,7 @@ model User {
   createdAt    DateTime              @default(now())
   updatedAt    DateTime              @updatedAt
   memberships  WorkspaceMembership[]
+  createdApiKeys WorkspaceApiKey[]
   activityLogs ActivityLog[]
   authoredContentPosts ContentPost[]
   sentWorkspaceInvitations WorkspaceInvitation[] @relation("WorkspaceInvitationInviter")
@@ -142,6 +143,46 @@ model Workspace {
   websites Website[]
   webhookSubscriptions WebhookSubscription[]
   webhookDeliveries WebhookDelivery[]
+  apiKeys WorkspaceApiKey[]
+  apiIdempotencyRecords ApiIdempotencyRecord[]
+}
+
+model WorkspaceApiKey {
+  id             String    @id @default(cuid())
+  workspaceId    String
+  createdById    String
+  name           String
+  keyPrefix      String    @unique
+  keyHash        String    @unique
+  scopes         String[]  @default([])
+  lastUsedAt     DateTime?
+  expiresAt      DateTime?
+  revokedAt      DateTime?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+  workspace      Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  createdBy      User      @relation(fields: [createdById], references: [id], onDelete: Restrict)
+  @@unique([workspaceId, id])
+  @@index([workspaceId, revokedAt, createdAt])
+  @@index([expiresAt, revokedAt])
+}
+
+model ApiIdempotencyRecord {
+  id             String    @id @default(cuid())
+  workspaceId    String
+  idempotencyKey String
+  method         String
+  route          String
+  requestHash    String
+  status         String    @default("PROCESSING")
+  responseStatus Int?
+  responseBody   Json?
+  expiresAt      DateTime
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+  workspace      Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  @@unique([workspaceId, idempotencyKey, method, route], map: "api_idempotency_workspace_key_method_route")
+  @@index([workspaceId, expiresAt])
 }
 
 model WorkspaceInvitation {
