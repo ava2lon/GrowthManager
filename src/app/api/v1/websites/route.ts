@@ -61,12 +61,14 @@ export async function POST(request:Request){
   const website=await db.$transaction(async tx=>{
    const created=await tx.website.create({data:{workspaceId,name:parsed.data.name,domain,description:parsed.data.description||null,trackingId},select:{id:true,name:true,domain:true,description:true,status:true,trackingEnabled:true,trackingId:true,createdAt:true}});
    await tx.activityLog.create({data:{workspaceId,userId,action:"website.created",entityType:"Website",entityId:created.id,metadata:{domain,source:bearer?"api_key":"session"}}});
+   if(idempotencyRecordId){
+    const responseBody={data:created,request_id:requestId};
+    const completed=await tx.apiIdempotencyRecord.updateMany({where:{id:idempotencyRecordId,workspaceId,status:"PROCESSING"},data:{status:"COMPLETED",responseStatus:201,responseBody}});
+    if(completed.count!==1)throw new Error("Idempotency claim was lost before commit.");
+   }
    return created;
   });
   const responseBody={data:website,request_id:requestId};
-  if(idempotencyRecordId){
-   await db.apiIdempotencyRecord.updateMany({where:{id:idempotencyRecordId,workspaceId,status:"PROCESSING"},data:{status:"COMPLETED",responseStatus:201,responseBody:responseBody}});
-  }
   return NextResponse.json(responseBody,{status:201,headers:{"Cache-Control":"no-store","X-Request-Id":requestId}});
  }catch(e){if(typeof e==="object"&&e!==null&&"code" in e&&e.code==="P2002")return apiErrorResponse("CONFLICT","A website with this domain already exists in the workspace.",409,requestId);return internalApiErrorResponse(requestId);}
 }
