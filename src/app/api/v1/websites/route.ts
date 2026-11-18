@@ -50,14 +50,16 @@ export async function POST(request:Request){
   let domain:string;
   try{domain=normalizeWebsiteDomain(parsed.data.domain);}catch(e){return apiErrorResponse("VALIDATION_ERROR",e instanceof Error?e.message:"Invalid domain.",400,requestId);}
   let idempotencyRecordId:string|null=null;
+  let idempotencyLeaseToken:string|null=null;
   if(bearer){
    const idempotencyKey=request.headers.get("idempotency-key");
-   if(!idempotencyKey)return apiErrorResponse("VALIDATION_ERROR","Idempotency-Key header is required for API-key mutation requests.",400,requestId);
+   if(!idempotencyKey||!/^[A-Za-z0-9._:-]{8,128}$/.test(idempotencyKey))return apiErrorResponse("VALIDATION_ERROR","A valid Idempotency-Key header (8–128 allowed characters) is required for API-key mutation requests.",400,requestId);
    const claim=await claimApiIdempotency({workspaceId,idempotencyKey,method:"POST",route:"/api/v1/websites",requestBody:rawBody});
    if(claim.kind==="CONFLICT")return apiErrorResponse("CONFLICT","Idempotency key was already used with a different request.",409,requestId);
    if(claim.kind==="IN_PROGRESS")return apiErrorResponse("CONFLICT","A request with this idempotency key is still processing.",409,requestId);
    if(claim.kind==="REPLAY")return NextResponse.json(claim.body,{status:claim.statusCode,headers:{"Cache-Control":"no-store","Idempotency-Replayed":"true"}});
    idempotencyRecordId=claim.recordId;
+   idempotencyLeaseToken=claim.leaseToken;
   }
   const trackingId="site_"+randomBytes(24).toString("base64url");
   const website=await db.$transaction(async tx=>{
@@ -65,7 +67,7 @@ export async function POST(request:Request){
    await tx.activityLog.create({data:{workspaceId,userId,action:"website.created",entityType:"Website",entityId:created.id,metadata:{domain,source:bearer?"api_key":"session"}}});
    if(idempotencyRecordId){
     const responseBody={data:{...created,createdAt:created.createdAt.toISOString()},request_id:requestId};
-    const completed=await tx.apiIdempotencyRecord.updateMany({where:{id:idempotencyRecordId,workspaceId,status:"PROCESSING"},data:{status:"COMPLETED",responseStatus:201,responseBody}});
+    const completed=await tx.apiIdempotencyRecord.updateMany({where:{id:idempotencyRecordId,workspaceId,status:"PROCESSING",leaseToken:idempotencyLeaseToken},data:{status:"COMPLETED",responseStatus:201,responseBody}});
     if(completed.count!==1)throw new Error("Idempotency claim was lost before commit.");
    }
    return created;
