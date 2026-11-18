@@ -102,3 +102,46 @@ API-key requests are limited to 300 requests per key per 60-second window using 
 Route handlers authenticate, validate, call workspace-scoped data access, and serialize safe responses. API-key support is wired to website list, detail, events and stats reads, plus website creation. Website PATCH and DELETE support both session authentication and workspace API keys with the `websites:write` scope. API-key mutations require idempotency keys and commit resource changes, activity audit records and idempotency completion atomically. Content, campaign, social, analytics and webhook resource APIs are not yet exposed through API keys; the scope names above define the controlled future permissions, not implemented route availability.
 
 Idempotency primitives currently back API-key website creation. Every additional mutation endpoint must adopt the same claim/complete transaction pattern before it is exposed to external clients.
+## Content API
+
+- `GET /api/v1/content` — requires `content:read`; workspace-scoped, excludes archived items, supports bounded `page`/`limit` pagination and `q`, `brandId`, `campaignId`, `status`, and `type` filters.
+- `POST /api/v1/content` — requires `content:write` and an `Idempotency-Key`; creates a content item in IDEA workflow state. Requires an active workspace brand; an optional campaign must belong to the same workspace and either be workspace-wide or assigned to that brand. Tags are limited to 20 values, each at most 40 characters. Body limit: 16 KiB.
+
+Example content creation:
+
+```http
+POST /api/v1/content
+Authorization: Bearer gm_live_<prefix>_<secret>
+Idempotency-Key: content-create-0001
+Content-Type: application/json
+
+{
+  "brandId": "brand_id",
+  "title": "Launch announcement",
+  "body": "Approved copy goes here",
+  "contentType": "POST",
+  "tags": ["launch", "product"]
+}
+```
+
+## Campaign API
+
+- `GET /api/v1/campaigns` — requires `campaigns:read`; workspace-scoped, supports bounded `page`/`limit` pagination and `status` and `brandId` filters.
+- `POST /api/v1/campaigns` — requires `campaigns:write` and an `Idempotency-Key`; creates a campaign. Optional brand must belong to the key's workspace. Date range and budget are validated. Body limit: 16 KiB.
+
+Example campaign creation:
+
+```http
+POST /api/v1/campaigns
+Authorization: Bearer gm_live_<prefix>_<secret>
+Idempotency-Key: campaign-create-0001
+Content-Type: application/json
+
+{
+  "name": "Q1 launch",
+  "objective": "Increase qualified leads",
+  "status": "PLANNING"
+}
+```
+
+These endpoints expose read and create operations only. Update/delete and campaign social-account assignment remain session-only until their API mutation semantics and integration tests are implemented.
