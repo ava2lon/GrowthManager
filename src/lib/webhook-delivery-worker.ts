@@ -24,6 +24,7 @@ type Candidate = {
   eventType: string;
   payload: unknown;
   attemptCount: number;
+  retryAttempts: number;
   subscription: {endpointUrl: string; signingSecretEncrypted: string; status: string};
 };
 
@@ -83,12 +84,13 @@ async function claimDelivery(candidate: Candidate, now: Date) {
         workspaceId: candidate.workspaceId,
         subscriptionId: candidate.subscriptionId,
         attemptCount: candidate.attemptCount,
+        retryAttempts: candidate.retryAttempts,
         status: {in: ["PENDING", "RETRY", "PROCESSING"]},
         nextAttemptAt: {lte: now},
         OR: [{lockedAt: null}, {lockedAt: {lte: staleLock}}],
         subscription: {status: "ACTIVE"},
       },
-      data: {status: "PROCESSING", lockedAt: now, attemptCount: {increment: 1}},
+      data: {status: "PROCESSING", lockedAt: now, attemptCount: {increment: 1}, retryAttempts: {increment: 1}},
     });
     if (claimed.count !== 1) return null;
     const attemptNumber = candidate.attemptCount + 1;
@@ -120,7 +122,7 @@ export async function dispatchWorkspaceWebhookDeliveries(batchSize = MAX_BATCH_S
     take: limit * 4,
     select: {
       id: true, workspaceId: true, subscriptionId: true, eventId: true,
-      eventType: true, payload: true, attemptCount: true,
+      eventType: true, payload: true, attemptCount: true, retryAttempts: true,
       subscription: {select: {endpointUrl: true, signingSecretEncrypted: true, status: true}},
     },
   });
@@ -173,7 +175,7 @@ export async function dispatchWorkspaceWebhookDeliveries(batchSize = MAX_BATCH_S
 
     const finishedAt = new Date();
     if (outcome === "RETRY") {
-      retryAt = getWebhookRetryAt({attempt: claim.attemptNumber, now: finishedAt, deliveryId: candidate.id});
+      retryAt = getWebhookRetryAt({attempt: candidate.retryAttempts + 1, now: finishedAt, deliveryId: candidate.id});
     }
     const finalStatus = outcome === "DELIVERED" ? "DELIVERED"
       : outcome === "RETRY" && retryAt ? "RETRY" : "FAILED";
@@ -196,6 +198,7 @@ export async function dispatchWorkspaceWebhookDeliveries(batchSize = MAX_BATCH_S
           lockedAt: null,
           nextAttemptAt: retryAt ?? finishedAt,
           deliveredAt: outcome === "DELIVERED" ? finishedAt : null,
+          ...(outcome === "DELIVERED" ? {retryAttempts: 0} : {}),
           lastHttpStatus: httpStatus,
           lastErrorCode: outcome === "DELIVERED" ? null : errorCode ?? "WEBHOOK_DELIVERY_FAILED",
         },
