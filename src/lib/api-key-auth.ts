@@ -24,7 +24,7 @@ export async function authenticateApiKey(request:Request,requiredScope:ApiKeySco
   if(!record||record.revokedAt|| (record.expiresAt&&record.expiresAt<=new Date()) || !constantTimeHexEqual(record.keyHash,hashApiKey(rawKey))){
     return {context:null,response:apiErrorResponse("UNAUTHENTICATED","A valid API key is required.",401,requestId)};
   }
-  if(!record.scopes.includes(requiredScope)&&!record.scopes.includes("*")){
+  if(!record.scopes.includes(requiredScope)){
     return {context:null,response:apiErrorResponse("FORBIDDEN","The API key does not grant the required scope.",403,requestId)};
   }
   const limit=await consumeRateLimit(`api-key:${record.workspaceId}:${record.id}`,300,60);
