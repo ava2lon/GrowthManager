@@ -68,6 +68,17 @@ Content-Type: application/json
 
 Requires `websites:write` and an `Idempotency-Key` header containing 8–128 characters from `A-Z a-z 0-9 . _ : -`. The same key and identical request body replay the original successful response for 24 hours. Reusing a key with a different request body returns 409. Concurrent duplicate requests return 409 while the first request is processing. The resource creation, audit event and stored idempotent response are committed in one database transaction.
 
+
+### Update a website
+
+`PATCH /api/v1/websites/:websiteId` accepts the same validated website fields as the session endpoint and requires `websites:write` for API-key authentication.
+
+### Delete a website
+
+`DELETE /api/v1/websites/:websiteId` requires `websites:write` for API-key authentication. Deletion is workspace-scoped and follows the database's configured cascade/restrict behavior.
+
+For both API-key mutation endpoints, send an `Idempotency-Key` header (8–128 characters from `A-Z a-z 0-9 . _ : -`). Identical requests replay the original successful response for 24 hours; reusing a key with a different body returns 409. Mutation, activity audit record and idempotency completion are committed in one database transaction. Request bodies are limited to 16 KiB. Browser-session OWNER/ADMIN mutation behavior remains supported without requiring an idempotency header.
+
 ## Rate limits and failures
 
 API-key requests are limited to 300 requests per key per 60-second window using the shared Redis-backed limiter. Production fails closed with 503 if the limiter is not configured or unavailable; callers should retry with bounded exponential backoff and respect `Retry-After`. Rate limits are enforced per API key and therefore cannot be bypassed by rotating client IP addresses.
@@ -88,6 +99,6 @@ API-key requests are limited to 300 requests per key per 60-second window using 
 
 ## Service boundary and remaining rollout
 
-Route handlers authenticate, validate, call workspace-scoped data access, and serialize safe responses. API-key support is wired to website list, detail, events and stats reads, plus website creation. Website PATCH and DELETE remain session-authenticated until scoped mutation and idempotency support are implemented. Content, campaign, social, analytics and webhook resource APIs are not yet exposed through API keys; the scope names above define the controlled future permissions, not implemented route availability.
+Route handlers authenticate, validate, call workspace-scoped data access, and serialize safe responses. API-key support is wired to website list, detail, events and stats reads, plus website creation. Website PATCH and DELETE support both session authentication and workspace API keys with the `websites:write` scope. API-key mutations require idempotency keys and commit resource changes, activity audit records and idempotency completion atomically. Content, campaign, social, analytics and webhook resource APIs are not yet exposed through API keys; the scope names above define the controlled future permissions, not implemented route availability.
 
 Idempotency primitives currently back API-key website creation. Every additional mutation endpoint must adopt the same claim/complete transaction pattern before it is exposed to external clients.
