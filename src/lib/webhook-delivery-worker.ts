@@ -6,7 +6,6 @@ import {createWebhookSignature} from "@/lib/webhook-signature";
 import {resolveSafeWebhookEndpoint} from "@/lib/webhook-endpoint-security";
 import {
   WEBHOOK_DELIVERY_LOCK_TTL_MS,
-  WEBHOOK_DELIVERY_MAX_ATTEMPTS,
   classifyWebhookResponse,
   getWebhookRetryAt,
 } from "@/lib/webhook-delivery-policy";
