@@ -1,4 +1,4 @@
-"import Link from "next/link";
+import Link from "next/link";
 import {ArrowUpRight,Bell,Globe2,Plug,ShieldCheck,Users2,Workflow} from "lucide-react";
 import {requireWorkspaceContext} from "@/lib/workspace";
 import {db} from "@/lib/db";
