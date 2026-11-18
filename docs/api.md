@@ -128,6 +128,8 @@ Content-Type: application/json
 
 - `GET /api/v1/campaigns` — requires `campaigns:read`; workspace-scoped, supports bounded `page`/`limit` pagination and `status` and `brandId` filters.
 - `POST /api/v1/campaigns` — requires `campaigns:write` and an `Idempotency-Key`; creates a campaign. Optional brand must belong to the key's workspace. Date range and budget are validated. Body limit: 16 KiB.
+- `PATCH /api/v1/campaigns/{campaignId}` — requires `campaigns:write` and an `Idempotency-Key`; updates only supplied fields. Brand ownership and date range are validated. Body limit: 16 KiB. Concurrent updates are rejected.
+- `DELETE /api/v1/campaigns/{campaignId}` — requires `campaigns:write` and an `Idempotency-Key`; deletes a campaign only when no content posts reference it. Campaigns with linked content return HTTP 409.
 
 Example campaign creation:
 
@@ -144,7 +146,7 @@ Content-Type: application/json
 }
 ```
 
-These endpoints expose read and create operations only. Update/delete and campaign social-account assignment remain session-only until their API mutation semantics and integration tests are implemented.
+Campaign social-account assignment remains session-only; the campaign CRUD endpoints above are workspace-scoped and idempotent.
 ## Social API
 
 - `GET /api/v1/social/accounts` — requires `social:read`; lists at most 100 workspace-owned social accounts, with optional `brandId`, `provider`, and `status` filters. Credential ciphertext and provider metadata are never returned.
