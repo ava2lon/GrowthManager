@@ -5,6 +5,7 @@ import {apiErrorResponse,createRequestId,internalApiErrorResponse} from "@/lib/a
 import {getWebsiteWorkspaceContext,websiteRoleCanManage} from "@/lib/websites/access";
 import {normalizeWebsiteDomain,websiteCreateSchema} from "@/lib/websites/validation";
 import {authenticateApiKey} from "@/lib/api-key-auth";
+import {claimApiIdempotency} from "@/lib/api-idempotency";
 export const runtime="nodejs";
 export const dynamic="force-dynamic";
 
@@ -42,13 +43,30 @@ export async function POST(request:Request){
    if(!websiteRoleCanManage(context.membership.role))return apiErrorResponse("FORBIDDEN","Workspace administrator access is required.",403,requestId);
    workspaceId=context.workspace.id;userId=context.userId;
   }
-  const parsed=websiteCreateSchema.safeParse(await request.json().catch(()=>null));
+  const parsed=websiteCreateSchema.safeParse(parsedBody);
   if(!parsed.success)return apiErrorResponse("VALIDATION_ERROR","Invalid website details.",400,requestId);
   let domain:string;
   try{domain=normalizeWebsiteDomain(parsed.data.domain);}catch(e){return apiErrorResponse("VALIDATION_ERROR",e instanceof Error?e.message:"Invalid domain.",400,requestId);}
+  let idempotencyRecordId:string|null=null;
+  if(bearer){
+   const idempotencyKey=request.headers.get("idempotency-key");
+   if(!idempotencyKey)return apiErrorResponse("VALIDATION_ERROR","Idempotency-Key header is required for API-key mutation requests.",400,requestId);
+   const claim=await claimApiIdempotency({workspaceId,idempotencyKey,method:"POST",route:"/api/v1/websites",requestBody:rawBody});
+   if(claim.kind==="CONFLICT")return apiErrorResponse("CONFLICT","Idempotency key was already used with a different request.",409,requestId);
+   if(claim.kind==="IN_PROGRESS")return apiErrorResponse("CONFLICT","A request with this idempotency key is still processing.",409,requestId);
+   if(claim.kind==="REPLAY")return NextResponse.json(claim.body,{status:claim.statusCode,headers:{"Cache-Control":"no-store","Idempotency-Replayed":"true"}});
+   idempotencyRecordId=claim.recordId;
+  }
   const trackingId="site_"+randomBytes(24).toString("base64url");
-  const website=await db.website.create({data:{workspaceId,name:parsed.data.name,domain,description:parsed.data.description||null,trackingId},select:{id:true,name:true,domain:true,description:true,status:true,trackingEnabled:true,trackingId:true,createdAt:true}});
-  await db.activityLog.create({data:{workspaceId,userId,action:"website.created",entityType:"Website",entityId:website.id,metadata:{domain,source:bearer?"api_key":"session"}}});
-  return NextResponse.json({data:website,request_id:requestId},{status:201,headers:{"Cache-Control":"no-store","X-Request-Id":requestId}});
+  const website=await db.$transaction(async tx=>{
+   const created=await tx.website.create({data:{workspaceId,name:parsed.data.name,domain,description:parsed.data.description||null,trackingId},select:{id:true,name:true,domain:true,description:true,status:true,trackingEnabled:true,trackingId:true,createdAt:true}});
+   await tx.activityLog.create({data:{workspaceId,userId,action:"website.created",entityType:"Website",entityId:created.id,metadata:{domain,source:bearer?"api_key":"session"}}});
+   return created;
+  });
+  const responseBody={data:website,request_id:requestId};
+  if(idempotencyRecordId){
+   await db.apiIdempotencyRecord.updateMany({where:{id:idempotencyRecordId,workspaceId,status:"PROCESSING"},data:{status:"COMPLETED",responseStatus:201,responseBody:responseBody}});
+  }
+  return NextResponse.json(responseBody,{status:201,headers:{"Cache-Control":"no-store","X-Request-Id":requestId}});
  }catch(e){if(typeof e==="object"&&e!==null&&"code" in e&&e.code==="P2002")return apiErrorResponse("CONFLICT","A website with this domain already exists in the workspace.",409,requestId);return internalApiErrorResponse(requestId);}
 }
