@@ -1,4 +1,3 @@
-import "server-only";
 import {createCipheriv, createDecipheriv, randomBytes} from "node:crypto";
 
 type EncryptionKey = {id: string; key: Buffer};
