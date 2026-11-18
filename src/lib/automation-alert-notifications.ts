@@ -1,4 +1,5 @@
 import {db} from "@/lib/db";
+import {enqueueWorkspaceWebhookEvent} from "@/lib/workspace-webhooks";
 import {decryptIntegrationCredentials} from "@/lib/integration-crypto";
 
 type AlertInput = {
@@ -47,6 +48,15 @@ export async function recordAutomationAlert(input: AlertInput): Promise<{created
       select: {id: true},
     });
     if (!event || inserted.count !== 1) return {created: false, queued: false};
+    await enqueueWorkspaceWebhookEvent(tx, {
+      workspaceId: input.workspaceId,
+      eventType: "automation.alert.created",
+      data: {
+        alertId: event.id, provider: input.provider, alertType: input.alertType,
+        severity: input.severity, message: input.message, observedCount: input.observedCount,
+        observedRate: input.observedRate, sampleSize: input.sampleSize,
+      },
+    });
 
     const policy = await tx.automationAlertPolicy.findUnique({
       where: {workspaceId: input.workspaceId},
