@@ -2,11 +2,17 @@ import {NextResponse} from "next/server";
 import {db} from "@/lib/db";
 import {apiErrorResponse,createRequestId,internalApiErrorResponse} from "@/lib/api-response";
 import {getWebsiteWorkspaceContext} from "@/lib/websites/access";
+import {authenticateApiKey} from "@/lib/api-key-auth";
 export const dynamic="force-dynamic";
 type Context={params:Promise<{websiteId:string}>};
 export async function GET(request:Request,{params}:Context){
- const requestId=createRequestId();try{const c=await getWebsiteWorkspaceContext();if(!c)return apiErrorResponse("UNAUTHENTICATED","Authentication required.",401,requestId);const {websiteId}=await params;
- const exists=await db.website.findFirst({where:{id:websiteId,workspaceId:c.workspace.id},select:{id:true}});if(!exists)return apiErrorResponse("NOT_FOUND","Website not found.",404,requestId);
+ const requestId=createRequestId();try{
+ const bearer=request.headers.get("authorization")?.startsWith("Bearer ")??false;
+ let workspaceId:string;
+ if(bearer){const auth=await authenticateApiKey(request,"websites:read");if(!auth.context)return auth.response;workspaceId=auth.context.workspaceId;}
+ else{const c=await getWebsiteWorkspaceContext();if(!c)return apiErrorResponse("UNAUTHENTICATED","Authentication required.",401,requestId);workspaceId=c.workspace.id;}
+ const {websiteId}=await params;
+ const exists=await db.website.findFirst({where:{id:websiteId,workspaceId},select:{id:true}});if(!exists)return apiErrorResponse("NOT_FOUND","Website not found.",404,requestId);
  const days=Math.max(1,Math.min(90,Number(new URL(request.url).searchParams.get("days"))||30)),since=new Date(Date.now()-days*86400000),where={websiteId,timestamp:{gte:since}};
  const [events,pageViews,visitors,sessions,topPages,topReferrers,sources,campaigns]=await Promise.all([
   db.websiteEvent.count({where}),db.websiteEvent.count({where:{...where,eventType:"page_view"}}),
