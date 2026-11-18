@@ -3,7 +3,7 @@ CREATE TABLE "SocialIncidentSyncState" (
     "cursor" TEXT,
     "leaseToken" TEXT,
     "leaseUntil" TIMESTAMP(3),
-    "updatedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" TIMESTAMP(3) NOT NULL,
     CONSTRAINT "SocialIncidentSyncState_pkey" PRIMARY KEY ("phase")
 );
 
